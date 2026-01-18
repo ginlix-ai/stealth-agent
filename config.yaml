@@ -1,0 +1,161 @@
+# Open PTC Agent Configuration
+# This is the single source of truth for all configurable items
+# Credentials should be stored in .env file
+
+# CLI Configuration
+# -----------------
+cli:
+  # Color palette: emerald, cyan, amber, teal, nord, gruvbox, catppuccin, tokyo_night
+  # Default: nord (dark mode), tokyo_night (light mode)
+  # palette: "nord"
+  # Theme mode: auto, dark, light
+  theme: "auto"
+
+llm:
+  # Reference to LLM definition in llms.json
+  # Override with PTC_LLMS_FILE environment variable
+  name: "minimax-m2.1"
+
+daytona:
+  # Daytona sandbox configuration
+  base_url: "https://app.daytona.io/api"
+  auto_stop_interval: 3600  # 1 hour in seconds
+  auto_archive_interval: 86400  # 24 hours in seconds
+  auto_delete_interval: 604800  # 7 days in seconds
+  python_version: "3.12"
+
+  # Snapshot configuration for faster sandbox initialization (7x speedup)
+  # First build takes ~10-15 minutes, subsequent sandboxes take ~8 seconds
+  # Hash will be automatically appended based on dependencies
+  snapshot_enabled: true  # Recommended: Enable snapshot-based sandbox creation
+  snapshot_name: "open-ptc-v1"  # Base name for snapshot (hash will be appended)
+  snapshot_auto_create: true  # Automatically create snapshot if it doesn't exist
+
+security:
+  # Execution limits and validation
+  max_execution_time: 300  # seconds
+  max_code_length: 10000  # characters
+  max_file_size: 10485760  # 10MB
+
+  # Code validation
+  enable_code_validation: true
+
+  # Allowed Python imports for code validation
+  allowed_imports:
+    - os
+    - sys
+    - json
+    - yaml
+    - requests
+    - datetime
+    - pathlib
+    - typing
+    - re
+    - math
+    - random
+    - time
+    - collections
+    - itertools
+    - functools
+    - subprocess
+    - shutil
+
+  # Blocked code patterns for security
+  blocked_patterns:
+    - "eval("
+    - "exec("
+    - "__import__"
+    - "compile("
+    - "globals("
+    - "locals("
+
+mcp:
+  # MCP server configurations
+  # Note: Filesystem is now a first-class tool (see filesystem section below)
+  # Each server can have 'enabled: true/false' to enable/disable it (default: true)
+  servers:
+    - name: "tavily"
+      enabled: false  # Set to false to disable this server
+      description: "Web search engine for finding current information online"
+      instruction: "Use for web searches, news, research, and real-time information. Best for queries requiring up-to-date data from the internet."
+      tool_exposure_mode: "summary"  # Brief - 4 simple tools
+      transport: "stdio"
+      command: "npx"
+      args: ["-y", "tavily-mcp@latest"]
+      env:
+        TAVILY_API_KEY: "${TAVILY_API_KEY}"
+
+    - name: "alphavantage"
+      enabled: false
+      description: "Financial market data API for stocks, forex, crypto, and economic indicators"
+      instruction: "Use for stock quotes, historical prices, technical indicators, forex rates, crypto data, and economic data."
+      tool_exposure_mode: "summary"  # Full signatures - 118 complex tools
+      transport: "http"
+      url: "https://mcp.alphavantage.co/mcp?apikey=${ALPHA_VANTAGE_API_KEY}"
+
+    - name: "tickertick"
+      description: "Financial news API for ticker news, curated news, and entity news from Tickertick"
+      instruction: "Use for getting financial news about specific tickers, curated market news, news from specific sources, or news about entities like people and companies."
+      tool_exposure_mode: "summary"  # 7 news-related tools
+      transport: "stdio"
+      command: "uv"
+      args: ["run", "python", "mcp_servers/tickertick_mcp_server.py"]
+      env: {}
+
+    - name: "yfinance"
+      description: "Yahoo Finance API for stock prices, financial statements, options chains, and company data"
+      instruction: "Use for historical stock prices, financial statements (income, balance sheet, cash flow), options chains, company info, analyst recommendations, and institutional holders. Best for fundamental analysis, historical data, and comparing multiple stocks. Returns large datasets ideal for code-based post-processing."
+      tool_exposure_mode: "summary"  # 21 tools with high PTC value
+      transport: "stdio"
+      command: "uv"
+      args: ["run", "python", "mcp_servers/yfinance_mcp_server.py"] # Both absolute and relative path accepted
+      env: {}
+
+  # Tool discovery settings
+  tool_discovery_enabled: true
+  lazy_load: true  # Load tools on-demand
+  cache_duration: 300  # Cache tool metadata for 5 minutes
+
+filesystem:
+  # Filesystem access configuration for first-class filesystem tools
+  # These tools provide direct file and directory operations without code generation
+
+  # Working directory for the sandbox - used as the root for virtual path normalization
+  # Agent sees virtual paths like /results/file.txt which map to {working_directory}/results/file.txt
+  working_directory: "/home/daytona"
+
+  allowed_directories:
+    - "/home/daytona"
+    - "/tmp"
+  enable_path_validation: true  # Validate paths against allowed_directories
+
+storage:
+  # Cloud storage provider for image/chart uploads
+  # All credentials and settings are loaded from .env file
+  # Options: s3, r2, oss, none (to disable uploads)
+  provider: "s3"
+
+logging:
+  # Logging configuration
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: "logs/ptc.log"
+
+agent:
+  # Agent tool configuration
+  # If true, use custom filesystem tools (Read, Write, Edit, Glob, Grep) with more features
+  # If false, use deepagents' native middleware tools (read_file, write_file, edit_file, glob, grep, ls)
+  # Custom tools have better Grep with output_mode, multiline, context lines, and file type filtering
+  use_custom_filesystem_tools: true
+
+  # Note: deep-agent automatically enables these middlewares:
+  # - TodoListMiddleware (write_todos)
+  # - SummarizationMiddleware (auto-summarizes long conversations)
+  # - FilesystemMiddleware
+  # - SubAgentMiddleware
+
+# Subagent configuration
+subagents:
+  # List of enabled subagents (available: research, general-purpose)
+  enabled:
+    - general-purpose
+    - research

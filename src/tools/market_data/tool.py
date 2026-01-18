@@ -1,0 +1,249 @@
+"""
+LangChain tool wrappers for market data operations.
+
+This module provides @tool decorated functions that serve as the LangChain interface.
+The actual business logic is implemented in implementations.py.
+"""
+from typing import Optional, Dict, Any, List
+from langchain_core.tools import tool
+
+from .implementations import (
+    fetch_stock_daily_prices,
+    fetch_company_overview,
+    fetch_stock_realtime_quote,
+    fetch_market_indices,
+    fetch_sector_performance,
+)
+
+
+@tool
+async def get_stock_daily_prices(
+    symbol: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    limit: Optional[int] = None
+) -> "List[Dict[str, Any]] | str":
+    """
+    Get stock daily OHLCV price data with smart normalization.
+    Retrieves historical daily price data including open, high, low, close, volume.
+    Supports US stocks, A-shares (Chinese), and HK stocks.
+
+    **Smart Output Format:**
+    - **Short periods (< 14 trading days)**: Returns raw list of daily OHLCV data
+    - **Long periods (>= 14 trading days)**: Returns formatted summary report with:
+      - Aggregated OHLC (period open/close/high/low)
+      - Moving averages (20-day, 50-day, 200-day where applicable)
+      - Volatility (daily standard deviation)
+      - Volume statistics (average, total)
+      - Period performance and price range
+
+    Args:
+        symbol: Stock ticker symbol
+            - US: "AAPL", "MSFT", "GOOGL"
+            - A-Share: "600519.SS" (Shanghai), "000858.SZ" (Shenzhen)
+            - HK: "0700.HK" (Tencent), "9988.HK" (Alibaba)
+        start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format
+        limit: Limit number of records (if not using date range)
+
+    Returns:
+        - If < 14 trading days: List of dictionaries with daily OHLCV data (newest first).
+          Each record contains: symbol, date, open, high, low, close, volume,
+          change, changePercent, vwap.
+        - If >= 14 trading days: Formatted string report with aggregated statistics
+          and performance metrics optimized for LLM interpretation.
+
+    Example:
+        # Get Apple stock last 10 days (returns raw list)
+        aapl = get_stock_daily_prices("AAPL", limit=10)
+
+        # Get Kweichow Moutai 1 year data (returns summary report)
+        moutai = get_stock_daily_prices(
+            "600519.SS",
+            start_date="2024-01-01",
+            end_date="2024-12-31"
+        )
+
+        # Get Tencent 60 days (returns summary report with MAs and volatility)
+        tencent = get_stock_daily_prices("0700.HK", limit=60)
+    """
+    return await fetch_stock_daily_prices(symbol, start_date, end_date, limit)
+
+
+@tool
+async def get_company_overview(symbol: str) -> str:
+    """
+    Get comprehensive investment analysis overview for a company.
+
+    Retrieves and formats investment-relevant data including financial health ratings,
+    analyst consensus, earnings performance, and revenue segmentation. Data is presented
+    in a human-readable format optimized for investment decision-making.
+
+    Supports US stocks, A-shares (Chinese), and HK stocks.
+
+    Args:
+        symbol: Stock ticker symbol
+            - US: "AAPL", "MSFT", "GOOGL"
+            - A-Share: "600519.SS" (Shanghai), "000858.SZ" (Shenzhen)
+            - HK: "0700.HK" (Tencent), "9988.HK" (Alibaba)
+
+    Returns:
+        Formatted string with comprehensive investment intelligence including:
+        - Company basic information (name, sector, market cap, price)
+        - Financial health ratings (overall score, valuation, profitability, leverage)
+        - Analyst consensus (price targets, buy/sell recommendations, recent changes)
+        - Earnings performance (latest results vs estimates, surprises)
+        - Revenue breakdown (by product line and geographic region)
+
+    Example:
+        # Get comprehensive investment overview for Apple
+        overview = get_company_overview("AAPL")
+        print(overview)  # Displays formatted investment intelligence
+
+        # Get overview for Kweichow Moutai (A-share)
+        moutai_overview = get_company_overview("600519.SS")
+
+        # Get overview for Alibaba (HK)
+        baba_overview = get_company_overview("9988.HK")
+    """
+    return await fetch_company_overview(symbol)
+
+
+@tool
+async def get_stock_realtime_quote(symbol: str) -> str:
+    """
+    Get real-time stock quote with market hours detection.
+
+    Automatically detects current market session (regular hours, after-market, or closed)
+    and fetches appropriate real-time quote data. Formats output in a human-readable
+    format optimized for quick decision-making.
+
+    Supports US stocks, A-shares (Chinese), and HK stocks.
+
+    Args:
+        symbol: Stock ticker symbol
+            - US: "AAPL", "MSFT", "GOOGL"
+            - A-Share: "600519.SS" (Shanghai), "000858.SZ" (Shenzhen)
+            - HK: "0700.HK" (Tencent), "9988.HK" (Alibaba)
+
+    Returns:
+        Formatted string with real-time quote information including:
+        - Market status and last update time
+        - Current price with daily change
+        - Day range and 52-week range
+        - Volume and average volume
+        - Market cap, EPS, P/E ratio
+        - After-hours price (if applicable)
+
+    Example:
+        # Get real-time quote for Apple
+        quote = get_stock_realtime_quote("AAPL")
+        print(quote)  # Displays formatted real-time quote
+
+        # Get quote for Wuliangye (A-share)
+        quote = get_stock_realtime_quote("000858.SZ")
+
+        # Get quote during after-hours for Tencent (HK)
+        quote = get_stock_realtime_quote("0700.HK")
+    """
+    return await fetch_stock_realtime_quote(symbol)
+
+
+@tool
+async def get_market_indices(
+    indices: Optional[List[str]] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    limit: int = 60
+) -> "List[Dict[str, Any]] | str":
+    """
+    Get market indices data with smart normalization.
+
+    Retrieves historical price data for major market indices (S&P 500, NASDAQ, Dow Jones).
+
+    **Smart Output Format:**
+    - **Short periods (< 14 trading days)**: Returns raw list of OHLCV data for all indices
+    - **Long periods (>= 14 trading days)**: Returns formatted summary with separate sections per index:
+      - Aggregated OHLC (period open/close/high/low)
+      - Period performance and volatility
+      - Moving averages (20-day, 50-day, 200-day where applicable)
+      - Each index in its own section for easy comparison
+
+    Args:
+        indices: List of index symbols, default is major US indices
+            - "^GSPC": S&P 500
+            - "^IXIC": NASDAQ Composite
+            - "^DJI": Dow Jones Industrial Average
+            - "^RUT": Russell 2000
+        start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format
+        limit: Number of records per index (default 60)
+
+    Returns:
+        - If < 14 trading days: List of dictionaries with index OHLCV data (newest first)
+        - If >= 14 trading days: Formatted string summary with statistics per index
+
+    Example:
+        # Get major indices last 10 days (returns raw list)
+        indices = get_market_indices(limit=10)
+
+        # Get major indices last 60 days (returns summary report)
+        indices_summary = get_market_indices()
+
+        # Get specific index with date range (returns summary)
+        sp500_summary = get_market_indices(
+            indices=["^GSPC"],
+            start_date="2024-01-01",
+            end_date="2024-12-31"
+        )
+
+        # Compare multiple indices over a year (returns summary with sections per index)
+        market_comparison = get_market_indices(
+            indices=["^GSPC", "^IXIC", "^DJI"],
+            start_date="2024-01-01",
+            end_date="2024-12-31"
+        )
+    """
+    return await fetch_market_indices(indices, start_date, end_date, limit)
+
+
+@tool
+async def get_sector_performance(date: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Get market sector performance.
+
+    Retrieves sector performance metrics showing which sectors are
+    outperforming or underperforming.
+
+    Args:
+        date: Analysis date in YYYY-MM-DD format (default: latest available)
+            Note: Historical sector performance may not be available on all FMP plans
+
+    Returns:
+        List of dictionaries with sector performance data including:
+        - sector: Sector name (e.g., "Technology", "Healthcare")
+        - changesPercentage: Performance percentage (e.g., "1.50%")
+
+    Available sectors typically include:
+        - Basic Materials
+        - Communication Services
+        - Consumer Cyclical
+        - Consumer Defensive
+        - Energy
+        - Financial Services
+        - Healthcare
+        - Industrials
+        - Real Estate
+        - Technology
+        - Utilities
+
+    Example:
+        # Get current sector performance
+        sectors = get_sector_performance()
+
+        # Find best performing sector
+        if sectors:
+            best = max(sectors, key=lambda x: float(x.get('changesPercentage', '0%').rstrip('%')))
+            print(f"Best sector: {best['sector']} at {best['changesPercentage']}")
+    """
+    return await fetch_sector_performance(date)

@@ -1,0 +1,37 @@
+# Workspace Structure
+
+Working directory: `/home/daytona`
+
+## Standard Directories
+
+| Directory | Purpose |
+|-----------|---------|
+| `results/` | Final deliverables (reports, visualizations) |
+| `data/` | Intermediate storage (tool results, API responses) |
+| `tools/` | MCP tool modules (auto-generated) |
+| `code/` | Execution history (exec_0001.py, etc.) |
+
+## Path Rules by Tool
+
+**execute_code (Python)** - Use RELATIVE paths:
+```python
+with open('results/output.json', 'w') as f:  # Correct
+with open('data/temp.json', 'w') as f:       # Correct
+```
+
+**File tools (Read/Write/Edit)** - Use RELATIVE paths:
+```
+file_path = "results/report.md"    # Correct
+file_path = "config.yaml"          # Correct
+```
+
+**Bash tool** - Use ABSOLUTE paths (working_dir is `/home/daytona`):
+```bash
+ls /home/daytona/results/          # Correct
+cat /home/daytona/data/output.json # Correct
+ls results/                        # Also works (relative to working_dir)
+```
+
+**NEVER use these path patterns**:
+- `/workspace/...` - Wrong prefix, becomes `/home/daytona/workspace/...`
+- Absolute paths starting with `/results/` or `/data/` in Bash - these don't exist at root level

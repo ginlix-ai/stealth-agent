@@ -1,0 +1,1570 @@
+{
+  "embedding_models": {
+    "openai": [
+      {
+        "id": "text-embedding-3-small",
+        "name": "Text Embedding 3 Small",
+        "description": "OpenAI's latest small embedding model with 1536 dimensions",
+        "dimensions": 1536,
+        "max_tokens": 8191,
+        "pricing": {
+          "input": 0.02,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "dimensions": {
+            "type": "int",
+            "default": 1536,
+            "description": "Number of dimensions in the embedding vector"
+          }
+        }
+      },
+      {
+        "id": "text-embedding-3-large",
+        "name": "Text Embedding 3 Large",
+        "description": "OpenAI's latest large embedding model with 3072 dimensions for higher accuracy",
+        "dimensions": 3072,
+        "max_tokens": 8191,
+        "pricing": {
+          "input": 0.13,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "dimensions": {
+            "type": "int",
+            "default": 3072,
+            "description": "Number of dimensions in the embedding vector"
+          }
+        }
+      }
+    ],
+    "dashscope": [
+      {
+        "id": "text-embedding-v4",
+        "name": "Text Embedding V4",
+        "description": "Alibaba's latest multilingual embedding model (Qwen3-Embedding) with flexible dimensions",
+        "dimensions": 1536,
+        "max_tokens": 8192,
+        "pricing": {
+          "input": 0.007,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "dimensions": {
+            "type": "int",
+            "min": 64,
+            "max": 2048,
+            "default": 1536,
+            "description": "Number of dimensions in the embedding vector (64-2048)"
+          }
+        }
+      }
+    ]
+  },
+  "models": {
+    "openai": [
+      {
+        "id": "gpt-5",
+        "name": "GPT-5",
+        "is_reasoning": true,
+        "description": "OpenAI's most advanced reasoning model",
+        "alias": ["gpt-5-2025-08-07"],
+        "pricing": {
+          "input": 1.25,
+          "cached_input": 0.125,
+          "output": 10.00,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "reasoning_effort": {
+            "type": "enum",
+            "options": ["minimal", "low", "medium", "high"],
+            "default": "minimal",
+            "description": "Controls reasoning depth (minimal for fast responses, high for complex tasks)"
+          }
+        },
+        "unsupported_parameters": ["temperature", "top_p", "presence_penalty", "frequency_penalty"]
+      },
+      {
+        "id": "gpt-5-mini",
+        "name": "GPT-5 Mini",
+        "is_reasoning": true,
+        "description": "Smaller, faster GPT-5 variant",
+        "alias": ["gpt-5-mini-2025-08-07"],
+        "pricing": {
+          "input": 0.25,
+          "cached_input": 0.025,
+          "output": 2.00,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "reasoning_effort": {
+            "type": "enum",
+            "options": ["minimal", "low", "medium", "high"],
+            "default": "minimal",
+            "description": "Controls reasoning depth"
+          }
+        },
+        "unsupported_parameters": ["temperature", "top_p", "presence_penalty", "frequency_penalty"]
+      },
+      {
+        "id": "gpt-5-nano",
+        "name": "GPT-5 Nano",
+        "is_reasoning": true,
+        "description": "Smallest, fastest GPT-5 variant",
+        "alias": ["gpt-5-nano-2025-08-07"],
+        "pricing": {
+          "input": 0.05,
+          "cached_input": 0.005,
+          "output": 0.40,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "reasoning_effort": {
+            "type": "enum",
+            "options": ["minimal", "low", "medium", "high"],
+            "default": "minimal",
+            "description": "Controls reasoning depth"
+          }
+        },
+        "unsupported_parameters": ["temperature", "top_p", "presence_penalty", "frequency_penalty"]
+      },
+      {
+        "id": "gpt-5.1-codex",
+        "name": "GPT-5.1 Codex",
+        "is_reasoning": true,
+        "description": "A version of GPT-5.1 optimized for agentic coding in Codex",
+        "pricing": {
+          "input": 1.25,
+          "cached_input": 0.13,
+          "output": 10.00,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "reasoning_effort": {
+            "type": "enum",
+            "options": ["minimal", "low", "medium", "high"],
+            "default": "minimal",
+            "description": "Controls reasoning depth (minimal for fast responses, high for complex tasks)"
+          }
+        },
+        "unsupported_parameters": ["temperature", "top_p", "presence_penalty", "frequency_penalty"]
+      },
+      {
+        "id": "gpt-5.1-codex-mini",
+        "name": "GPT-5.1 Codex Mini",
+        "is_reasoning": true,
+        "description": "Smaller, more cost-effective, less-capable version of GPT-5.1-Codex",
+        "pricing": {
+          "input": 0.25,
+          "cached_input": 0.03,
+          "output": 2.00,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "reasoning_effort": {
+            "type": "enum",
+            "options": ["minimal", "low", "medium", "high"],
+            "default": "minimal",
+            "description": "Controls reasoning depth"
+          }
+        },
+        "unsupported_parameters": ["temperature", "top_p", "presence_penalty", "frequency_penalty"]
+      },
+      {
+        "id": "gpt-5.1-2025-11-13",
+        "name": "GPT-5.1",
+        "is_reasoning": true,
+        "description": "The best model for coding and agentic tasks with configurable reasoning effort",
+        "alias": ["gpt-5.1"],
+        "pricing": {
+          "input": 1.25,
+          "cached_input": 0.13,
+          "output": 10.00,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "reasoning_effort": {
+            "type": "enum",
+            "options": ["minimal", "low", "medium", "high"],
+            "default": "minimal",
+            "description": "Controls reasoning depth (minimal for fast responses, high for complex tasks)"
+          }
+        },
+        "unsupported_parameters": ["temperature", "top_p", "presence_penalty", "frequency_penalty"]
+      },
+      {
+        "id": "gpt-5.2-2025-12-11",
+        "name": "GPT-5.2",
+        "is_reasoning": true,
+        "description": "The best model for coding and agentic tasks with configurable reasoning effort",
+        "alias": ["gpt-5.2"],
+        "pricing": {
+          "input": 1.75,
+          "cached_input": 0.175,
+          "output": 14.00,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "reasoning_effort": {
+            "type": "enum",
+            "options": ["minimal", "low", "medium", "high"],
+            "default": "minimal",
+            "description": "Controls reasoning depth (minimal for fast responses, high for complex tasks)"
+          }
+        },
+        "unsupported_parameters": ["temperature", "top_p", "presence_penalty", "frequency_penalty"]
+      },
+      {
+        "id": "gpt-4.1",
+        "name": "GPT-4.1",
+        "is_reasoning": false,
+        "description": "GPT-4.1 model",
+        "pricing": {
+          "input": 2.00,
+          "cached_input": 0.50,
+          "output": 8.00,
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "gpt-4.1-mini",
+        "name": "GPT-4.1 Mini",
+        "is_reasoning": false,
+        "description": "Smaller GPT-4.1 variant",
+        "pricing": {
+          "input": 0.40,
+          "cached_input": 0.10,
+          "output": 1.60,
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "gpt-4.1-nano",
+        "name": "GPT-4.1 Nano",
+        "is_reasoning": false,
+        "description": "Smallest GPT-4.1 variant",
+        "pricing": {
+          "input": 0.10,
+          "cached_input": 0.025,
+          "output": 0.40,
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "gpt-4o",
+        "name": "GPT-4o",
+        "is_reasoning": false,
+        "description": "Optimized GPT-4 variant"
+      },
+      {
+        "id": "gpt-4o-mini",
+        "name": "GPT-4o Mini",
+        "is_reasoning": false,
+        "description": "Smaller GPT-4o variant"
+      },
+      {
+        "id": "o3",
+        "name": "O3",
+        "is_reasoning": true,
+        "description": "Advanced reasoning model for complex multi-faceted analysis"
+      },
+      {
+        "id": "o4-mini",
+        "name": "O4 Mini",
+        "is_reasoning": true,
+        "description": "Fast, cost-efficient reasoning model"
+      }
+    ],
+    "anthropic": [
+      {
+        "id": "claude-opus-4-5-20251101",
+        "name": "Claude 4.5 Opus",
+        "is_reasoning": false,
+        "description": "Most intelligent model for building agents and coding",
+        "alias": ["claude-opus-4.5"],
+        "pricing": {
+          "input": 5.00,
+          "cached_input": 0.50,
+          "cache_5m": 6.25,
+          "output": 25.00,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "min": 1,
+            "max": 8192,
+            "default": 4096,
+            "description": "Maximum tokens in response"
+          },
+          "top_p": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 1,
+            "description": "Nucleus sampling parameter"
+          }
+        },
+        "unsupported_parameters": ["reasoning_effort", "thinking_budget"]
+      },
+      {
+        "id": "claude-opus-4-20250522",
+        "name": "Claude 4 Opus",
+        "is_reasoning": false,
+        "description": "Claude 4 Opus model",
+        "alias": ["claude-opus-4"],
+        "pricing": {
+          "input": 15.00,
+          "cached_input": 1.50,
+          "cache_5m": 18.75,
+          "cache_1h": 30.00,
+          "output": 75.00,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "min": 1,
+            "max": 8192,
+            "default": 4096,
+            "description": "Maximum tokens in response"
+          },
+          "top_p": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 1,
+            "description": "Nucleus sampling parameter"
+          }
+        },
+        "unsupported_parameters": ["reasoning_effort", "thinking_budget"]
+      },
+      {
+        "id": "claude-sonnet-4-5-20250929",
+        "name": "Claude 4.5 Sonnet",
+        "is_reasoning": true,
+        "description": "Claude 4.5 Sonnet model",
+        "alias": ["claude-sonnet-4.5"],
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 200000, "rate": 3.00, "cached_input": 0.30},
+            {"max_tokens": null, "rate": 6.00, "cached_input": 0.60}
+          ],
+          "output_tiers": [
+            {"max_tokens": 200000, "rate": 15.00},
+            {"max_tokens": null, "rate": 22.50}
+          ],
+          "output_pricing_mode": "input_dependent",
+          "cache_5m": 3.75,
+          "cache_1h": 7.50,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "max_tokens": {
+            "type": "integer",
+            "min": 1,
+            "max": 16000,
+            "default": 16000,
+            "description": "Maximum tokens in response"
+          },
+          "thinking": {
+            "type": "enabled",
+            "budget_tokens": 10000
+          }
+        }
+      },
+      {
+        "id": "claude-sonnet-4-20250522",
+        "name": "Claude 4 Sonnet",
+        "is_reasoning": false,
+        "description": "Claude 4 Sonnet model",
+        "alias": ["claude-sonnet-4"],
+        "pricing": {
+          "input": 3.00,
+          "cached_input": 0.30,
+          "cache_5m": 3.75,
+          "cache_1h": 6.00,
+          "output": 15.00,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "min": 1,
+            "max": 8192,
+            "default": 4096,
+            "description": "Maximum tokens in response"
+          },
+          "top_p": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 1,
+            "description": "Nucleus sampling parameter"
+          }
+        },
+        "unsupported_parameters": ["reasoning_effort", "thinking_budget"]
+      }
+    ],
+    "gemini": [
+      {
+        "id": "gemini-2.5-pro",
+        "name": "Gemini 2.5 Pro",
+        "is_reasoning": true,
+        "description": "Google's advanced reasoning model with thinking capabilities",
+        "pricing": {
+          "input": 1.25,
+          "cached_input": 0.31,
+          "output": 10.00,
+          "storage": 4.50,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "thinking_budget": {
+            "type": "integer",
+            "min": -1,
+            "max": 24576,
+            "default": 0,
+            "description": "Thinking tokens budget (-1 for dynamic, 0 to disable, up to 24576)"
+          },
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 2,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "top_p": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 1,
+            "description": "Nucleus sampling parameter"
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "min": 1,
+            "max": 8192,
+            "default": 8192,
+            "description": "Maximum tokens in response"
+          }
+        },
+        "unsupported_parameters": []
+      },
+      {
+        "id": "gemini-2.5-flash",
+        "name": "Gemini 2.5 Flash",
+        "is_reasoning": true,
+        "description": "Fast reasoning model with thinking disabled by default",
+        "alias": ["google/gemini-2.5-flash"],
+        "pricing": {
+          "input": 0.30,
+          "cached_input": 0.075,
+          "output": 2.50,
+          "storage": 1.00,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "thinking_budget": {
+            "type": "integer",
+            "min": -1,
+            "max": 24576,
+            "default": 0,
+            "description": "Thinking tokens budget (-1 for dynamic, 0 to disable, up to 24576)"
+          },
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 2,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "top_p": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 1,
+            "description": "Nucleus sampling parameter"
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "min": 1,
+            "max": 8192,
+            "default": 8192,
+            "description": "Maximum tokens in response"
+          }
+        },
+        "unsupported_parameters": []
+      },
+      {
+        "id": "gemini-2.5-flash-lite",
+        "name": "Gemini 2.5 Flash-Lite",
+        "is_reasoning": true,
+        "description": "Cost-optimized model with thinking disabled by default",
+        "parameters": {
+          "thinking_budget": {
+            "type": "integer",
+            "min": -1,
+            "max": 24576,
+            "default": 0,
+            "description": "Thinking tokens budget (-1 for dynamic, 0 to disable, up to 24576)"
+          },
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 2,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "top_p": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 1,
+            "description": "Nucleus sampling parameter"
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "min": 1,
+            "max": 8192,
+            "default": 8192,
+            "description": "Maximum tokens in response"
+          }
+        },
+        "unsupported_parameters": []
+      },
+      {
+        "id": "gemini-3-pro-image-preview",
+        "name": "Gemini 3 Pro Image Preview",
+        "description": "Native image generation model optimized for speed, flexibility, and contextual understanding",
+        "pricing": {
+          "input": 2.00,
+          "output": 12.00,
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "gemini-3-pro-preview",
+        "name": "Gemini 3 Pro Preview",
+        "is_reasoning": true,
+        "description": "Google's most powerful agentic and vibe-coding model",
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 200000, "rate": 2.00, "cached_input": 0.20},
+            {"max_tokens": null, "rate": 4.00, "cached_input": 0.40}
+          ],
+          "output_tiers": [
+            {"max_tokens": 200000, "rate": 12.00},
+            {"max_tokens": null, "rate": 18.00}
+          ],
+          "output_pricing_mode": "input_dependent",
+          "cache_storage": 4.50,
+          "unit": "per_1m_tokens"
+        }
+      }
+    ],
+    "lm-studio": [],
+    "openrouter": [
+      {
+        "id": "x-ai/grok-4-fast:free",
+        "name": "xAI Grok 4 Fast (Free)",
+        "is_reasoning": true,
+        "description": "xAI's Grok 4 Fast model with reasoning capabilities (free tier)",
+        "pricing": {
+          "input": 0,
+          "output": 0,
+          "unit": "per_1m_tokens"
+        },
+        "context_window": 2000000,
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 2,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "top_p": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 1,
+            "description": "Nucleus sampling parameter"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "min": 1,
+            "max": 32768,
+            "default": 4096,
+            "description": "Maximum tokens in response"
+          },
+          "reasoning": {
+            "type": "object",
+            "properties": {
+              "effort": {
+                "type": "enum",
+                "options": ["low", "medium", "high"],
+                "default": "medium",
+                "description": "Controls reasoning depth"
+              },
+              "max_tokens": {
+                "type": "integer",
+                "min": 1,
+                "max": 128000,
+                "default": 2000,
+                "description": "Maximum reasoning tokens"
+              }
+            },
+            "description": "Reasoning configuration for Grok models"
+          }
+        },
+        "unsupported_parameters": []
+      }
+    ],
+    "deepseek": [
+      {
+        "id": "deepseek-reasoner",
+        "name": "DeepSeek V3.2",
+        "is_reasoning": true,
+        "description": "DeepSeek's V3.2 reasoning model with extended thinking capabilities",
+        "pricing": {
+          "input": 0.28,
+          "cached_input": 0.028,
+          "output": 0.42,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 2,
+            "default": 0,
+            "description": "Controls randomness in output"
+          }
+        }
+      }
+    ],
+    "moonshot": [
+      {
+        "id": "kimi-k2-0905-preview",
+        "name": "Kimi K2 0905 Preview",
+        "is_reasoning": false,
+        "description": "MoonshotAI's Kimi K2 model with prompt caching and large context window",
+        "pricing": {
+          "input": 0.60,
+          "cached_input": 0.15,
+          "output": 2.50,
+          "unit": "per_1m_tokens"
+        },
+        "context_window": 262144,
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 2,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "top_p": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 1,
+            "description": "Nucleus sampling parameter"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "min": 1,
+            "max": 32768,
+            "default": 4096,
+            "description": "Maximum tokens in response"
+          }
+        },
+        "unsupported_parameters": ["reasoning_effort"]
+      },
+      {
+        "id": "kimi-k2-thinking",
+        "name": "Kimi K2 0905 Preview",
+        "is_reasoning": false,
+        "description": "MoonshotAI's Kimi K2 model with thinking capabilities",
+        "pricing": {
+          "input": 0.60,
+          "cached_input": 0.15,
+          "output": 2.50,
+          "unit": "per_1m_tokens"
+        },
+        "context_window": 262144,
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 2,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "top_p": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 1,
+            "description": "Nucleus sampling parameter"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "min": 1,
+            "max": 32768,
+            "default": 4096,
+            "description": "Maximum tokens in response"
+          }
+        },
+        "unsupported_parameters": ["reasoning_effort"]
+      }
+    ],
+    "vllm": [
+      {
+        "id": "gpt-oss-120b",
+        "name": "GPT-OSS-120B",
+        "is_reasoning": true,
+        "description": "OpenAI's open-source 120B reasoning model",
+        "pricing": {
+          "input": 0.25,
+          "cached_input": 0.025,
+          "output": 2.00,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "reasoning_effort": {
+            "type": "enum",
+            "options": ["low", "medium", "high"],
+            "default": "low",
+            "description": "Controls reasoning depth (low for fast responses, high for complex tasks)"
+          }
+        },
+        "unsupported_parameters": ["temperature", "top_p", "presence_penalty", "frequency_penalty"]
+      },
+      {
+        "id": "gpt-oss-20b",
+        "name": "GPT-OSS-20B",
+        "is_reasoning": true,
+        "description": "OpenAI's open-source 20B reasoning model",
+        "pricing": {
+          "input": 0.05,
+          "cached_input": 0.005,
+          "output": 0.40,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "reasoning_effort": {
+            "type": "enum",
+            "options": ["low", "medium", "high"],
+            "default": "low",
+            "description": "Controls reasoning depth (low for fast responses, high for complex tasks)"
+          }
+        },
+        "unsupported_parameters": ["temperature", "top_p", "presence_penalty", "frequency_penalty"]
+      }
+    ],
+    "z-ai": [
+      {
+        "id": "glm-4.7",
+        "name": "GLM-4.7",
+        "is_reasoning": false,
+        "description": "Z.AI's GLM-4.7 model with prompt caching support",
+        "pricing": {
+          "input": 0.60,
+          "cached_input": 0.11,
+          "output": 2.20,
+          "unit": "per_1m_tokens"
+        },
+        "unsupported_parameters": ["reasoning_effort", "thinking_budget"]
+      }
+    ],
+    "z-ai-cn": [
+      {
+        "id": "glm-4.7",
+        "name": "GLM-4.7",
+        "is_reasoning": false,
+        "description": "Z.AI's GLM-4.7 model with 2D pricing matrix (varies by input AND output length)",
+        "pricing": {
+          "pricing_mode": "2d_matrix",
+          "discount": 0.8,
+          "matrix": [
+            {
+              "input_max": 32000,
+              "output_max": 200,
+              "input": 0.29,
+              "output": 1.14,
+              "cached_input": 0.057
+            },
+            {
+              "input_max": 32000,
+              "output_max": null,
+              "input": 0.43,
+              "output": 2.00,
+              "cached_input": 0.086
+            },
+            {
+              "input_max": null,
+              "output_max": null,
+              "input": 0.57,
+              "output": 2.29,
+              "cached_input": 0.11
+            }
+          ],
+          "unit": "per_1m_tokens"
+        }
+      }
+    ],
+    "minimax": [
+      {
+        "id": "minimax-m2.1-stable",
+        "name": "MiniMax-M2-Stable",
+        "alias": ["MiniMax-M2", "minimax-m2"],
+        "is_reasoning": false,
+        "description": "MiniMax's M2 Stable model with high concurrency for commercial use",
+        "pricing": {
+          "input": 0.30,
+          "output": 1.20,
+          "cached_input": 0.03,
+          "cache_storage": 0.375,
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "minimax-m2.1",
+        "name": "MiniMax-M2.1",
+        "alias": ["MiniMax-M2.1", "minimax-m2.1"],
+        "is_reasoning": false,
+        "description": "Modle if for coding plan",
+        "pricing": {
+          "input": 0.30,
+          "output": 1.20,
+          "cached_input": 0.03,
+          "cache_storage": 0.375,
+          "unit": "per_1m_tokens"
+        }
+      }
+    ],
+    "doubao-anthropic": [
+      {
+        "id": "doubao-seed-code-preview-251028",
+        "name": "Doubao Seed Code",
+        "is_reasoning": true,
+        "description": "Code-optimized reasoning model with extended thinking capabilities and input-dependent tiered pricing",
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.17},
+            {"max_tokens": 128000, "rate": 0.20},
+            {"max_tokens": null, "rate": 0.40}
+          ],
+          "output_tiers": [
+            {"max_tokens": 32000, "rate": 1.14},
+            {"max_tokens": 128000, "rate": 1.71},
+            {"max_tokens": null, "rate": 2.29}
+          ],
+          "output_pricing_mode": "input_dependent",
+          "cached_input": 0.034,
+          "cache_storage": 0.0024,
+          "unit": "per_1m_tokens"
+        }
+      }
+    ],
+    "volcengine": [
+      {
+        "id": "doubao-seed-1.6-vision",
+        "name": "Doubao Seed 1.6 Vision",
+        "is_reasoning": true,
+        "description": "Vision model with thinking capabilities and tiered pricing (0.8-2.4 input based on token length)",
+        "alias": ["doubao-seed-1-6-vision-250615"],
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.11},
+            {"max_tokens": 128000, "rate": 0.17},
+            {"max_tokens": null, "rate": 0.34}
+          ],
+          "cache_storage": 0.0024,
+          "cache_hit": 0.023,
+          "output": 1.13,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "caching": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "enum",
+                "options": ["enabled", "disabled"],
+                "default": "enabled"
+              }
+            }
+          },
+          "thinking": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "enum",
+                "options": ["enabled", "disabled"],
+                "default": "enabled"
+              }
+            }
+          }
+        },
+        "unsupported_parameters": []
+      },
+      {
+        "id": "doubao-seed-1.6",
+        "name": "Doubao Seed 1.6",
+        "is_reasoning": true,
+        "description": "Base model with thinking capabilities and tiered pricing (0.8-2.4 input, 2-24 output based on ratios)",
+        "alias": ["doubao-seed-1-6-251015", "doubao-seed-1-6"],
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.11},
+            {"max_tokens": 128000, "rate": 0.17},
+            {"max_tokens": null, "rate": 0.34}
+          ],
+          "cache_storage": 0.0024,
+          "cache_hit": 0.023,
+          "output": 1.13,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "caching": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "enum",
+                "options": ["enabled", "disabled"],
+                "default": "enabled"
+              }
+            }
+          },
+          "thinking": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "enum",
+                "options": ["enabled", "disabled"],
+                "default": "enabled"
+              }
+            }
+          }
+        },
+        "unsupported_parameters": []
+      },
+      {
+        "id": "doubao-seed-1.8",
+        "name": "Doubao Seed 1.8",
+        "is_reasoning": true,
+        "description": "Latest base model with thinking capabilities and input-dependent tiered pricing",
+        "alias": ["doubao-seed-1-8-251228", "doubao-seed-1-8"],
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.11},
+            {"max_tokens": 128000, "rate": 0.17},
+            {"max_tokens": 256000, "rate": 0.33}
+          ],
+          "output_tiers": [
+            {"max_tokens": 32000, "rate": 1.11},
+            {"max_tokens": 128000, "rate": 2.22},
+            {"max_tokens": 256000, "rate": 3.33}
+          ],
+          "output_pricing_mode": "input_dependent",
+          "cache_storage": 0.0024,
+          "cache_hit": 0.022,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "caching": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "enum",
+                "options": ["enabled", "disabled"],
+                "default": "enabled"
+              }
+            }
+          },
+          "thinking": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "enum",
+                "options": ["enabled", "disabled"],
+                "default": "enabled"
+              }
+            }
+          }
+        },
+        "unsupported_parameters": []
+      },
+      {
+        "id": "doubao-seed-1.6-thinking",
+        "name": "Doubao Seed 1.6 Thinking",
+        "is_reasoning": true,
+        "description": "Thinking-optimized model with tiered pricing (0.8-2.4 input, 8-24 output)",
+        "alias": ["doubao-seed-1-6-thinking-250615"],
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.11},
+            {"max_tokens": 128000, "rate": 0.17},
+            {"max_tokens": null, "rate": 0.34}
+          ],
+          "cache_storage": 0.0024,
+          "cache_hit": 0.023,
+          "output": 1.13,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "caching": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "enum",
+                "options": ["enabled", "disabled"],
+                "default": "enabled"
+              }
+            }
+          },
+          "thinking": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "enum",
+                "options": ["enabled", "disabled"],
+                "default": "enabled"
+              }
+            }
+          }
+        },
+        "unsupported_parameters": []
+      },
+      {
+        "id": "doubao-seed-1.6-flash",
+        "name": "Doubao Seed 1.6 Flash",
+        "is_reasoning": true,
+        "description": "Fast and cost-efficient model with tiered pricing (0.15-0.6 input, 1.5-6 output)",
+        "alias": ["doubao-seed-1-6-flash-250615"],
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.021},
+            {"max_tokens": 128000, "rate": 0.042},
+            {"max_tokens": null, "rate": 0.085}
+          ],
+          "cache_storage": 0.0024,
+          "cache_hit": 0.0042,
+          "output": 0.42,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "caching": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "enum",
+                "options": ["enabled", "disabled"],
+                "default": "enabled"
+              }
+            }
+          },
+          "thinking": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "enum",
+                "options": ["enabled", "disabled"],
+                "default": "enabled"
+              }
+            }
+          }
+        },
+        "unsupported_parameters": []
+      },
+      {
+        "id": "deepseek-v3-1-terminus",
+        "name": "DeepSeek V3.1",
+        "is_reasoning": true,
+        "description": "Hybrid reasoning model supporting both thinking and non-thinking inference modes",
+        "pricing": {
+          "input": 0.57,
+          "cached_input": 0.11,
+          "output": 1.71,
+          "cache_storage": 0.0024,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "caching": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "enum",
+                "options": ["enabled", "disabled"],
+                "default": "enabled"
+              }
+            }
+          },
+          "thinking": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "enum",
+                "options": ["enabled", "disabled"],
+                "default": "disabled"
+              }
+            }
+          }
+        },
+        "unsupported_parameters": []
+      },
+      {
+        "id": "doubao-seed-translation",
+        "name": "Doubao Seed Translation",
+        "is_reasoning": false,
+        "description": "Multi-language translation model optimized for accuracy and fluency",
+        "pricing": {
+          "input": 0.17,
+          "output": 0.51,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 0,
+            "description": "Controls randomness in output"
+          }
+        },
+        "unsupported_parameters": ["caching", "thinking"]
+      },
+      {
+        "id": "doubao-seed-code-preview-251028",
+        "name": "Doubao Seed Code",
+        "is_reasoning": true,
+        "description": "Code-optimized reasoning model with extended thinking capabilities and input-dependent tiered pricing",
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.17},
+            {"max_tokens": 128000, "rate": 0.20},
+            {"max_tokens": null, "rate": 0.40}
+          ],
+          "output_tiers": [
+            {"max_tokens": 32000, "rate": 1.14},
+            {"max_tokens": 128000, "rate": 1.71},
+            {"max_tokens": null, "rate": 2.29}
+          ],
+          "output_pricing_mode": "input_dependent",
+          "cached_input": 0.034,
+          "cache_storage": 0.0024,
+          "unit": "per_1m_tokens"
+        },
+        "parameters": {
+          "temperature": {
+            "type": "float",
+            "min": 0,
+            "max": 1,
+            "default": 0,
+            "description": "Controls randomness in output"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "min": 1,
+            "max": 32768,
+            "default": 4096,
+            "description": "Maximum tokens in response"
+          },
+          "thinking": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "enum",
+                "options": ["enabled", "disabled"],
+                "default": "enabled"
+              }
+            }
+          }
+        },
+        "unsupported_parameters": []
+      }
+    ],
+    "dashscope": [
+      {
+        "id": "qwen3-vl-plus",
+        "name": "Qwen3 VL Plus",
+        "is_reasoning": true,
+        "is_vision": true,
+        "description": "Alibaba's Qwen3 vision-language model (Plus tier) with thinking capabilities",
+        "context_window": 262144,
+        "max_output": 32768,
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.139, "cached_input": 0.028},
+            {"max_tokens": 128000, "rate": 0.208, "cached_input": 0.042},
+            {"max_tokens": null, "rate": 0.417, "cached_input": 0.083}
+          ],
+          "output_tiers": [
+            {"max_tokens": 32000, "rate": 1.39},
+            {"max_tokens": 128000, "rate": 2.08},
+            {"max_tokens": null, "rate": 4.17}
+          ],
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "qwen3-vl-flash",
+        "name": "Qwen3 VL Flash",
+        "is_reasoning": true,
+        "is_vision": true,
+        "description": "Alibaba's Qwen3 vision-language model (Flash tier) - fast and cost-efficient",
+        "context_window": 262144,
+        "max_output": 32768,
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.021, "cached_input": 0.004},
+            {"max_tokens": 128000, "rate": 0.042, "cached_input": 0.008},
+            {"max_tokens": null, "rate": 0.083, "cached_input": 0.017}
+          ],
+          "output_tiers": [
+            {"max_tokens": 32000, "rate": 0.21},
+            {"max_tokens": 128000, "rate": 0.42},
+            {"max_tokens": null, "rate": 0.83}
+          ],
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "qwen3-max",
+        "name": "Qwen3 Max",
+        "is_reasoning": false,
+        "description": "Alibaba's Qwen3 Max model - highest capability, non-thinking mode only",
+        "context_window": 252000,
+        "max_output": 32768,
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.44, "cached_input": 0.088},
+            {"max_tokens": 128000, "rate": 0.89, "cached_input": 0.178},
+            {"max_tokens": null, "rate": 1.33, "cached_input": 0.266}
+          ],
+          "output_tiers": [
+            {"max_tokens": 32000, "rate": 1.78},
+            {"max_tokens": 128000, "rate": 3.56},
+            {"max_tokens": null, "rate": 5.33}
+          ],
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "qwen3-max-preview",
+        "name": "Qwen3 Max Preview",
+        "is_reasoning": true,
+        "description": "Alibaba's Qwen3 Max Preview - supports thinking mode",
+        "context_window": 252000,
+        "max_output": 32768,
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.83, "cached_input": 0.166},
+            {"max_tokens": 128000, "rate": 1.39, "cached_input": 0.278},
+            {"max_tokens": null, "rate": 2.08, "cached_input": 0.416}
+          ],
+          "output_tiers": [
+            {"max_tokens": 32000, "rate": 3.33},
+            {"max_tokens": 128000, "rate": 5.56},
+            {"max_tokens": null, "rate": 8.33}
+          ],
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "qwen-plus",
+        "name": "Qwen Plus a235b",
+        "is_reasoning": false,
+        "description": "Alibaba's Qwen Plus - balanced performance and cost",
+        "context_window": 1000000,
+        "max_output": 32768,
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 128000, "rate": 0.11, "cached_input": 0.022},
+            {"max_tokens": 256000, "rate": 0.33, "cached_input": 0.066},
+            {"max_tokens": null, "rate": 0.67, "cached_input": 0.134}
+          ],
+          "output_tiers": [
+            {"max_tokens": 128000, "rate": 0.28},
+            {"max_tokens": 256000, "rate": 2.78},
+            {"max_tokens": null, "rate": 6.67}
+          ],
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "qwen-plus-2025-09-11",
+        "name": "Qwen Plus next 80b",
+        "is_reasoning": false,
+        "description": "Alibaba's Qwen Plus - balanced performance and cost",
+        "context_window": 1000000,
+        "max_output": 32768,
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 128000, "rate": 0.11, "cached_input": 0.022},
+            {"max_tokens": 256000, "rate": 0.33, "cached_input": 0.066},
+            {"max_tokens": null, "rate": 0.67, "cached_input": 0.134}
+          ],
+          "output_tiers": [
+            {"max_tokens": 128000, "rate": 0.28},
+            {"max_tokens": 256000, "rate": 2.78},
+            {"max_tokens": null, "rate": 6.67}
+          ],
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "qwen-flash",
+        "name": "Qwen Flash",
+        "is_reasoning": false,
+        "description": "Alibaba's Qwen Flash - fastest and most cost-efficient",
+        "context_window": 1000000,
+        "max_output": 32768,
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 128000, "rate": 0.021, "cached_input": 0.004},
+            {"max_tokens": 256000, "rate": 0.083, "cached_input": 0.017},
+            {"max_tokens": null, "rate": 0.17, "cached_input": 0.034}
+          ],
+          "output_tiers": [
+            {"max_tokens": 128000, "rate": 0.21},
+            {"max_tokens": 256000, "rate": 0.83},
+            {"max_tokens": null, "rate": 1.67}
+          ],
+          "unit": "per_1m_tokens"
+        }
+      }
+    ],
+    "dashscope-sg": [
+      {
+        "id": "qwen3-vl-plus",
+        "name": "Qwen3 VL Plus (SG)",
+        "is_reasoning": true,
+        "is_vision": true,
+        "description": "Alibaba's Qwen3 vision-language model (Plus tier) - Singapore region",
+        "context_window": 262144,
+        "max_output": 32768,
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.20, "cached_input": 0.04},
+            {"max_tokens": 128000, "rate": 0.31, "cached_input": 0.06},
+            {"max_tokens": 256000, "rate": 0.61, "cached_input": 0.12}
+          ],
+          "output_tiers": [
+            {"max_tokens": 32000, "rate": 1.63},
+            {"max_tokens": 128000, "rate": 2.45},
+            {"max_tokens": 256000, "rate": 4.89}
+          ],
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "qwen3-vl-flash",
+        "name": "Qwen3 VL Flash (SG)",
+        "is_reasoning": true,
+        "is_vision": true,
+        "description": "Alibaba's Qwen3 vision-language model (Flash tier) - Singapore region, fast and cost-efficient",
+        "context_window": 262144,
+        "max_output": 32768,
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.05, "cached_input": 0.01},
+            {"max_tokens": 128000, "rate": 0.08, "cached_input": 0.02},
+            {"max_tokens": 256000, "rate": 0.12, "cached_input": 0.02}
+          ],
+          "output_tiers": [
+            {"max_tokens": 32000, "rate": 0.41},
+            {"max_tokens": 128000, "rate": 0.61},
+            {"max_tokens": 256000, "rate": 0.98}
+          ],
+          "unit": "per_1m_tokens"
+        }
+      }
+    ]
+  },
+  "provider_config": {
+    "openai": {
+      "sdk": "openai",
+      "base_url": "https://api.openai.com/v1",
+      "env_key": "OPENAI_API_KEY",
+      "use_response_api": false
+    },
+    "anthropic": {
+      "sdk": "anthropic",
+      "env_key": "ANTHROPIC_API_KEY"
+    },
+    "gemini": {
+      "sdk": "gemini",
+      "env_key": "GEMINI_API_KEY"
+    },
+    "lm-studio": {
+      "sdk": "openai",
+      "base_url": "http://{HOST_IP}:1234/v1",
+      "env_key": "lm-studio",
+      "dynamic_models": true,
+      "default_parameters": {
+        "temperature": 0
+      }
+    },
+    "vllm": {
+      "sdk": "openai",
+      "base_url": "http://{HOST_IP}:8000/v1",
+      "env_key": null,
+      "dynamic_models": true,
+      "use_response_api": true
+    },
+    "volcengine": {
+      "sdk": "openai",
+      "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+      "env_key": "VOLCENGINE_API_KEY",
+      "use_response_api": true
+    },
+    "openrouter": {
+      "sdk": "deepseek",
+      "base_url": "https://openrouter.ai/api/v1",
+      "env_key": "OPENROUTER_API_KEY"
+    },
+    "moonshot": {
+      "sdk": "anthropic",
+      "base_url": "https://api.moonshot.ai/anthropic",
+      "env_key": "MOONSHOT_API_KEY",
+      "use_response_api": false
+    },
+    "deepseek": {
+      "sdk": "anthropic",
+      "base_url": "https://api.deepseek.com/anthropic",
+      "env_key": "DEEPSEEK_API_KEY"
+    },
+    "qwen": {
+      "sdk": "openai",
+      "base_url": "https://openrouter.ai/api/v1",
+      "env_key": "OPENROUTER_API_KEY"
+    },
+    "alibaba": {
+      "sdk": "openai",
+      "base_url": "https://openrouter.ai/api/v1",
+      "env_key": "OPENROUTER_API_KEY"
+    },
+    "z-ai": {
+      "sdk": "anthropic",
+      "base_url": "https://api.z.ai/api/anthropic",
+      "env_key": "ZAI_API_KEY"
+    },
+    "z-ai-cn": {
+      "sdk": "anthropic",
+      "base_url": "https://open.bigmodel.cn/api/anthropic",
+      "env_key": "ZAI_CN_API_KEY"
+    },
+    "minimax": {
+      "sdk": "anthropic",
+      "base_url": "https://api.minimax.io/anthropic",
+      "env_key": "MINIMAX_API_KEY"
+    },
+    "doubao-anthropic": {
+      "sdk": "anthropic",
+      "base_url": "https://ark.cn-beijing.volces.com/api/compatible",
+      "env_key": "VOLCENGINE_API_KEY"
+    },
+    "dashscope": {
+      "sdk": "qwq",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "env_key": "DASHSCOPE_API_KEY"
+    },
+    "dashscope-sg": {
+      "sdk": "qwq",
+      "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      "env_key": "DASHSCOPE_API_KEY_INT"
+    },
+    "dashscope-anthropic": {
+      "sdk": "anthropic",
+      "base_url": "https://dashscope.aliyuncs.com/apps/anthropic",
+      "env_key": "DASHSCOPE_API_KEY"
+    }
+  },
+  "infrastructure_pricing": {
+    "TavilySearchTool": {
+      "credits_per_use": 16,
+      "search_type": "advanced"
+    },
+    "TavilySearchImages": {
+      "credits_per_use": 16,
+      "search_type": "advanced"
+    },
+    "BochaSearchTool": {
+      "credits_per_use": 8,
+      "search_type": "ai_search",
+      "pricing_note": "0.06 RMB per call (~$0.0083 USD at 7.2 exchange rate, AI Search endpoint)"
+    }
+  },
+  "credit_conversion": {
+    "usd_to_credits_rate": 1000,
+    "description": "Conversion rate from USD to credits (1 USD = 1000 credits)"
+  }
+}

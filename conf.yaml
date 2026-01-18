@@ -1,0 +1,142 @@
+# =============================================================================
+# APPLICATION CONFIGURATION
+# =============================================================================
+
+# Application Settings
+debug: false
+agent_recursion_limit: 100
+
+# Workflow Settings
+workflow_timeout: 3200  # seconds (53 minutes)
+sse_keepalive_interval: 15  # seconds
+
+# Feature Flags
+result_log_db_enabled: true
+redis_warm_on_startup: true
+langsmith_tracing: false
+
+# SSE Event Logging
+sse_event_log_enabled: true
+sse_event_log_level: info
+
+# General Application Logging
+log_level: INFO
+log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Module-specific log levels (overrides root level)
+module_log_levels:
+  # Grouped library settings (use group: prefix for predefined groups)
+  group:third_party_libraries: WARNING
+  group:langchain_libraries: WARNING
+
+  # Application modules (hierarchical - parent loggers affect all children)
+  src.tools: INFO
+  src.infoflow: INFO
+  src.deep_research: INFO
+
+# CORS Settings
+allowed_origins:
+  - "*"
+
+# Service Configuration
+search_api: tavily  # Options: tavily, duckduckgo, brave_search, arxiv, bocha
+
+
+# =============================================================================
+# BACKGROUND EXECUTION CONFIGURATION
+# =============================================================================
+# REQUIRED: Background execution is always enabled to ensure workflows complete
+# even if SSE clients disconnect. These settings control background task behavior.
+background_execution:
+  max_concurrent_workflows: 100  # Maximum number of concurrent background workflows
+  workflow_result_ttl: 86400  # Workflow result retention time in seconds (24 hours)
+  abandoned_workflow_timeout: 3600  # Auto-cleanup timeout for workflows with no active connections (1 hour)
+  cleanup_interval: 300  # Background cleanup task interval in seconds (5 minutes)
+  enable_intermediate_storage: true  # Store intermediate results during execution
+  max_stored_messages_per_agent: 150000  # Maximum events to buffer per workflow (increased for long-running research)
+
+  # Event storage backend configuration
+  event_storage_backend: redis  # Backend for event buffering: "redis" or "memory"
+  event_storage_fallback_to_memory: true  # Fallback to in-memory storage if Redis fails
+
+
+# =============================================================================
+# REDIS CACHE CONFIGURATION
+# =============================================================================
+# Connection details (URL with credentials) are in .env: REDIS_URL
+# Redis is used for caching and background workflow event storage
+redis:
+  cache_enabled: true  # Enable/disable caching globally
+  max_connections: 10  # Connection pool size
+
+  # Cache TTL settings (seconds)
+  ttl:
+    results_list: 300  # Results list cache TTL (5 minutes)
+    result_detail: 900  # Result detail cache TTL (15 minutes)
+    metadata: 900  # Metadata tags/tickers cache TTL (15 minutes)
+    metadata_summary: 600  # Metadata summary cache TTL (10 minutes)
+    workflow_events: 86400  # Workflow event buffer TTL (24 hours)
+
+  # Cache Invalidation
+  cache_invalidate_on_write: true  # Invalidate cache on writes
+
+  # Stale-While-Revalidate (SWR) Configuration
+  # SWR returns stale data immediately while refreshing in background
+  swr:
+    enabled: true  # Enable SWR for cache reads
+    soft_ttl_ratio: 0.6  # Refresh when remaining TTL < 60% of original (e.g., at 3 min for 5 min TTL)
+    warm_after_invalidation: true  # Pre-populate cache after invalidation
+
+
+# =============================================================================
+# CRAWLER CONFIGURATION
+# =============================================================================
+# Web crawling settings for Crawl4AI browser-based content extraction
+# Uses SafeCrawlerWrapper for circuit breaker and fault tolerance
+crawler:
+  max_concurrent_crawls: 20  # Max parallel browser contexts (adjust based on RAM: ~150MB each)
+  page_timeout: 60000  # Page load timeout in ms
+  delay_before_return: 3  # Seconds to wait for JS rendering after DOM ready
+
+  # Circuit breaker settings - prevents cascade failures when browser has issues
+  circuit_breaker:
+    failure_threshold: 5      # Number of failures before opening circuit
+    recovery_timeout: 60      # Seconds before attempting recovery (half-open state)
+    success_threshold: 2      # Successes needed to close circuit after recovery
+
+  # Queue limits - prevents resource exhaustion
+  queue:
+    max_size: 100             # Maximum queued crawl requests
+    slot_timeout: 10          # Seconds to wait for crawl slot before giving up
+
+
+# =============================================================================
+# WEB FETCH CONFIGURATION
+# =============================================================================
+# Settings for web_fetch tool's sitemap-aware content extraction
+web_fetch:
+  sitemap_enabled: true       # Sitemap fetching for URL suggestions
+  sitemap_max_urls: 100       # Max URLs to fetch from sitemap
+  sitemap_max_examples: 3     # Max example URLs per path prefix in summary
+  sitemap_timeout: 10         # Timeout in seconds for sitemap fetch
+
+
+# =============================================================================
+# EMBEDDING MODEL CONFIGURATION
+# =============================================================================
+embedding:
+  model: embedding-small  # Options: embedding-small, embedding-large (see src/llms/llm_config.json)
+  batch_size: 100  # Number of texts to embed in a single batch
+  enable_auto_embedding: true  # Auto-generate embeddings for new infoflow results
+  hybrid_search_alpha: 0.5  # Balance between semantic (0.0) and keyword search (1.0)
+
+
+# =============================================================================
+# SUMMARIZATION MIDDLEWARE CONFIGURATION
+# =============================================================================
+# Automatically summarizes conversation history when approaching token limits
+# Uses LangChain's built-in SummarizationMiddleware
+summarization:
+  enabled: true  # Enable/disable conversation summarization
+  token_threshold: 120000  # Trigger summarization when messages exceed this token count
+  keep_messages: 5  # Preserve last N messages after summarization

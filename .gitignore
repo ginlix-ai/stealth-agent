@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+.langgraph_api/
+
+.ptc-agent/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+test/output/
+
+# Jupyter
+.ipynb_checkpoints
+
+# Daytona
+.daytona/
+/output/
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+CLAUDE.md
+.cluade/
+WARP.md
+
+posts/

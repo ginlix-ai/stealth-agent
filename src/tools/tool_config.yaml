@@ -1,0 +1,3 @@
+search_image:
+  backend: tavily
+  include_images: true

@@ -1,0 +1,1637 @@
+"""
+Background Task Manager
+
+Manages workflow execution as background tasks that continue running
+independently of SSE client connections.
+
+Key Features:
+- Decouples workflow execution from HTTP connections
+- Uses asyncio.shield() to protect tasks from client disconnect cancellation
+- Stores intermediate results during execution for reconnection support
+- Automatic cleanup of abandoned workflows
+- Thread-safe task registry with async locks
+- Supports concurrent workflow executions
+
+Architecture:
+- Background tasks run independently and persist in task registry
+- SSE connections become "viewers" that attach/detach from running tasks
+- Results are buffered in-memory during execution
+- Cleanup task runs periodically to remove stale workflows
+
+Usage:
+    manager = BackgroundTaskManager.get_instance()
+
+    # Start a workflow in background
+    task_info = await manager.start_workflow(
+        thread_id="uuid",
+        workflow_coro=graph.astream(input, config)
+    )
+
+    # Attach SSE connection to consume results
+    async for event in manager.stream_results(thread_id):
+        yield event
+
+    # Later: reconnect to same workflow
+    async for event in manager.stream_results(thread_id, from_beginning=True):
+        yield event
+"""
+
+import asyncio
+import logging
+import time
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional, AsyncIterator, Callable, Coroutine
+from enum import Enum
+from dataclasses import dataclass, field
+from collections import deque
+from contextlib import suppress
+
+from src.config.settings import (
+    get_max_concurrent_workflows,
+    get_workflow_result_ttl,
+    get_abandoned_workflow_timeout,
+    get_cleanup_interval,
+    is_intermediate_storage_enabled,
+    get_max_stored_messages_per_agent,
+    get_event_storage_backend,
+    is_event_storage_fallback_enabled,
+    get_redis_ttl_workflow_events,
+)
+from src.utils.cache.redis_cache import get_cache_client
+from src.utils.tracking import serialize_agent_messages
+from src.server.utils.persistence_utils import (
+    get_token_usage_from_callback,
+    get_tool_usage_from_handler,
+    calculate_execution_time,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class TaskStatus(str, Enum):
+    """Background task execution status."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    SOFT_INTERRUPTED = "soft_interrupted"
+
+
+@dataclass
+class TaskInfo:
+    """Information about a background workflow task."""
+    thread_id: str
+    status: TaskStatus
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    last_access_at: datetime = field(default_factory=datetime.now)
+
+    # Task execution
+    task: Optional[asyncio.Task] = None
+    inner_task: Optional[asyncio.Task] = None  # Reference to consume_workflow task
+    error: Optional[str] = None
+
+    # Cancellation control
+    explicit_cancel: bool = False  # True if user explicitly cancelled
+    cancel_event: asyncio.Event = field(default_factory=asyncio.Event)  # Cooperative cancellation signal
+
+    # Soft interrupt control (pause main agent, keep subagents running)
+    soft_interrupt_event: asyncio.Event = field(default_factory=asyncio.Event)
+    soft_interrupted: bool = False
+
+    # Subagent tracking
+    active_subagents: set = field(default_factory=set)  # Currently running subagent names
+    completed_subagents: set = field(default_factory=set)  # Completed subagent names
+
+    # Result storage
+    result_buffer: deque = field(default_factory=deque)  # Stores SSE events
+    final_result: Optional[Any] = None
+
+    # Connection tracking
+    active_connections: int = 0
+
+    # Live event broadcasting for reconnection support
+    live_queues: list = field(default_factory=list)  # List[asyncio.Queue]
+
+    # Metadata
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    # Completion callback
+    completion_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None
+
+    # LangGraph compiled graph for state queries (stored per-task, not global)
+    graph: Optional[Any] = None
+
+
+class SoftInterruptError(Exception):
+    """Internal control-flow exception for user ESC soft-interrupt."""
+
+
+class BackgroundTaskManager:
+    """
+    Manages background workflow task execution.
+
+    Singleton service that handles:
+    - Task lifecycle (create, execute, complete, cleanup)
+    - Result buffering and streaming
+    - Connection management
+    - Automatic cleanup
+    """
+
+    # Singleton instance
+    _instance: Optional['BackgroundTaskManager'] = None
+
+    def __init__(self):
+        """Initialize background task manager."""
+        self.tasks: Dict[str, TaskInfo] = {}
+        self.task_lock = asyncio.Lock()
+
+        # Configuration
+        self.max_concurrent = get_max_concurrent_workflows()
+        self.result_ttl = get_workflow_result_ttl()
+        self.abandoned_timeout = get_abandoned_workflow_timeout()
+        self.cleanup_interval = get_cleanup_interval()
+        self.enable_storage = is_intermediate_storage_enabled()
+        self.max_stored_messages = get_max_stored_messages_per_agent()
+
+        # Event storage configuration
+        self.event_storage_backend = get_event_storage_backend()
+        self.event_storage_fallback = is_event_storage_fallback_enabled()
+        self.redis_event_ttl = get_redis_ttl_workflow_events()
+
+        # Cleanup task
+        self.cleanup_task: Optional[asyncio.Task] = None
+
+    @classmethod
+    def get_instance(cls) -> 'BackgroundTaskManager':
+        """
+        Get singleton instance of BackgroundTaskManager.
+
+        Returns:
+            BackgroundTaskManager instance
+        """
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    async def _get_task_info_locked(self, thread_id: str) -> Optional[TaskInfo]:
+        """
+        Acquire lock and get task info.
+
+        Helper method to reduce boilerplate of locking + dict lookup pattern.
+
+        Args:
+            thread_id: Workflow thread identifier
+
+        Returns:
+            TaskInfo or None if not found
+        """
+        async with self.task_lock:
+            return self.tasks.get(thread_id)
+
+    async def start_cleanup_task(self):
+        """Start periodic cleanup background task."""
+        if self.cleanup_task is None or self.cleanup_task.done():
+            self.cleanup_task = asyncio.create_task(self._cleanup_loop())
+            logger.info(
+                f"BackgroundTaskManager: Cleanup task started "
+                f"(max_concurrent={self.max_concurrent}, "
+                f"result_ttl={self.result_ttl}s, "
+                f"abandoned_timeout={self.abandoned_timeout}s)"
+            )
+
+    async def stop_cleanup_task(self):
+        """Stop periodic cleanup background task."""
+        if self.cleanup_task and not self.cleanup_task.done():
+            self.cleanup_task.cancel()
+            try:
+                await self.cleanup_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("[BackgroundTaskManager] Stopped cleanup task")
+
+    async def shutdown(self, timeout: float = 25.0):
+        """
+        Gracefully shutdown background task manager.
+
+        Cancels all running workflows and waits for them to complete
+        before database pools are closed.
+
+        Args:
+            timeout: Maximum time to wait for tasks to complete (seconds)
+        """
+        logger.info("[BackgroundTaskManager] Starting graceful shutdown...")
+
+        # Stop cleanup task first
+        await self.stop_cleanup_task()
+
+        # Get list of running workflows
+        async with self.task_lock:
+            running_tasks = [
+                (thread_id, info)
+                for thread_id, info in self.tasks.items()
+                if info.status in [TaskStatus.RUNNING, TaskStatus.QUEUED]
+            ]
+
+        if not running_tasks:
+            logger.info("[BackgroundTaskManager] No running workflows to cancel")
+            return
+
+        logger.info(
+            f"[BackgroundTaskManager] Cancelling {len(running_tasks)} running workflows"
+        )
+
+        # Cancel all running workflows
+        for thread_id, info in running_tasks:
+            await self.cancel_workflow(thread_id)
+
+        # Wait for tasks to complete with timeout
+        try:
+            async with asyncio.timeout(timeout):
+                for thread_id, info in running_tasks:
+                    if info.task and not info.task.done():
+                        try:
+                            await info.task
+                        except (asyncio.CancelledError, Exception):
+                            pass  # Expected during shutdown
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"[BackgroundTaskManager] Shutdown timeout after {timeout}s, "
+                f"forcing cancellation of stuck tasks"
+            )
+
+            # Aggressive cancellation: force cancel stuck tasks
+            stuck_tasks = []
+            for thread_id, info in running_tasks:
+                if info.task and not info.task.done():
+                    logger.warning(
+                        f"[BackgroundTaskManager] Force-cancelling stuck task: {thread_id}"
+                    )
+                    info.task.cancel()
+                    stuck_tasks.append(info.task)
+
+            # Wait briefly for forced cancellations to complete
+            if stuck_tasks:
+                try:
+                    async with asyncio.timeout(5.0):
+                        await asyncio.gather(*stuck_tasks, return_exceptions=True)
+                    logger.info(
+                        f"[BackgroundTaskManager] Force-cancelled {len(stuck_tasks)} stuck tasks"
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(
+                        f"[BackgroundTaskManager] {len(stuck_tasks)} tasks did not respond "
+                        f"to force cancellation after 5s"
+                    )
+
+        logger.info("[BackgroundTaskManager] Shutdown complete")
+
+    async def _cleanup_loop(self):
+        """Periodic cleanup loop for stale tasks."""
+        while True:
+            try:
+                await asyncio.sleep(self.cleanup_interval)
+                await self._cleanup_abandoned_tasks()
+            except asyncio.CancelledError:
+                logger.info("[BackgroundTaskManager] Cleanup loop cancelled")
+                break
+            except Exception as e:
+                logger.error(f"[BackgroundTaskManager] Error in cleanup loop: {e}")
+
+    async def _cleanup_abandoned_tasks(self):
+        """Clean up abandoned and completed tasks based on TTL."""
+        now = datetime.now()
+        abandoned_threshold = now - timedelta(seconds=self.abandoned_timeout)
+        completed_threshold = now - timedelta(seconds=self.result_ttl)
+
+        to_remove = []
+
+        async with self.task_lock:
+            for thread_id, info in self.tasks.items():
+                # Remove completed tasks after TTL
+                if info.status in [
+                    TaskStatus.COMPLETED,
+                    TaskStatus.FAILED,
+                    TaskStatus.CANCELLED,
+                    TaskStatus.SOFT_INTERRUPTED,
+                ]:
+                    if info.completed_at and info.completed_at < completed_threshold:
+                        to_remove.append(thread_id)
+                        logger.info(
+                            f"[BackgroundTaskManager] Cleanup: removing completed task "
+                            f"{thread_id} (age: {now - info.completed_at})"
+                        )
+
+                # Remove abandoned running tasks
+                elif info.status == TaskStatus.RUNNING:
+                    if info.active_connections == 0 and info.last_access_at < abandoned_threshold:
+                        to_remove.append(thread_id)
+                        logger.warning(
+                            f"[BackgroundTaskManager] Cleanup: removing abandoned task "
+                            f"{thread_id} (no connections for {now - info.last_access_at})"
+                        )
+                        # Cancel the task
+                        if info.task and not info.task.done():
+                            info.task.cancel()
+
+            # Remove from registry
+            for thread_id in to_remove:
+                del self.tasks[thread_id]
+
+        if to_remove:
+            logger.info(
+                f"[BackgroundTaskManager] Cleaned up {len(to_remove)} tasks: {to_remove}"
+            )
+
+    async def start_workflow(
+        self,
+        thread_id: str,
+        workflow_generator: Any,
+        metadata: Optional[Dict[str, Any]] = None,
+        completion_callback: Optional[Callable[[], Coroutine[Any, Any, None]]] = None,
+        graph: Optional[Any] = None,
+    ) -> TaskInfo:
+        """
+        Start a workflow as a background task.
+
+        Args:
+            thread_id: Workflow thread identifier
+            workflow_generator: Async generator from graph.astream()
+            metadata: Optional metadata about the workflow
+            completion_callback: Optional callback to invoke when workflow completes
+            graph: Optional LangGraph compiled graph for state queries during completion/error handling
+
+        Returns:
+            TaskInfo object tracking the background task
+
+        Raises:
+            ValueError: If max concurrent workflows exceeded
+            RuntimeError: If workflow already exists for thread_id
+        """
+        async with self.task_lock:
+            # Check if already exists
+            if thread_id in self.tasks:
+                existing = self.tasks[thread_id]
+                if existing.status in [TaskStatus.QUEUED, TaskStatus.RUNNING]:
+                    raise RuntimeError(
+                        f"Workflow {thread_id} already running with status {existing.status}"
+                    )
+                # Remove completed task to allow re-run
+                logger.info(
+                    f"[BackgroundTaskManager] Removing completed task {thread_id} "
+                    f"to start new execution"
+                )
+                del self.tasks[thread_id]
+
+            # Check concurrent limit
+            running_count = sum(
+                1 for t in self.tasks.values()
+                if t.status in [TaskStatus.QUEUED, TaskStatus.RUNNING]
+            )
+            if running_count >= self.max_concurrent:
+                raise ValueError(
+                    f"Max concurrent workflows reached ({self.max_concurrent}). "
+                    f"Currently running: {running_count}"
+                )
+
+            # Create task info
+            task_info = TaskInfo(
+                thread_id=thread_id,
+                status=TaskStatus.QUEUED,
+                created_at=datetime.now(),
+                metadata=metadata or {},
+                completion_callback=completion_callback,
+                graph=graph,
+            )
+
+            # Start background task
+            task_info.task = asyncio.create_task(
+                self._run_workflow_shielded(thread_id, workflow_generator)
+            )
+            task_info.status = TaskStatus.RUNNING
+            task_info.started_at = datetime.now()
+
+            # Register task
+            self.tasks[thread_id] = task_info
+
+            logger.info(
+                f"[BackgroundTaskManager] Started workflow {thread_id} "
+                f"(running: {running_count + 1}/{self.max_concurrent})"
+            )
+
+            return task_info
+
+    async def _run_workflow_shielded(
+        self,
+        thread_id: str,
+        workflow_generator: Any
+    ):
+        """
+        Run workflow with shield protection and cooperative cancellation.
+
+        Uses asyncio.shield() to protect from accidental disconnects, while
+        supporting explicit cancellation via cooperative event signaling.
+
+        Cancellation is checked periodically inside the shielded task, allowing
+        the workflow to stop gracefully at event boundaries without race conditions.
+
+        Args:
+            thread_id: Workflow thread identifier
+            workflow_generator: Async generator from graph.astream()
+        """
+        try:
+            # Define the workflow consumer coroutine with cooperative cancellation
+            async def consume_workflow():
+                """Consume workflow generator with cancellation/soft-interrupt checks."""
+                # Get cancellation + soft-interrupt event references
+                async with self.task_lock:
+                    task_info = self.tasks.get(thread_id)
+                    cancel_event = task_info.cancel_event if task_info else None
+                    soft_interrupt_event = task_info.soft_interrupt_event if task_info else None
+
+                if not cancel_event:
+                    # Fallback if no event found (shouldn't happen)
+                    logger.warning(
+                        f"[BackgroundTaskManager] No cancel_event found for {thread_id}, "
+                        f"running without cancellation support"
+                    )
+                    async for event in workflow_generator:
+                        # Still honor soft-interrupt if available
+                        if soft_interrupt_event and soft_interrupt_event.is_set():
+                            with suppress(Exception):
+                                await workflow_generator.aclose()
+                            raise SoftInterruptError("Soft-interrupted by user")
+
+                        if self.enable_storage:
+                            await self._buffer_event_redis(thread_id, event)
+                    return
+
+                async for event in workflow_generator:
+                    if cancel_event.is_set():
+                        with suppress(Exception):
+                            await workflow_generator.aclose()
+                        raise asyncio.CancelledError("Explicitly cancelled by user")
+
+                    if soft_interrupt_event and soft_interrupt_event.is_set():
+                        with suppress(Exception):
+                            await workflow_generator.aclose()
+                        raise SoftInterruptError("Soft-interrupted by user")
+
+                    # Buffer event for streaming
+                    if self.enable_storage:
+                        await self._buffer_event_redis(thread_id, event)
+
+            # Create the inner task and store reference
+            inner_task = asyncio.create_task(consume_workflow())
+
+            async with self.task_lock:
+                task_info = self.tasks.get(thread_id)
+                if task_info:
+                    task_info.inner_task = inner_task
+
+            # ALWAYS use shield - cancellation handled cooperatively inside task
+            await asyncio.shield(inner_task)
+
+            # Mark as completed
+            await self._mark_completed(thread_id)
+
+        except SoftInterruptError:
+            # User pressed ESC: flush whatever state we have so follow-up queries
+            # can restore maximum progress.
+            await self._flush_checkpoint(thread_id)
+            await self._mark_soft_interrupted(thread_id)
+            return
+
+        except asyncio.CancelledError:
+            await self._mark_cancelled(thread_id)
+            raise
+
+        except Exception as e:
+            # Workflow failed
+            logger.error(
+                f"[BackgroundTaskManager] Workflow {thread_id} failed: {e}",
+                exc_info=True
+            )
+            await self._mark_failed(thread_id, str(e))
+
+    async def _flush_checkpoint(self, thread_id: str) -> None:
+        """Force a checkpoint write for the current thread state.
+
+        The agent/checkpointer normally writes checkpoints at safe boundaries.
+        If the user presses ESC mid-run, this explicit flush makes sure the
+        latest available state is persisted so the next request can restore it.
+        """
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            graph = task_info.graph if task_info else None
+
+        if not graph:
+            return
+
+        config = {"configurable": {"thread_id": thread_id}}
+
+        try:
+            graph_any: Any = graph
+
+            snapshot = await graph_any.aget_state(config)
+            values = getattr(snapshot, "values", None)
+            if not values:
+                return
+
+            await graph_any.aupdate_state(config, values)
+            logger.info(f"[BackgroundTaskManager] Flushed checkpoint for {thread_id}")
+        except Exception as e:
+            logger.warning(
+                f"[BackgroundTaskManager] Failed to flush checkpoint for {thread_id}: {e}"
+            )
+
+    async def _buffer_event(self, thread_id: str, event: Any):
+        """
+        Buffer workflow event and broadcast to live subscribers.
+
+        Args:
+            thread_id: Workflow thread identifier
+            event: Event to buffer (SSE-formatted string)
+        """
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if not task_info:
+                return
+
+            # Add to buffer for later retrieval (disconnected clients)
+            task_info.result_buffer.append(event)
+
+            # Limit buffer size
+            if len(task_info.result_buffer) > self.max_stored_messages:
+                task_info.result_buffer.popleft()
+
+            # Broadcast to live subscribers (currently connected clients)
+            dead_queues = []
+            for queue in task_info.live_queues:
+                try:
+                    queue.put_nowait(event)
+                except asyncio.QueueFull:
+                    logger.warning(
+                        f"[BackgroundTaskManager] Queue full for subscriber "
+                        f"on {thread_id}, dropping event"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"[BackgroundTaskManager] Error broadcasting to queue: {e}"
+                    )
+                    dead_queues.append(queue)
+
+            # Remove dead queues
+            for queue in dead_queues:
+                if queue in task_info.live_queues:
+                    task_info.live_queues.remove(queue)
+
+    async def _buffer_event_redis(self, thread_id: str, event: str):
+        """
+        Buffer workflow event to Redis (or in-memory fallback) and broadcast to live subscribers.
+
+        Args:
+            thread_id: Workflow thread identifier
+            event: SSE-formatted event string
+        """
+        # First, broadcast to live subscribers (in-memory, unchanged)
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if not task_info:
+                return
+
+            # Broadcast to live queues
+            dead_queues = []
+            for queue in task_info.live_queues:
+                try:
+                    queue.put_nowait(event)
+                except asyncio.QueueFull:
+                    logger.warning(
+                        f"[BackgroundTaskManager] Queue full for subscriber "
+                        f"on {thread_id}, dropping event"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"[BackgroundTaskManager] Error broadcasting to queue: {e}"
+                    )
+                    dead_queues.append(queue)
+
+            # Remove dead queues
+            for queue in dead_queues:
+                if queue in task_info.live_queues:
+                    task_info.live_queues.remove(queue)
+
+        # Store event to Redis (if configured) or fallback to in-memory
+        try:
+            cache = get_cache_client()
+
+            # Check if Redis backend is enabled and Redis is available
+            use_redis = (
+                self.event_storage_backend == "redis"
+                and cache.enabled
+            )
+
+            if not use_redis:
+                # Use in-memory storage
+                if self.event_storage_backend == "redis":
+                    logger.warning(
+                        f"[EventBuffer] Redis unavailable, using in-memory buffer for {thread_id}"
+                    )
+
+                async with self.task_lock:
+                    task_info = self.tasks.get(thread_id)
+                    if task_info:
+                        task_info.result_buffer.append(event)
+                        if len(task_info.result_buffer) > self.max_stored_messages:
+                            task_info.result_buffer.popleft()
+                return
+
+            # Redis storage path
+            events_key = f"workflow:events:{thread_id}"
+            meta_key = f"workflow:events:meta:{thread_id}"
+
+            # Parse event ID from SSE format
+            event_id = None
+            try:
+                event_id_str = event.split("\n")[0].replace("id: ", "").strip()
+                event_id = int(event_id_str)
+            except (ValueError, IndexError):
+                logger.debug(f"[EventBuffer] Could not parse event ID from SSE string")
+
+            # Append to Redis list with automatic FIFO trimming
+            success = await cache.list_append(
+                events_key,
+                event,  # Store raw SSE string
+                max_size=self.max_stored_messages,
+                ttl=self.redis_event_ttl
+            )
+
+            # Check buffer size and warn if near capacity
+            if success:
+                buffer_size = await cache.list_length(events_key)
+                capacity_threshold = int(self.max_stored_messages * 0.9)  # 90% threshold
+
+                if buffer_size >= capacity_threshold:
+                    logger.warning(
+                        f"[EventBuffer] Buffer near capacity for {thread_id}: "
+                        f"{buffer_size}/{self.max_stored_messages} events. "
+                        f"Oldest events will be dropped (FIFO)."
+                    )
+
+            if not success:
+                # Fallback to in-memory if Redis write fails
+                if self.event_storage_fallback:
+                    logger.warning(
+                        f"[EventBuffer] Failed to buffer event to Redis for {thread_id}, "
+                        f"falling back to in-memory"
+                    )
+                    async with self.task_lock:
+                        task_info = self.tasks.get(thread_id)
+                        if task_info:
+                            task_info.result_buffer.append(event)
+                            if len(task_info.result_buffer) > self.max_stored_messages:
+                                task_info.result_buffer.popleft()
+                else:
+                    logger.error(
+                        f"[EventBuffer] Failed to buffer event to Redis for {thread_id}, "
+                        f"fallback disabled"
+                    )
+                return
+
+            # Update metadata in Redis
+            now = datetime.now().isoformat()
+            meta_updates: dict[str, Any] = {
+                "updated_at": now,
+            }
+
+            if event_id:
+                meta_updates["last_event_id"] = event_id
+
+            # Check if this is first event
+            current_meta = await cache.hash_get_all(meta_key)
+            if not current_meta or "created_at" not in current_meta:
+                meta_updates["created_at"] = now
+
+            # Increment event count
+            current_count = int(current_meta.get("event_count", 0)) if current_meta else 0
+            meta_updates["event_count"] = current_count + 1
+
+            # Save all metadata fields
+            for field, value in meta_updates.items():
+                await cache.hash_set(meta_key, field, str(value), ttl=self.redis_event_ttl)
+
+            logger.debug(
+                f"[EventBuffer] Buffered event to Redis: {thread_id} "
+                f"(id={event_id}, total={meta_updates['event_count']})"
+            )
+
+        except Exception as e:
+            logger.error(
+                f"[EventBuffer] Error buffering event to Redis for {thread_id}: {e}",
+                exc_info=True
+            )
+            # Fallback to in-memory on error
+            if self.event_storage_fallback:
+                async with self.task_lock:
+                    task_info = self.tasks.get(thread_id)
+                    if task_info:
+                        task_info.result_buffer.append(event)
+                        if len(task_info.result_buffer) > self.max_stored_messages:
+                            task_info.result_buffer.popleft()
+
+    # ========== Workflow Completion & Error Handlers ==========
+
+    async def _mark_completed(self, thread_id: str):
+        """Mark workflow as completed and notify live subscribers."""
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if task_info:
+                task_info.status = TaskStatus.COMPLETED
+                task_info.completed_at = datetime.now()
+
+                # Send completion sentinel to all live subscribers
+                for queue in task_info.live_queues:
+                    try:
+                        queue.put_nowait(None)  # None signals completion
+                    except Exception as e:
+                        logger.error(f"Error sending completion signal: {e}")
+
+                # Check if workflow is truly completed or interrupted
+                # by examining LangGraph state (using per-task graph reference)
+                is_interrupted = False
+                try:
+                    if task_info.graph:
+                        snapshot = await task_info.graph.aget_state({"configurable": {"thread_id": thread_id}})
+                        if snapshot and snapshot.next:
+                            # Workflow has pending nodes = interrupted, not completed
+                            is_interrupted = True
+                except Exception as state_error:
+                    logger.warning(
+                        f"[BackgroundTaskManager] Could not check workflow state for {thread_id}: {state_error}"
+                    )
+
+                # Database status will be updated by persistence service in transaction
+                # (removed duplicate status update - service handles it atomically)
+                metadata = task_info.metadata
+                conversation_id = metadata.get("conversation_id")
+                user_id = metadata.get("user_id")
+
+                # Persist workflow state based on completion vs interrupt
+                if is_interrupted:
+                    # Workflow interrupted - persist interrupt state with all required fields
+                    if conversation_id and user_id:
+                        try:
+                            from src.server.services.conversation_persistence_service import ConversationPersistenceService
+                            from src.utils.tracking import ExecutionTracker
+                            from src.utils.tracking import serialize_agent_message, calculate_cost_from_per_call_records
+                            from src.server.models.workflow import serialize_state_snapshot
+
+                            persistence_service = ConversationPersistenceService.get_instance(thread_id)
+
+                            # Get tracking context for partial data
+                            tracking_context = ExecutionTracker.get_context()
+                            raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
+                            agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
+
+                            agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
+
+                            # Get state snapshot and serialize, extract final_output from last planner message
+                            snapshot = None
+                            state_snapshot = None
+                            final_output = None
+                            try:
+                                if task_info.graph:
+                                    snapshot = await task_info.graph.aget_state({"configurable": {"thread_id": thread_id}})
+                                    if snapshot and snapshot.values:
+                                        state_snapshot = serialize_state_snapshot(snapshot.values)
+
+                                        # Extract last planner message (plan not in state yet, only in message)
+                                        messages = snapshot.values.get("messages", [])
+                                        if messages:
+                                            from langchain_core.messages import AIMessage
+
+                                            # Find last AIMessage from planner
+                                            planner_message = None
+                                            for msg in reversed(messages):
+                                                if isinstance(msg, AIMessage) and getattr(msg, 'name', None) == "planner":
+                                                    planner_message = msg
+                                                    break
+
+                                            if planner_message:
+                                                # Use existing serialization to extract content + reasoning
+                                                serialized = serialize_agent_message(planner_message)
+                                                final_output = {
+                                                    "text": serialized.get('content', ''),
+                                                    "reasoning": serialized.get('reasoning')
+                                                }
+                            except Exception as state_error:
+                                logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
+
+
+                            # Get token usage and per_call_records from token_callback
+                            token_usage, per_call_records = get_token_usage_from_callback(
+                                metadata, "interrupt", thread_id
+                            )
+
+                            # Get tool usage from handler (has cached result from SSE emission)
+                            tool_usage = get_tool_usage_from_handler(
+                                metadata, "interrupt", thread_id
+                            )
+
+                            # Calculate execution time from start_time
+                            execution_time = calculate_execution_time(metadata)
+
+                            # Get agent_llm_preset from workflow state and resolve mapping
+                            agent_llm_preset = "default"  # Default fallback
+                            try:
+                                if snapshot and snapshot.values:
+                                    agent_llm_preset = snapshot.values.get("agent_llm_preset", "default")
+                            except Exception:
+                                pass
+
+                            # Resolve mapping from preset
+                            from src.config.agents import get_agent_llm_map
+                            agent_llm_mapping = get_agent_llm_map(agent_llm_preset)
+
+                            # Build metadata with all context
+                            persist_metadata = {
+                                "msg_type": metadata.get("msg_type"),
+                                "stock_code": metadata.get("stock_code"),
+                                "agent_llm_preset": agent_llm_preset,
+                                "agent_llm_mapping": agent_llm_mapping,
+                                "deepthinking": metadata.get("deepthinking", False)
+                            }
+
+                            await persistence_service.persist_interrupt(
+                                interrupt_reason="plan_review_required",
+                                state_snapshot=state_snapshot,
+                                final_output=final_output,
+                                agent_messages=agent_messages,
+                                token_usage=token_usage,
+                                execution_time=execution_time,
+                                metadata=persist_metadata,
+                                per_call_records=per_call_records,
+                                tool_usage=tool_usage
+                            )
+                            logger.info(f"[WorkflowPersistence] Workflow {thread_id} paused for human feedback")
+                        except Exception as persist_error:
+                            logger.error(
+                                f"[WorkflowPersistence] Failed to persist interrupt for thread_id={thread_id}: {persist_error}",
+                                exc_info=True
+                            )
+                else:
+                    # Workflow completed - invoke completion callback for full persistence
+                    completion_callback = task_info.completion_callback
+                    if completion_callback:
+                        try:
+                            await completion_callback()
+                        except Exception as e:
+                            logger.error(
+                                f"[BackgroundTaskManager] Completion callback failed for {thread_id}: {e}",
+                                exc_info=True
+                            )
+                            # Update workflow status to error when callback fails
+                            await self._mark_failed(thread_id, f"Completion callback failed: {str(e)}")
+
+    async def _mark_failed(self, thread_id: str, error: str):
+        """Mark workflow as failed and notify live subscribers."""
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if task_info:
+                task_info.status = TaskStatus.FAILED
+                task_info.completed_at = datetime.now()
+                task_info.error = error
+
+                # Send completion sentinel to all live subscribers
+                for queue in task_info.live_queues:
+                    try:
+                        queue.put_nowait(None)  # None signals completion
+                    except Exception as e:
+                        logger.error(f"Error sending completion signal: {e}")
+
+                logger.error(
+                    f"[BackgroundTaskManager] Workflow {thread_id} failed: {error}"
+                )
+
+                # Persist error with full details
+                metadata = task_info.metadata
+                conversation_id = metadata.get("conversation_id")
+                user_id = metadata.get("user_id")
+
+                if conversation_id and user_id:
+                    try:
+                        from src.server.services.conversation_persistence_service import ConversationPersistenceService
+                        from src.utils.tracking import ExecutionTracker
+                        from src.server.models.workflow import serialize_state_snapshot
+
+                        persistence_service = ConversationPersistenceService.get_instance(thread_id)
+
+                        # Get partial data before failure
+                        tracking_context = ExecutionTracker.get_context()
+                        raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
+                        agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
+
+                        # Serialize agent messages with agent_index
+                        agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
+
+                        # Get state snapshot (using per-task graph reference)
+                        state_snapshot = None
+                        try:
+                            if task_info.graph:
+                                snapshot = await task_info.graph.aget_state({"configurable": {"thread_id": thread_id}})
+                                if snapshot and snapshot.values:
+                                    state_snapshot = serialize_state_snapshot(snapshot.values)
+                        except Exception as state_error:
+                            logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
+
+                        # Calculate execution time
+                        execution_time = calculate_execution_time(metadata)
+
+                        # Get token usage and per_call_records from token_callback
+                        token_usage, per_call_records = get_token_usage_from_callback(
+                            metadata, "error", thread_id
+                        )
+
+                        # Get tool usage from handler (has cached result from SSE emission)
+                        tool_usage = get_tool_usage_from_handler(
+                            metadata, "error", thread_id
+                        )
+
+                        # Build metadata with all context
+                        persist_metadata = {
+                            "msg_type": metadata.get("msg_type"),
+                            "stock_code": metadata.get("stock_code"),
+                            "agent_llm_preset": metadata.get("agent_llm_preset", "default"),
+                            "deepthinking": metadata.get("deepthinking", False)
+                        }
+
+                        await persistence_service.persist_error(
+                            error_message=error,
+                            errors=[error],
+                            state_snapshot=state_snapshot,
+                            agent_messages=agent_messages,
+                            execution_time=execution_time,
+                            per_call_records=per_call_records,
+                            tool_usage=tool_usage,
+                            metadata=persist_metadata
+                        )
+                        logger.info(f"[WorkflowPersistence] Error persisted for thread_id={thread_id}")
+                    except Exception as persist_error:
+                        logger.error(
+                            f"[WorkflowPersistence] Failed to persist error for {thread_id}: {persist_error}",
+                            exc_info=True
+                        )
+
+    async def _mark_soft_interrupted(self, thread_id: str) -> None:
+        """Mark workflow as soft-interrupted (ESC).
+
+        This ends the foreground workflow execution so the user can immediately
+        send a follow-up message on the same `thread_id`, while leaving any
+        independently running background subagent tasks alone.
+
+        Unlike `_mark_cancelled`, this does not persist a user cancellation.
+        """
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if not task_info:
+                return
+
+            task_info.status = TaskStatus.SOFT_INTERRUPTED
+            task_info.completed_at = datetime.now()
+
+            # Notify all live subscribers that the workflow stream ended
+            for queue in task_info.live_queues:
+                with suppress(Exception):
+                    queue.put_nowait(None)
+
+            logger.info(f"[BackgroundTaskManager] Marked as soft-interrupted: {thread_id}")
+
+    async def _mark_cancelled(self, thread_id: str):
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if task_info:
+                task_info.status = TaskStatus.CANCELLED
+                task_info.completed_at = datetime.now()
+
+                for queue in task_info.live_queues:
+                    try:
+                        queue.put_nowait(None)
+                    except Exception as e:
+                        logger.error(f"Error sending completion signal: {e}")
+
+                logger.debug(f"[BackgroundTaskManager] Marked as cancelled: {thread_id}")
+
+                # Persist cancellation with full details
+                metadata = task_info.metadata
+                conversation_id = metadata.get("conversation_id")
+                user_id = metadata.get("user_id")
+
+                if conversation_id and user_id:
+                    try:
+                        from src.server.services.conversation_persistence_service import ConversationPersistenceService
+                        from src.utils.tracking import ExecutionTracker, calculate_cost_from_per_call_records
+                        from src.server.models.workflow import serialize_state_snapshot
+
+                        persistence_service = ConversationPersistenceService.get_instance(thread_id)
+
+                        # Get partial data before cancellation
+                        tracking_context = ExecutionTracker.get_context()
+                        raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
+                        agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
+
+                        # Serialize agent messages with agent_index
+                        agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
+
+                        # Get state snapshot (using per-task graph reference)
+                        state_snapshot = None
+                        final_output = None
+                        try:
+                            if task_info.graph:
+                                snapshot = await task_info.graph.aget_state({"configurable": {"thread_id": thread_id}})
+                                if snapshot and snapshot.values:
+                                    state_snapshot = serialize_state_snapshot(snapshot.values)
+                                    # Extract partial final_report if available
+                                    final_output = {"partial_report": snapshot.values.get("final_report")}
+                        except Exception as state_error:
+                            logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
+
+                        # Calculate token usage AND keep per_call_records
+                        token_usage, per_call_records = get_token_usage_from_callback(
+                            metadata, "cancellation", thread_id
+                        )
+
+                        # Get tool usage from handler (has cached result from SSE emission)
+                        tool_usage = get_tool_usage_from_handler(
+                            metadata, "cancellation", thread_id
+                        )
+
+                        # Calculate execution time
+                        execution_time = calculate_execution_time(metadata)
+
+                        # Build persist metadata (include deepthinking for usage tracking)
+                        persist_metadata = {
+                            "msg_type": metadata.get("msg_type"),
+                            "stock_code": metadata.get("stock_code"),
+                            "agent_llm_preset": metadata.get("agent_llm_preset", "default"),
+                            "deepthinking": metadata.get("deepthinking", False),
+                            "cancelled_by_user": True
+                        }
+
+                        await persistence_service.persist_cancelled(
+                            state_snapshot=state_snapshot,
+                            final_output=final_output,
+                            agent_messages=agent_messages,
+                            token_usage=token_usage,
+                            execution_time=execution_time,
+                            metadata=persist_metadata,
+                            per_call_records=per_call_records,
+                            tool_usage=tool_usage
+                        )
+                        logger.info(f"[WorkflowPersistence] Cancellation persisted for thread_id={thread_id}")
+                    except Exception as persist_error:
+                        logger.error(
+                            f"[WorkflowPersistence] Failed to persist cancellation for {thread_id}: {persist_error}",
+                            exc_info=True
+                        )
+
+    async def get_task_status(self, thread_id: str) -> Optional[TaskStatus]:
+        """
+        Get status of a background task.
+
+        Args:
+            thread_id: Workflow thread identifier
+
+        Returns:
+            TaskStatus or None if not found
+        """
+        task_info = await self._get_task_info_locked(thread_id)
+        return task_info.status if task_info else None
+
+    async def get_task_info(self, thread_id: str) -> Optional[TaskInfo]:
+        """
+        Get full task information.
+
+        Args:
+            thread_id: Workflow thread identifier
+
+        Returns:
+            TaskInfo or None if not found
+        """
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if task_info:
+                # Update last access time
+                task_info.last_access_at = datetime.now()
+            return task_info
+
+    async def increment_connection(self, thread_id: str) -> bool:
+        """
+        Increment active connection count for a workflow.
+
+        Args:
+            thread_id: Workflow thread identifier
+
+        Returns:
+            True if successful, False if task not found
+        """
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if task_info:
+                task_info.active_connections += 1
+                task_info.last_access_at = datetime.now()
+                logger.debug(
+                    f"[BackgroundTaskManager] Connection attached to {thread_id} "
+                    f"(active: {task_info.active_connections})"
+                )
+                return True
+            return False
+
+    async def decrement_connection(self, thread_id: str) -> bool:
+        """
+        Decrement active connection count for a workflow.
+
+        Args:
+            thread_id: Workflow thread identifier
+
+        Returns:
+            True if successful, False if task not found
+        """
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if task_info:
+                task_info.active_connections = max(0, task_info.active_connections - 1)
+                logger.debug(
+                    f"[BackgroundTaskManager] Connection detached from {thread_id} "
+                    f"(active: {task_info.active_connections})"
+                )
+                return True
+            return False
+
+    async def get_buffered_events(
+        self,
+        thread_id: str,
+        from_beginning: bool = False
+    ) -> list:
+        """
+        Get buffered events for a workflow.
+
+        Args:
+            thread_id: Workflow thread identifier
+            from_beginning: If True, return all buffered events;
+                          If False, return only new events since last call
+
+        Returns:
+            List of buffered events
+        """
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if not task_info or not task_info.result_buffer:
+                return []
+
+            if from_beginning:
+                return list(task_info.result_buffer)
+            else:
+                # For now, return all (in future could track read position)
+                return list(task_info.result_buffer)
+
+    async def get_buffered_events_redis(
+        self,
+        thread_id: str,
+        from_beginning: bool = False,
+        after_event_id: Optional[int] = None
+    ) -> list:
+        """
+        Get buffered events from Redis (or in-memory fallback).
+
+        Args:
+            thread_id: Workflow thread identifier
+            from_beginning: If True, return all buffered events
+            after_event_id: Optional event ID to filter events (return events > this ID)
+
+        Returns:
+            List of SSE-formatted event strings
+        """
+        try:
+            cache = get_cache_client()
+
+            # Check if Redis backend is enabled and Redis is available
+            use_redis = (
+                self.event_storage_backend == "redis"
+                and cache.enabled
+            )
+
+            if not use_redis:
+                # Fallback to in-memory
+                if self.event_storage_backend == "redis":
+                    logger.warning(
+                        f"[EventBuffer] Redis unavailable, using in-memory buffer for {thread_id}"
+                    )
+
+                async with self.task_lock:
+                    task_info = self.tasks.get(thread_id)
+                    if not task_info or not task_info.result_buffer:
+                        return []
+
+                    events = list(task_info.result_buffer)
+
+                    # Filter by event ID if requested
+                    if after_event_id is not None:
+                        filtered_events = []
+                        for event in events:
+                            try:
+                                event_id_str = event.split("\n")[0].replace("id: ", "").strip()
+                                event_id = int(event_id_str)
+                                if event_id > after_event_id:
+                                    filtered_events.append(event)
+                            except (ValueError, IndexError):
+                                # Can't parse ID, include it to be safe
+                                filtered_events.append(event)
+                        return filtered_events
+
+                    return events
+
+            # Redis retrieval path
+            events_key = f"workflow:events:{thread_id}"
+
+            # Get all events from list
+            events = await cache.list_range(events_key, start=0, end=-1)
+
+            if not events:
+                logger.debug(f"[EventBuffer] No buffered events for {thread_id}")
+                return []
+
+            # Filter by event ID if requested
+            if after_event_id is not None:
+                filtered_events = []
+                for event in events:
+                    try:
+                        # Parse event ID from SSE format
+                        event_id_str = event.split("\n")[0].replace("id: ", "").strip()
+                        event_id = int(event_id_str)
+
+                        if event_id > after_event_id:
+                            filtered_events.append(event)
+
+                    except (ValueError, IndexError):
+                        # Can't parse ID, include it to be safe
+                        filtered_events.append(event)
+
+                logger.info(
+                    f"[EventBuffer] Retrieved {len(filtered_events)} events "
+                    f"(after_event_id={after_event_id}) for {thread_id}"
+                )
+                return filtered_events
+
+            logger.info(f"[EventBuffer] Retrieved {len(events)} events for {thread_id}")
+            return events
+
+        except Exception as e:
+            logger.error(
+                f"[EventBuffer] Error retrieving events from Redis for {thread_id}: {e}",
+                exc_info=True
+            )
+
+            # Fallback to in-memory on error
+            if self.event_storage_fallback:
+                async with self.task_lock:
+                    task_info = self.tasks.get(thread_id)
+                    if not task_info or not task_info.result_buffer:
+                        return []
+                    return list(task_info.result_buffer)
+
+            return []
+
+    async def clear_event_buffer(self, thread_id: str):
+        """
+        Clear event buffer for a thread (both Redis and in-memory).
+
+        This should be called when resuming a workflow from interrupt to prevent
+        old interrupt events from persisting in the buffer.
+
+        Args:
+            thread_id: Workflow thread identifier
+        """
+        try:
+            cache = get_cache_client()
+
+            # Clear Redis buffer if using Redis backend
+            if self.event_storage_backend == "redis" and cache.enabled:
+                events_key = f"workflow:events:{thread_id}"
+                meta_key = f"workflow:events:meta:{thread_id}"
+
+                # Delete both the event list and metadata
+                await cache.delete(events_key)
+                await cache.delete(meta_key)
+
+                logger.info(f"[EventBuffer] Cleared Redis event buffer for {thread_id}")
+
+            # Also clear in-memory buffer (fallback or dual-mode)
+            async with self.task_lock:
+                task_info = self.tasks.get(thread_id)
+                if task_info and task_info.result_buffer:
+                    task_info.result_buffer.clear()
+                    logger.debug(f"[EventBuffer] Cleared in-memory buffer for {thread_id}")
+
+        except Exception as e:
+            logger.error(
+                f"[EventBuffer] Error clearing event buffer for {thread_id}: {e}",
+                exc_info=True
+            )
+
+    async def subscribe_to_live_events(self, thread_id: str, event_queue: asyncio.Queue) -> bool:
+        """
+        Subscribe to live events from a running workflow.
+
+        Args:
+            thread_id: Workflow thread identifier
+            event_queue: Queue to receive live events
+
+        Returns:
+            True if subscribed successfully, False if workflow not found
+        """
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if not task_info:
+                return False
+
+            if event_queue not in task_info.live_queues:
+                task_info.live_queues.append(event_queue)
+                logger.debug(
+                    f"[BackgroundTaskManager] Subscribed to live events for {thread_id} "
+                    f"(subscribers: {len(task_info.live_queues)})"
+                )
+            return True
+
+    async def unsubscribe_from_live_events(self, thread_id: str, event_queue: asyncio.Queue) -> bool:
+        """
+        Unsubscribe from live events.
+
+        Args:
+            thread_id: Workflow thread identifier
+            event_queue: Queue to unsubscribe
+
+        Returns:
+            True if unsubscribed successfully, False if workflow not found
+        """
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if not task_info:
+                return False
+
+            if event_queue in task_info.live_queues:
+                task_info.live_queues.remove(event_queue)
+                logger.debug(
+                    f"[BackgroundTaskManager] Unsubscribed from live events for {thread_id} "
+                    f"(subscribers: {len(task_info.live_queues)})"
+                )
+            return True
+
+    async def cancel_workflow(self, thread_id: str) -> bool:
+        """
+        Cancel a running workflow using cooperative event signaling.
+
+        Sets the cancel_event flag which will be detected on the next event
+        iteration inside the shielded task, allowing graceful cancellation.
+
+        Args:
+            thread_id: Workflow thread identifier
+
+        Returns:
+            True if cancellation signaled, False if not found or already completed
+        """
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if not task_info:
+                logger.warning(
+                    f"[BackgroundTaskManager] Cannot cancel {thread_id}: "
+                    f"workflow not found"
+                )
+                return False
+
+            if task_info.status not in [TaskStatus.QUEUED, TaskStatus.RUNNING]:
+                logger.info(
+                    f"[BackgroundTaskManager] Cannot cancel {thread_id}: "
+                    f"status={task_info.status}"
+                )
+                return False
+
+            task_info.cancel_event.set()
+            task_info.explicit_cancel = True
+            logger.debug(f"[BackgroundTaskManager] Cancellation signaled: {thread_id}")
+            return True
+
+    async def soft_interrupt_workflow(self, thread_id: str) -> Dict[str, Any]:
+        """
+        Soft interrupt a running workflow - pause main agent, keep subagents running.
+
+        Unlike cancel_workflow which stops everything, soft interrupt:
+        - Signals the main agent to pause at the next safe point
+        - Background subagents continue execution
+        - Workflow can be resumed with new input
+
+        Args:
+            thread_id: Workflow thread identifier
+
+        Returns:
+            Dict with status, can_resume, and active_subagents
+        """
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if not task_info:
+                logger.warning(
+                    f"[BackgroundTaskManager] Cannot soft interrupt {thread_id}: "
+                    f"workflow not found"
+                )
+                return {
+                    "status": "not_found",
+                    "thread_id": thread_id,
+                    "can_resume": False,
+                    "background_tasks": [],
+                    "active_subagents": [],
+                    "completed_subagents": [],
+                }
+
+            if task_info.status not in [TaskStatus.QUEUED, TaskStatus.RUNNING]:
+                logger.info(
+                    f"[BackgroundTaskManager] Cannot soft interrupt {thread_id}: "
+                    f"status={task_info.status}"
+                )
+                return {
+                    "status": task_info.status.value,
+                    "thread_id": thread_id,
+                    "can_resume": False,
+                    # Backward-compatible key
+                    "background_tasks": list(task_info.active_subagents),
+                    # Preferred keys (used by CLI)
+                    "active_subagents": list(task_info.active_subagents),
+                    "completed_subagents": list(task_info.completed_subagents),
+                }
+
+            # Set soft interrupt flag (different from cancel)
+            task_info.soft_interrupt_event.set()
+            task_info.soft_interrupted = True
+            logger.info(
+                f"[BackgroundTaskManager] Soft interrupt signaled: {thread_id}, "
+                f"active_subagents={list(task_info.active_subagents)}"
+            )
+
+            return {
+                "status": "soft_interrupted",
+                "thread_id": thread_id,
+                "can_resume": True,
+                # Backward-compatible key
+                "background_tasks": list(task_info.active_subagents),
+                # Preferred keys (used by CLI)
+                "active_subagents": list(task_info.active_subagents),
+                "completed_subagents": list(task_info.completed_subagents),
+            }
+
+    async def get_workflow_status(self, thread_id: str) -> Dict[str, Any]:
+        """
+        Get detailed workflow status including subagent information.
+
+        Args:
+            thread_id: Workflow thread identifier
+
+        Returns:
+            Dict with status, subagent info, timestamps
+        """
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if not task_info:
+                return {
+                    "status": "not_found",
+                    "thread_id": thread_id,
+                }
+
+            return {
+                "status": task_info.status.value,
+                "thread_id": thread_id,
+                "soft_interrupted": task_info.soft_interrupted,
+                "active_subagents": list(task_info.active_subagents),
+                "completed_subagents": list(task_info.completed_subagents),
+                "created_at": task_info.created_at.isoformat() if task_info.created_at else None,
+                "started_at": task_info.started_at.isoformat() if task_info.started_at else None,
+                "completed_at": task_info.completed_at.isoformat() if task_info.completed_at else None,
+                "active_connections": task_info.active_connections,
+            }
+
+    async def wait_for_soft_interrupted(
+        self,
+        thread_id: str,
+        timeout: float = 30.0
+    ) -> bool:
+        """
+        Wait for a soft-interrupted workflow to complete.
+
+        Called before starting a new workflow on the same thread_id to ensure
+        seamless continuation after ESC interrupt.
+
+        Args:
+            thread_id: Workflow thread identifier
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            True if workflow completed (or wasn't running), False if timed out
+        """
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if not task_info:
+                return True  # No workflow to wait for
+
+            if task_info.status not in [TaskStatus.QUEUED, TaskStatus.RUNNING]:
+                return True  # Already completed
+
+            if not task_info.soft_interrupted:
+                # Workflow is running but wasn't soft-interrupted
+                # This is an unexpected state - user might be trying to send
+                # concurrent messages. We'll wait briefly but not block too long.
+                timeout = min(timeout, 5.0)
+
+            task = task_info.task
+
+        if not task:
+            return True
+
+        logger.info(
+            f"[BackgroundTaskManager] Waiting for soft-interrupted workflow "
+            f"{thread_id} to complete (timeout={timeout}s)"
+        )
+
+        try:
+            # Wait for the task to complete with timeout
+            await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+            logger.info(
+                f"[BackgroundTaskManager] Soft-interrupted workflow {thread_id} "
+                f"completed, ready for new request"
+            )
+            return True
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"[BackgroundTaskManager] Timeout waiting for soft-interrupted "
+                f"workflow {thread_id} after {timeout}s"
+            )
+            return False
+        except asyncio.CancelledError:
+            # Task was cancelled, which is fine - we can proceed
+            return True
+        except Exception as e:
+            logger.warning(
+                f"[BackgroundTaskManager] Error waiting for soft-interrupted "
+                f"workflow {thread_id}: {e}"
+            )
+            return True  # Proceed anyway
+
+    def update_subagent_status(
+        self,
+        thread_id: str,
+        agent_name: str,
+        is_active: bool,
+    ) -> None:
+        """
+        Update subagent tracking for a workflow.
+
+        Called by streaming handler to track which subagents are active.
+
+        Args:
+            thread_id: Workflow thread identifier
+            agent_name: Name of the subagent
+            is_active: True if starting, False if completed
+        """
+        task_info = self.tasks.get(thread_id)
+        if not task_info:
+            return
+
+        if is_active:
+            task_info.active_subagents.add(agent_name)
+            task_info.completed_subagents.discard(agent_name)
+        else:
+            task_info.active_subagents.discard(agent_name)
+            task_info.completed_subagents.add(agent_name)
+
+    async def get_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about background tasks.
+
+        Returns:
+            Dictionary with task statistics
+        """
+        async with self.task_lock:
+            total = len(self.tasks)
+            by_status = {}
+            for status in TaskStatus:
+                by_status[status.value] = sum(
+                    1 for t in self.tasks.values() if t.status == status
+                )
+
+            return {
+                "total_tasks": total,
+                "by_status": by_status,
+                "max_concurrent": self.max_concurrent,
+                "active_connections": sum(
+                    t.active_connections for t in self.tasks.values()
+                )
+            }

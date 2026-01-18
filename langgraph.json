@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "ptc-agent": "libs/ptc-agent/ptc_agent/agent/graph.py:agent"
+  },
+  "env": ".env"
+}

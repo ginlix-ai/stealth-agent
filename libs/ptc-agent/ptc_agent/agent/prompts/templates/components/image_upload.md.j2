@@ -1,0 +1,42 @@
+# Image Auto-Upload
+
+Images saved to `results/` are automatically uploaded to cloud storage. The URL is returned in the response.
+
+**CRITICAL**: Use RELATIVE paths, NOT absolute paths:
+- CORRECT: `plt.savefig('results/chart.png')` -> auto-uploaded, URL returned
+- WRONG: `plt.savefig('/results/chart.png')` -> NOT uploaded!
+{% if detailed | default(false) %}
+
+## Creating Visualizations
+
+```python
+import matplotlib.pyplot as plt
+
+# Option 1: plt.show() - chart captured and uploaded automatically
+plt.figure(figsize=(10, 6))
+plt.plot(data)
+plt.title("My Chart")
+plt.show()  # Automatically uploaded, URL returned in response
+
+# Option 2: Save to results/ - image uploaded automatically (use RELATIVE path!)
+plt.savefig('results/chart.png')  # CORRECT: relative path
+# plt.savefig('/results/chart.png')  # WRONG: absolute path won't be uploaded!
+print("Saved chart")  # URL returned in response
+```
+
+Supported image formats: PNG, JPG, JPEG, SVG, GIF, WEBP, BMP, TIFF
+
+Response includes markdown image URLs: `![chart_title](https://storage-url/chart.png)`
+{% else %}
+
+Example:
+```python
+import matplotlib.pyplot as plt
+plt.figure(figsize=(10, 6))
+plt.plot(data)
+plt.savefig('results/chart.png')  # Use relative path!
+print("Chart saved")
+```
+
+The response includes: `![chart](https://storage-url/chart.png)` - reference this URL in your report.
+{% endif %}

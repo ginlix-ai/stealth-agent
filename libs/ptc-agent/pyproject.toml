@@ -1,0 +1,167 @@
+[project]
+name = "ptc-agent"
+version = "0.1.0"
+description = "Open source implementation of Programmatic Tool Calling (PTC) with MCP, powered by LangGraph and Daytona"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "daytona-sdk>=0.0.1",
+    "mcp>=1.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "structlog>=24.0.0",
+    "jinja2>=3.1.0",
+    "aiofiles>=23.0.0",
+    "Pillow>=9.0.0",
+    "langchain-openai>=1.0.2",
+    "langchain-anthropic>=1.0.3",
+    "langchain_tavily>=0.2.13",
+    "rich>=14.0.0",
+    "tavily-python>=0.5.0",
+    "httpx[http2]>=0.28.1",
+    "markdownify>=1.2.0",
+    "deepagents>=0.2.6",
+    "langgraph-cli[inmem]>=0.4.7",
+    "alibabacloud-oss-v2>=1.2.1",
+    "langchain-google-genai>=1.0.0",
+    "tavily>=1.1.0",
+    "yfinance>=0.2.40",
+    "boto3>=1.41.3",
+    "langchain-qwq>=0.3.1",
+    "langchain-deepseek>=1.0.1",
+    "pyyaml>=6.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+    "types-PyYAML>=6.0.0",
+    "types-aiofiles>=23.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ptc_agent"]
+
+[tool.ruff]
+line-length = 150
+exclude = []
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812",  # Messes with the formatter
+    "ISC001",  # Messes with the formatter
+    "PERF203", # Rarely useful
+    "SLF001",  # Private member access
+    "PLC0415", # Imports should be at the top. Not always desirable
+    "PLR0913", # Too many arguments in function definition
+    "PLC0414", # Inconsistent with how type checkers expect re-exports
+    "C901",    # Too complex
+    # Pydantic compatibility (from langchain)
+    "TC001",   # Move import into TYPE_CHECKING block
+    "TC002",   # Move third-party import into TYPE_CHECKING block
+    "TC003",   # Move stdlib import into TYPE_CHECKING block
+    "RUF012",  # Mutable class default (Pydantic uses these)
+    "G004",    # Logging f-string (prefer lazy % formatting) - too verbose to fix
+    # Stylistic rules - acceptable in this codebase
+    "ANN401",  # Any type - intentional for dynamic external APIs (langgraph, langchain)
+    "ARG001",  # Unused function argument - common in callbacks/middleware signatures
+    "ARG002",  # Unused method argument - common in callbacks/middleware signatures
+    "TRY300",  # Consider moving to else block - stylistic preference
+    "EM101",   # String literal in exception - verbose to fix
+    "EM102",   # F-string in exception - verbose to fix
+    "PLR2004", # Magic value comparison - parsing checks (len >= 2/3) are context-dependent
+    "PLR0912", # Too many branches - stylistic preference
+    "PLR0915", # Too many statements - stylistic preference
+    "TRY003",  # Raise vanilla args - already addressed where critical
+    # Intentional patterns in this codebase
+    "S101",     # assert used for type narrowing and validation
+    "BLE001",   # Catching Exception in external service/sandbox calls for robustness
+    "ASYNC109", # timeout param is intentional API design
+    "PLW0603",  # Global statements for singleton patterns (loader, client, session)
+    "ERA001",   # False positives on documentation comments (format examples)
+    "S108",     # /tmp usage in Daytona sandbox is intentional
+    "PLR0911",  # Too many return statements - acceptable complexity
+    "TRY301",   # Raise within try block - acceptable in error handlers
+    "D417",     # Missing docstring args - injected args don't need docs
+    "PT018",    # Compound assert - acceptable for validation
+    "PLW2901",  # Loop variable overwritten - intentional transformations in grep/view_image
+    "G201",     # logger.error with exc_info vs logger.exception - equivalent
+    "SIM102",   # Collapsible if - combined condition would exceed line length (sandbox.py:136,537)
+    "SIM117",   # Combine with statements - MCP SDK recommends nested async with pattern
+    "TD002",    # TODO author - not enforced
+    "TD003",    # TODO link - not enforced
+    "FIX002",   # TODO/FIXME comments - acceptable
+    "TRY004",   # Use TypeError - acceptable in context
+    "S701",     # Jinja2 autoescape - intentional for prompt templates
+    "N802",     # Function name uppercase - tool name convention (Bash)
+    "E501",     # Line too long - acceptable in rare cases
+    "TRY400",   # Use logging.exception - expected errors don't need full tracebacks
+    "FBT001",   # Boolean-typed positional argument - needed for tool parameter schemas
+    "FBT002",   # Boolean default positional argument - needed for tool parameter schemas
+]
+unfixable = ["B028"]
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = true
+
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+ignore-var-parameters = true
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "D1",      # Skip documentation rules in tests
+    "S101",    # Allow asserts in tests
+    "S311",    # Allow pseudo-random generators in tests
+    "ANN201",  # Missing return type annotation
+    "INP001",  # Implicit namespace package
+    "PLR2004", # Magic value comparisons
+    "ANN001",  # Missing type annotation for fixture args
+    "ANN202",  # Missing return type for private functions
+    "E402",    # Module import not at top (intentional sys.path setup)
+]
+"ptc_agent/agent/tools/grep.py" = ["N803"]  # A, B, C are ripgrep flags
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+enable_error_code = ["deprecated"]
+disable_error_code = ["import-untyped"]
+disallow_any_generics = false
+warn_return_any = false
+exclude = ["tests/"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests requiring real sandbox",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[dependency-groups]
+dev = [
+    "types-aiofiles>=25.1.0.20251011",
+    "types-pyyaml>=6.0.12.20250915",
+]
