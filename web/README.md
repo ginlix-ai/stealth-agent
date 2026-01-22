@@ -1,4 +1,4 @@
-# SuperRich Frontend
+# SuperRich Web
 
 A modern React application built with Vite, featuring a multi-page dashboard with sidebar navigation.
 
