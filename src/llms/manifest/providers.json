@@ -847,6 +847,64 @@
           "unit": "per_1m_tokens"
         }
       }
+    ],
+    "groq": [
+      {
+        "id": "openai/gpt-oss-20b",
+        "name": "GPT-OSS-20B (Groq)",
+        "is_reasoning": true,
+        "description": "OpenAI's open-source 20B MoE reasoning model hosted on Groq (~1000 tps)",
+        "context_window": 131072,
+        "max_output": 65536,
+        "pricing": {
+          "input": 0.075,
+          "cached_input": 0.037,
+          "output": 0.30,
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "openai/gpt-oss-120b",
+        "name": "GPT-OSS-120B (Groq)",
+        "is_reasoning": true,
+        "description": "OpenAI's open-source 120B MoE reasoning model hosted on Groq (~500 tps)",
+        "context_window": 131072,
+        "max_output": 65536,
+        "pricing": {
+          "input": 0.15,
+          "cached_input": 0.075,
+          "output": 0.60,
+          "unit": "per_1m_tokens"
+        }
+      }
+    ],
+    "cerebras": [
+      {
+        "id": "zai-glm-4.7",
+        "name": "GLM-4.7 (Cerebras)",
+        "is_reasoning": true,
+        "description": "Z.AI's GLM-4.7 model hosted on Cerebras with ~3000 tps inference speed",
+        "context_window": 131072,
+        "max_output": 40000,
+        "pricing": {
+          "input": 0.35,
+          "output": 0.75,
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "gpt-oss-120b",
+        "name": "GPT-OSS-120B (Cerebras)",
+        "is_reasoning": true,
+        "description": "OpenAI's open-source 120B MoE reasoning model hosted on Cerebras (~3000 tps)",
+        "context_window": 131072,
+        "max_output": 40000,
+        "pricing": {
+          "input": 0.35,
+          "output": 0.75,
+          "unit": "per_1m_tokens"
+        }
+      }
     ]
   },
   "provider_config": {
@@ -946,6 +1004,18 @@
       "sdk": "anthropic",
       "base_url": "https://dashscope.aliyuncs.com/apps/anthropic",
       "env_key": "DASHSCOPE_API_KEY"
+    },
+    "groq": {
+      "sdk": "openai",
+      "base_url": "https://api.groq.com/openai/v1",
+      "env_key": "GROQ_API_KEY",
+      "use_response_api": true
+    },
+    "cerebras": {
+      "sdk": "openai",
+      "base_url": "https://api.cerebras.ai/v1",
+      "env_key": "CEREBRAS_API_KEY",
+      "use_response_api": false
     }
   },
   "infrastructure_pricing": {

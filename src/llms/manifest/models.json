@@ -308,6 +308,35 @@
       "reasoning_effort": "low"
     }
   },
+  "gpt-oss-20b-groq": {
+    "model_id": "openai/gpt-oss-20b",
+    "provider": "groq",
+    "parameters": {
+      "reasoning_effort": "low"
+    }
+  },
+  "gpt-oss-120b-groq": {
+    "model_id": "openai/gpt-oss-120b",
+    "provider": "groq",
+    "parameters": {
+      "reasoning_effort": "low"
+    }
+  },
+  "glm-4.7-cerebras": {
+    "model_id": "zai-glm-4.7",
+    "provider": "cerebras",
+    "extra_body": {
+      "disable_reasoning": false,
+      "clear_thinking": false
+    }
+  },
+  "gpt-oss-120b-cerebras": {
+    "model_id": "gpt-oss-120b",
+    "provider": "cerebras",
+    "parameters": {
+      "reasoning_effort": "medium"
+    }
+  },
   "doubao-seed-thinking": {
     "model_id": "doubao-seed-1-6-thinking-250615",
     "provider": "volcengine",
