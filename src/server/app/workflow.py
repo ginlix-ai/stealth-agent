@@ -19,7 +19,6 @@ from src.server.models.workflow import (
     CheckpointMetadata,
     serialize_message,
 )
-from src.server.models.chat import WorkflowResumeRequest
 
 # Import setup module to access initialized globals
 from src.server.app import setup
@@ -329,56 +328,6 @@ async def get_workflow_checkpoints(
             status_code=500,
             detail=f"Failed to retrieve checkpoint history: {str(e)}"
         )
-
-
-@router.post(
-    "/{thread_id}/resume",
-    summary="[DEPRECATED] Resume workflow from checkpoint",
-    deprecated=True
-)
-async def resume_workflow_from_checkpoint(
-    thread_id: str,
-    request: WorkflowResumeRequest
-):
-    """
-    **DEPRECATED**: This endpoint is deprecated.
-
-    Use the chat endpoint with `interrupt_feedback` parameter instead:
-    ```
-    POST /api/v1/chat/stream
-    {
-        "thread_id": "<thread_id>",
-        "interrupt_feedback": "ACCEPTED",
-        "messages": [...]
-    }
-    ```
-
-    The interrupt_feedback field supports:
-    - "ACCEPTED" - Accept and continue
-    - "EDIT_PLAN" - Edit the plan and continue
-    - Custom feedback string
-
-    Args:
-        thread_id: Thread ID to resume
-        request: Resume configuration
-
-    Returns:
-        Deprecation notice with migration guidance
-    """
-    raise HTTPException(
-        status_code=410,
-        detail={
-            "message": "This endpoint is deprecated. Use POST /api/v1/chat/stream with interrupt_feedback instead.",
-            "migration": {
-                "endpoint": "POST /api/v1/chat/stream",
-                "example": {
-                    "thread_id": thread_id,
-                    "interrupt_feedback": "ACCEPTED",
-                    "messages": [{"role": "user", "content": "Continue"}]
-                }
-            }
-        }
-    )
 
 
 @router.post("/{thread_id}/cancel", status_code=200)

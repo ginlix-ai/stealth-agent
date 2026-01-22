@@ -30,7 +30,6 @@ from langgraph.types import Command
 
 from src.server.models.chat import (
     ChatRequest,
-    StatusResponse,
     serialize_hitl_response_map,
     summarize_hitl_response_map,
 )
@@ -1092,71 +1091,6 @@ async def stream_subagent_status(thread_id: str):
             "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
         },
-    )
-
-
-@router.post("/cancel/{thread_id}")
-async def cancel_workflow(thread_id: str):
-    """
-    Cancel a running PTC workflow.
-
-    Args:
-        thread_id: Workflow thread identifier
-
-    Returns:
-        Status of cancellation
-    """
-    tracker = WorkflowTracker.get_instance()
-    manager = BackgroundTaskManager.get_instance()
-
-    # Mark as cancelled
-    await tracker.request_cancellation(thread_id)
-
-    # Cancel background task
-    await manager.cancel_workflow(thread_id)
-
-    registry_store = BackgroundRegistryStore.get_instance()
-    await registry_store.cancel_and_clear(thread_id, force=True)
-
-    logger.info(f"[PTC_CANCEL] thread_id={thread_id}")
-
-    return {"status": "cancelled", "thread_id": thread_id}
-
-
-@router.get("/status/{thread_id}")
-async def get_chat_workflow_status(thread_id: str) -> StatusResponse:
-    """
-    Get status of a PTC workflow.
-
-    Args:
-        thread_id: Workflow thread identifier
-
-    Returns:
-        StatusResponse with workflow status
-    """
-    tracker = WorkflowTracker.get_instance()
-    manager = BackgroundTaskManager.get_instance()
-
-    # Get status from tracker
-    status_info = await tracker.get_status(thread_id)
-
-    if not status_info:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Workflow {thread_id} not found"
-        )
-
-    # Get task info for additional details
-    task_info = await manager.get_task_info(thread_id)
-
-    return StatusResponse(
-        thread_id=thread_id,
-        status=status_info.get("status", "unknown"),
-        workspace_id=status_info.get("workspace_id"),
-        sandbox_id=task_info.get("sandbox_id") if task_info else None,
-        started_at=status_info.get("started_at"),
-        completed_at=status_info.get("completed_at"),
-        error=status_info.get("error"),
     )
 
 
