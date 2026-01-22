@@ -2,16 +2,19 @@
 # Start PostgreSQL 18 and Redis in Docker for local development
 
 set -e
+set +H  # Disable history expansion to avoid issues with ! in paths
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# Load .env file if it exists
+# Load .env file if it exists (ignore errors)
 if [ -f "$PROJECT_ROOT/.env" ]; then
+    set +e  # Temporarily disable exit on error
     set -a
-    source "$PROJECT_ROOT/.env"
+    source "$PROJECT_ROOT/.env" 2>/dev/null || true
     set +a
+    set -e  # Re-enable exit on error
 fi
 
 # Configuration (use environment variables with defaults)
@@ -154,6 +157,14 @@ wait_for_redis() {
 # Setup database tables
 setup_tables() {
     log_info "Setting up database tables..."
+
+    # Set required environment variables for database setup
+    export DB_TYPE=postgres
+    export DB_HOST="${DB_HOST:-localhost}"
+    export DB_PORT="${DB_PORT:-5432}"
+    export DB_NAME="${DB_NAME:-postgres}"
+    export DB_USER="${DB_USER:-postgres}"
+    export DB_PASSWORD="${DB_PASSWORD:-postgres}"
 
     # Run checkpoint tables setup
     if [ -f "$SCRIPT_DIR/setup_checkpoint_tables.py" ]; then

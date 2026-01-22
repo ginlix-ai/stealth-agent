@@ -1501,7 +1501,15 @@ class PTCSandbox:
             """)
 
             # Write script to code/ directory for persistent logging
-            # Use relative path for upload (Daytona SDK handles it relative to work_dir)
+            # Ensure code directory exists before uploading (same as Python code execution)
+            work_dir_path = getattr(self, "_work_dir", "/home/daytona")
+            code_dir = f"{work_dir_path}/code"
+            
+            # Ensure code directory exists before uploading
+            await self.acreate_directory(code_dir)
+            
+            # Use relative path for upload (consistent with Python code execution)
+            # Daytona SDK handles relative paths relative to work_dir
             script_relative_path = f"code/{bash_id}.sh"
             assert self.sandbox is not None
             await self._daytona_call(
@@ -1511,8 +1519,7 @@ class PTCSandbox:
                 retry_policy=_DaytonaRetryPolicy.SAFE,
             )
 
-            # Get work directory for absolute path in bash execution
-            work_dir_path = getattr(self, "_work_dir", "/home/daytona")
+            # Get absolute path for bash execution
             script_absolute_path = f"{work_dir_path}/{script_relative_path}"
 
             # Execute the script using the sandbox's execution method

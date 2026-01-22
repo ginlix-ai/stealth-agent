@@ -31,6 +31,7 @@ dependencies = [
     "crawl4ai>=0.4.0",
     "fastapi>=0.110.0",
     "uvicorn>=0.27.1",
+    "email-validator>=2.0.0",
     "websockets>=12.0",
     "sse-starlette>=2.1.0,<2.2.0",
     "pandas>=2.2.3",

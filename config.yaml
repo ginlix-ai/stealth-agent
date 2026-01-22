@@ -14,7 +14,7 @@ cli:
 llm:
   # Reference to LLM definition in llms.json
   # Override with PTC_LLMS_FILE environment variable
-  name: "minimax-m2.1"
+  name: "claude-sonnet-4-5"
 
 daytona:
   # Daytona sandbox configuration
