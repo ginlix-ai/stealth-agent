@@ -20,6 +20,14 @@ SLASH_FILE_CMD_RE = re.compile(r"^/(view|download|copy)\s+(?P<path>(?:[^\s]|(?<=
 # System directories to filter by default in /view, /download, /copy
 SYSTEM_DIRS = ("code/", "tools/", "mcp_servers/", "skills/")
 
+# Hidden by default (only show when user explicitly types the prefix).
+HIDDEN_DIRS = ("_internal/",)
+
+# Always hidden from completion (regardless of prefix).
+ALWAYS_HIDDEN_SEGMENTS = ("/__pycache__/",)
+ALWAYS_HIDDEN_BASENAMES = ("__init__.py",)
+ALWAYS_HIDDEN_SUFFIXES = (".pyc",)
+
 
 class SandboxFileCompleter(Completer):
     """Activate sandbox file completion for @ mentions and /view, /download, /copy commands.
@@ -34,10 +42,25 @@ class SandboxFileCompleter(Completer):
     def set_files(self, files: list[str]) -> None:
         """Update the cached file list.
 
+        Always filters out internal cache/bytecode/bootstrap artifacts.
+
         Args:
             files: List of normalized sandbox file paths
         """
-        self._files = sorted(files)
+        cleaned: list[str] = []
+        for f in files:
+            if not f:
+                continue
+            normalized = f"/{f.lstrip('/')}"
+            if normalized.endswith(ALWAYS_HIDDEN_BASENAMES):
+                continue
+            if normalized.endswith(ALWAYS_HIDDEN_SUFFIXES):
+                continue
+            if any(seg in normalized for seg in ALWAYS_HIDDEN_SEGMENTS):
+                continue
+            cleaned.append(f)
+
+        self._files = sorted(cleaned)
 
     def _complete_path(
         self,
@@ -67,9 +90,18 @@ class SandboxFileCompleter(Completer):
             for d in SYSTEM_DIRS
         )
 
+        user_typed_hidden_prefix = any(
+            unescaped_fragment.startswith(d.rstrip("/"))
+            for d in HIDDEN_DIRS
+        )
+
         # Find matching files from cache (substring match for flexibility)
         for file_path in self._files:
             if unescaped_fragment in file_path:
+                # Always hide internal directories unless user explicitly typed the prefix.
+                if any(file_path.startswith(d) for d in HIDDEN_DIRS) and not user_typed_hidden_prefix:
+                    continue
+
                 # Filter system dirs unless user typed exact prefix
                 if filter_system_dirs and not user_typed_system_prefix and any(file_path.startswith(d) for d in SYSTEM_DIRS):
                     continue  # Skip system directory files

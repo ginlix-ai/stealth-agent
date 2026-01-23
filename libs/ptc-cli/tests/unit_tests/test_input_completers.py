@@ -108,7 +108,7 @@ class TestSandboxFileCompleter:
         assert completions[0].text == "test.py"
 
     def test_no_filter_for_at_mentions(self):
-        """Test no filtering for @ mentions."""
+        """Test no filtering for @ mentions (system dirs are allowed)."""
         completer = SandboxFileCompleter()
         completer.set_files(["test.py", "code/internal.py", "tools/tool.py"])
 
@@ -118,6 +118,46 @@ class TestSandboxFileCompleter:
         completions = list(completer.get_completions(doc, event))
         # Should show all files including system dirs
         assert len(completions) == 3
+
+    def test_hides_internal_by_default(self):
+        completer = SandboxFileCompleter()
+        completer.set_files([
+            "test.py",
+            "_internal/src/data_client/fmp/fmp_client.py",
+        ])
+
+        doc = Document("@", cursor_position=len("@"))
+        event = Mock()
+
+        completions = list(completer.get_completions(doc, event))
+        assert [c.text for c in completions] == ["test.py"]
+
+    def test_allows_internal_when_prefix_typed(self):
+        completer = SandboxFileCompleter()
+        completer.set_files([
+            "test.py",
+            "_internal/src/data_client/fmp/fmp_client.py",
+        ])
+
+        doc = Document("@_internal/", cursor_position=len("@_internal/"))
+        event = Mock()
+
+        completions = list(completer.get_completions(doc, event))
+        assert any("_internal/src/data_client/fmp/fmp_client.py" == c.text for c in completions)
+
+    def test_hides_init_pycache_and_pyc(self):
+        completer = SandboxFileCompleter()
+        completer.set_files([
+            "src/__init__.py",
+            "src/main.py",
+            "src/__pycache__/main.cpython-312.pyc",
+        ])
+
+        doc = Document("@", cursor_position=len("@"))
+        event = Mock()
+
+        completions = list(completer.get_completions(doc, event))
+        assert [c.text for c in completions] == ["src/main.py"]
 
     def test_no_completion_mid_line(self):
         """Test no completion triggered mid-line without @ or /."""
@@ -144,8 +184,9 @@ class TestCommandCompleter:
         completions = list(completer.get_completions(doc, event))
         assert len(completions) > 0
         # All completions should be valid commands
-        assert all(c.text in ["clear", "help", "tokens", "files", "view", "copy", "download", "model", "exit"]
-                   for c in completions)
+        from ptc_cli.core import COMMANDS
+
+        assert all(c.text in COMMANDS for c in completions)
 
     def test_partial_command_completion(self):
         """Test partial command completion."""

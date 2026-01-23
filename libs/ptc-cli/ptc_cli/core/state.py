@@ -211,6 +211,10 @@ class SessionState:
         self.reusing_sandbox = False  # Set to True when reconnecting to existing sandbox
         self.thread_id = str(uuid.uuid4())
 
+        # Live sandbox file state for autocomplete and /files.
+        self.sandbox_files: list[str] = []
+        self.sandbox_completer: Any | None = None
+
         # Esc key handling for interrupt and revision
         self.esc_hint_until: float | None = None
         self.esc_hint_handle: TimerHandle | None = None

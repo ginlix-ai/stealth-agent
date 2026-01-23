@@ -1,5 +1,8 @@
 from unittest.mock import AsyncMock, Mock, patch
 
+from unittest.mock import AsyncMock, Mock, patch
+
+import httpx
 import pytest
 
 from ptc_cli.commands.slash import (
@@ -96,6 +99,27 @@ class TestHandleViewCommand:
             await _handle_view_command(mock_client, "image.png")
             assert any("Downloaded" in str(call) for call in mock_console.print.call_args_list)
 
+    @pytest.mark.asyncio
+    async def test_directory_lists_files(self, mock_client):
+        mock_client.list_workspace_files = AsyncMock(return_value=["tools/a.py", "tools/b.py"])
+        with patch("ptc_cli.commands.slash.console") as mock_console:
+            await _handle_view_command(mock_client, "tools/")
+            assert mock_console.print.call_count > 0
+        mock_client.list_workspace_files.assert_awaited_once_with(path="tools/", include_system=True, pattern="*")
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_directory_listing_on_404(self, mock_client):
+        request = httpx.Request("GET", "http://localhost")
+        response = httpx.Response(404, request=request, json={"detail": "File not found"})
+        mock_client.read_workspace_file = AsyncMock(side_effect=httpx.HTTPStatusError("not found", request=request, response=response))
+        mock_client.list_workspace_files = AsyncMock(return_value=["tools/a.py"])
+
+        with patch("ptc_cli.commands.slash.console"):
+            await _handle_view_command(mock_client, "tools")
+
+        mock_client.read_workspace_file.assert_awaited_once_with(path="tools")
+        mock_client.list_workspace_files.assert_awaited_once_with(path="tools/", include_system=True, pattern="*")
+
 
 class TestHandleCopyCommand:
     @pytest.mark.asyncio
@@ -141,3 +165,17 @@ class TestHandleDownloadCommand:
 
         assert local_path.exists()
         assert local_path.read_bytes() == b"test content"
+
+    @pytest.mark.asyncio
+    async def test_handles_http_error(self, mock_client, tmp_path, monkeypatch):
+        request = httpx.Request("GET", "http://localhost")
+        response = httpx.Response(403, request=request, json={"detail": "Forbidden"})
+        mock_client.download_workspace_file = AsyncMock(
+            side_effect=httpx.HTTPStatusError("forbidden", request=request, response=response)
+        )
+        monkeypatch.setattr("pathlib.Path.cwd", lambda: tmp_path)
+
+        with patch("ptc_cli.commands.slash.console") as mock_console:
+            await _handle_download_command(mock_client, "secret.txt", None)
+
+        assert any("Forbidden" in str(call) for call in mock_console.print.call_args_list)
