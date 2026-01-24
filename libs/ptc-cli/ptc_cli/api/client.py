@@ -177,6 +177,24 @@ class SSEStreamClient:
         return response.json()
 
     # =========================================================================
+    # Workspace Refresh
+    # =========================================================================
+
+    async def refresh_workspace(self) -> dict[str, Any]:
+        """Rebuild sandbox tool modules and sync skills."""
+        if not self.workspace_id:
+            raise ValueError("workspace_id is required. Create a workspace first via POST /workspaces")
+
+        url = urljoin(self.base_url, f"/api/v1/workspaces/{self.workspace_id}/refresh")
+        response = await self.client.post(
+            url,
+            headers={"X-User-Id": self.user_id},
+            timeout=120.0,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    # =========================================================================
     # Workspace Files (Live Sandbox)
     # =========================================================================
 

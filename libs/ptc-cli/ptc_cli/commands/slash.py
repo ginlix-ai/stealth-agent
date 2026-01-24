@@ -444,6 +444,35 @@ async def handle_command(
                 console.print("[yellow]Please specify a model name[/yellow]")
         console.print()
 
+    elif cmd_lower == "/refresh":
+        console.print()
+        try:
+            data = await client.refresh_workspace()
+            console.print("[green]Refreshed sandbox[/green]")
+            msg = data.get("message") if isinstance(data, dict) else None
+            if msg:
+                console.print(f"[dim]{msg}[/dim]")
+        except httpx.HTTPStatusError as e:
+            detail = None
+            try:
+                detail = e.response.json().get("detail")
+            except Exception:
+                pass
+            msg = detail or f"HTTP {e.response.status_code}"
+            console.print(f"[red]{msg}[/red]")
+            console.print()
+            return "handled"
+
+        files = await _handle_files_command(client, show_all=False)
+        session_state.sandbox_files = files
+        completer = getattr(session_state, "sandbox_completer", None)
+        if completer is not None and hasattr(completer, "set_files"):
+            try:
+                completer.set_files(files)
+            except Exception:
+                pass
+        console.print()
+
     elif cmd_lower == "/files" or cmd_lower.startswith("/files "):
         console.print()
         parts = cmd.split()
@@ -690,6 +719,19 @@ async def handle_command(
                 console.print(f"[yellow]Could not cancel workflow: {e}[/yellow]")
         else:
             console.print("[yellow]No active workflow to cancel[/yellow]")
+
+        # Refresh cached file list for autocomplete after stopping.
+        try:
+            files = await _handle_files_command(client, show_all=False)
+            session_state.sandbox_files = files
+            completer = getattr(session_state, "sandbox_completer", None)
+            if completer is not None and hasattr(completer, "set_files"):
+                try:
+                    completer.set_files(files)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     elif cmd_lower == "/conversation":
         # List and open past conversations for this user

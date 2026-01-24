@@ -453,8 +453,7 @@ async def execute_task(
                 console.print()
                 break
 
-            elif event_type == "done":
-                break
+            # Stream termination indicates completion.
 
             elif event_type == "artifact":
                 # Generic artifact events (file operations, todo updates, etc.)
@@ -485,6 +484,20 @@ async def execute_task(
 
         # After streaming
         state.flush_text(final=True)
+
+        # Refresh file cache for autocomplete (stream ended).
+        try:
+            files = await client.list_workspace_files(include_system=False)
+            session_state.sandbox_files = files
+            completer = getattr(session_state, "sandbox_completer", None)
+            if completer is not None and hasattr(completer, "set_files"):
+                try:
+                    completer.set_files(files)
+                except Exception:
+                    pass
+        except Exception:
+            # Non-fatal; autocomplete can be refreshed via /files.
+            pass
 
         # Save final state for reconnection
         if client.last_event_id > 0:
@@ -743,10 +756,7 @@ async def reconnect_to_workflow(
                 console.print()
                 break
 
-            elif event_type == "done":
-                # Workflow completed
-                session_state.soft_interrupted = False
-                break
+            # Stream termination indicates completion.
 
             elif event_type == "keepalive":
                 pass
@@ -759,8 +769,22 @@ async def reconnect_to_workflow(
 
         # After streaming
         state.flush_text(final=True)
+
+        # Refresh file cache for autocomplete (stream ended).
+        try:
+            files = await client.list_workspace_files(include_system=False)
+            session_state.sandbox_files = files
+            completer = getattr(session_state, "sandbox_completer", None)
+            if completer is not None and hasattr(completer, "set_files"):
+                try:
+                    completer.set_files(files)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         console.print()
-        console.print("[green]Workflow completed[/green]")
+        console.print("[green]Workflow stream ended[/green]")
 
         _maybe_start_status_stream(client, session_state)
 

@@ -31,11 +31,19 @@ from src.server.models.workspace import (
     WorkspaceResponse,
     WorkspaceUpdate,
 )
+from src.server.models.workspace_refresh import WorkspaceRefreshResponse
 from src.server.services.workspace_manager import WorkspaceManager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["Workspaces"])
+
+
+def _require_workspace_owner(workspace: dict | None, *, user_id: str, workspace_id: str) -> None:
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    if workspace.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 
 def _workspace_to_response(workspace: dict) -> WorkspaceResponse:
@@ -282,6 +290,70 @@ async def stop_workspace(workspace_id: str):
     except Exception as e:
         logger.exception(f"Error stopping workspace {workspace_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to stop workspace")
+
+
+@router.post("/{workspace_id}/refresh", response_model=WorkspaceRefreshResponse)
+async def refresh_workspace(
+    workspace_id: str,
+    x_user_id: str = Header(..., alias="X-User-Id", description="User ID"),
+):
+    """Refresh sandbox skills + tool modules.
+
+    Intended for long-lived/reconnected sandboxes where tool module generation
+    is skipped during reconnect.
+    """
+
+    manager = WorkspaceManager.get_instance()
+    workspace = await db_get_workspace(workspace_id)
+    _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
+
+    try:
+        session = await manager.get_session_for_workspace(workspace_id)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Sandbox not available: {e}")
+
+    sandbox = getattr(session, "sandbox", None)
+    if sandbox is None:
+        raise HTTPException(status_code=503, detail="Sandbox not available")
+
+    refreshed_tools = False
+    skills_uploaded = False
+
+    try:
+        result = await sandbox.refresh_tools()
+        refreshed_tools = bool(result.get("success", True))
+    except Exception as e:
+        logger.exception(f"Refresh tools failed for workspace {workspace_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to refresh tools")
+
+    # Sync skills by default (manifest-based; usually no-op)
+    try:
+        if manager.config.skills.enabled:
+            skill_dirs = manager.config.skills.local_skill_dirs_with_sandbox()
+            if skill_dirs:
+                skills_uploaded = await sandbox.sync_skills(
+                    skill_dirs,
+                    reusing_sandbox=True,
+                )
+    except Exception as e:
+        logger.warning(f"Skills sync failed during refresh: {e}")
+
+    servers: list[str] = []
+    try:
+        if getattr(session, "mcp_registry", None) is not None:
+            servers = list(session.mcp_registry.connectors.keys())
+    except Exception:
+        servers = []
+
+    return WorkspaceRefreshResponse(
+        workspace_id=workspace_id,
+        status="ok",
+        message="Sandbox refreshed",
+        refreshed_tools=refreshed_tools,
+        skills_uploaded=skills_uploaded,
+        servers=servers,
+        details={"tools": result},
+    )
 
 
 @router.delete("/{workspace_id}", status_code=204)

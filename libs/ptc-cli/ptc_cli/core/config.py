@@ -90,6 +90,7 @@ COMMANDS = {
     "help": "Show help information",
     "tokens": "Show token usage for current session",
     "files": "List files in sandbox (use 'files all' for system dirs)",
+    "refresh": "Refresh sandbox tools + skills",
     "view": "View file content: /view <path>",
     "copy": "Copy file to clipboard: /copy <path>",
     "download": "Download file: /download <path> [local]",

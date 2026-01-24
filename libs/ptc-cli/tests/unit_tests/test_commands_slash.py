@@ -59,6 +59,30 @@ class TestRenderTree:
         assert _render_tree([]) == []
 
 
+class TestHandleRefreshCommand:
+    @pytest.mark.asyncio
+    async def test_refresh_calls_api_and_updates_files(self, mock_client):
+        from ptc_cli.commands.slash import handle_command
+        from ptc_cli.core.state import SessionState
+
+        token_tracker = Mock()
+        session_state = SessionState()
+        session_state.sandbox_completer = Mock()
+        session_state.sandbox_completer.set_files = Mock()
+
+        mock_client.refresh_workspace = AsyncMock(return_value={"message": "ok"})
+        mock_client.list_workspace_files = AsyncMock(return_value=["README.md"])
+
+        with patch("ptc_cli.commands.slash.console"):
+            result = await handle_command("/refresh", mock_client, token_tracker, session_state)
+
+        assert result == "handled"
+        mock_client.refresh_workspace.assert_awaited_once()
+        mock_client.list_workspace_files.assert_awaited()
+        assert session_state.sandbox_files == ["README.md"]
+        session_state.sandbox_completer.set_files.assert_called_once()
+
+
 class TestHandleFilesCommand:
     @pytest.mark.asyncio
     async def test_lists_files(self, mock_client):

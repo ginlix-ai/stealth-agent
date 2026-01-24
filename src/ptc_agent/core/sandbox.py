@@ -118,6 +118,7 @@ class PTCSandbox:
         self.bash_execution_count = 0
 
         self._reconnect_lock = asyncio.Lock()
+        self._tool_refresh_lock = asyncio.Lock()
         self._reconnect_inflight: asyncio.Future[None] | None = None
 
         logger.info("Initialized PTCSandbox")
@@ -432,6 +433,21 @@ class PTCSandbox:
             )
 
         logger.info("Tools and MCP servers ready", sandbox_id=self.sandbox_id)
+
+    async def refresh_tools(self) -> dict[str, Any]:
+        """Rebuild sandbox tool modules and upload internal packages.
+
+        Safe to call on an already-running sandbox (e.g., after reconnect).
+        """
+        if not self.sandbox:
+            raise RuntimeError("Sandbox not initialized")
+
+        async with self._tool_refresh_lock:
+            await self._upload_mcp_server_files()
+            await self._upload_internal_packages()
+            await self._install_tool_modules()
+
+        return {"success": True}
 
     async def setup(self) -> None:
         """Set up the sandbox environment.

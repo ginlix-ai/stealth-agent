@@ -31,6 +31,7 @@ def show_help() -> None:
   /conversation                 List/open past conversations
   /reconnect                    Reconnect to running workflow after ESC
   /files [all]                  List files (all=include system dirs)
+  /refresh                      Refresh tools + skills in sandbox
   /view <path>                  View file content (supports images)
   /copy <path>                  Copy file content to clipboard
   /download <path> [local]      Download file from sandbox
