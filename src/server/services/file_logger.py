@@ -13,7 +13,7 @@ from typing import Any
 
 import structlog
 
-from src.server.database import conversation_db as db
+from src.server.database import conversation as db
 
 logger = structlog.get_logger(__name__)
 

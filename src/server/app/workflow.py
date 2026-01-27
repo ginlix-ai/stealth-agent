@@ -364,7 +364,7 @@ async def cancel_workflow(thread_id: str):
         await tracker.mark_cancelled(thread_id)
 
         # Update thread status in database for consistency
-        from src.server.database import conversation_db as qr_db
+        from src.server.database import conversation as qr_db
         await qr_db.update_thread_status(thread_id, "cancelled")
 
         from src.config.settings import is_background_execution_enabled

@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 from ptc_agent.config import AgentConfig
 from ptc_agent.core.session import Session, SessionManager
 
-from src.server.database.workspace_db import (
+from src.server.database.workspace import (
     create_workspace as db_create_workspace,
     delete_workspace as db_delete_workspace,
     get_workspace as db_get_workspace,

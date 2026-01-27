@@ -252,7 +252,7 @@ class UsagePersistenceService:
         Returns:
             True if successful, False otherwise
         """
-        from src.server.database import conversation_db as qr_db
+        from src.server.database import conversation as qr_db
 
         if timestamp is None:
             timestamp = datetime.now()

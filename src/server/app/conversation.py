@@ -24,7 +24,7 @@ from src.server.models.conversation import (
     ConversationMessage,
     WorkspaceMessagesResponse,
 )
-from src.server.database.conversation_db import (
+from src.server.database.conversation import (
     get_response_by_id,
     get_workspace_threads,
     get_threads_for_user,
@@ -199,7 +199,7 @@ async def get_thread_messages_endpoint(
 
             response = None
             if msg.get("response_id"):
-                from src.server.database.conversation_db import (
+                from src.server.database.conversation import (
                     get_file_snapshot_before_thread,
                     get_operations_for_thread,
                 )

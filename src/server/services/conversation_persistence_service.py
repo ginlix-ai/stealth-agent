@@ -6,7 +6,7 @@ DB operations follow LangGraph workflow stages, not HTTP request/response cycles
 
 Architecture:
 - Stage-level transactions (atomic operations per workflow stage)
-- Simple logging: [conversation_db] prefix for all operations
+- Simple logging: [conversation] prefix for all operations
 - Thread-scoped service instances (one per workflow execution)
 - Works independently of SSE streaming
 """
@@ -17,7 +17,7 @@ from datetime import datetime
 from uuid import uuid4
 from contextlib import asynccontextmanager
 
-from src.server.database import conversation_db as qr_db
+from src.server.database import conversation as qr_db
 from ptc_agent.utils.file_operations import _file_data_to_string
 
 logger = logging.getLogger(__name__)

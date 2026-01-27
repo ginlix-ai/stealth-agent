@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
 
 
     # Initialize and open conversation database pool
-    from src.server.database.conversation_db import get_or_create_pool
+    from src.server.database.conversation import get_or_create_pool
     conv_pool = get_or_create_pool()
     # Extract connection details from pool
     conninfo = conv_pool._conninfo if hasattr(conv_pool, '_conninfo') else "unknown"
@@ -194,7 +194,7 @@ async def lifespan(app: FastAPI):
     # 2. THEN: Close database pools
     # Close conversation database pool
     try:
-        from src.server.database.conversation_db import get_or_create_pool
+        from src.server.database.conversation import get_or_create_pool
         conv_pool = get_or_create_pool()
         if not conv_pool.closed:
             logger.info("Closing conversation database pool...")

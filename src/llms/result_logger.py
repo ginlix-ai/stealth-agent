@@ -288,7 +288,7 @@ class ResultLogger:
 
         try:
             # Import here to avoid circular dependency
-            from src.server.database import conversation_db as qr_db
+            from src.server.database import conversation as qr_db
 
             # Ensure required fields exist
             if "thread_id" not in session_data:

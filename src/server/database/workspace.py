@@ -12,7 +12,7 @@ from uuid import UUID
 
 from psycopg.rows import dict_row
 
-from src.server.database.conversation_db import get_db_connection
+from src.server.database.conversation import get_db_connection
 
 logger = logging.getLogger(__name__)
 

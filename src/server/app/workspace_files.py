@@ -24,7 +24,7 @@ from typing import Any
 from fastapi import APIRouter, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import Response, StreamingResponse
 
-from src.server.database.workspace_db import get_workspace as db_get_workspace
+from src.server.database.workspace import get_workspace as db_get_workspace
 from src.server.services.workspace_manager import WorkspaceManager
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["Workspace Files"])
