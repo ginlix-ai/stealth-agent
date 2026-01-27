@@ -641,7 +641,7 @@ def get_langsmith_metadata(
     timezone: Optional[str] = None,
     deepthinking: bool = False,
     auto_accepted_plan: bool = False,
-    track_tokens: bool = False,
+    track_tokens: bool = True,
     max_plan_iterations: Optional[int] = None,
     max_step_num: Optional[int] = None,
     agent_llm_preset: Optional[str] = None,
@@ -663,7 +663,7 @@ def get_langsmith_metadata(
         timezone: Timezone string
         deepthinking: Deep thinking mode flag
         auto_accepted_plan: Auto plan acceptance flag
-        track_tokens: Token tracking flag
+        track_tokens: Token tracking flag (always True, kept for compatibility)
         max_plan_iterations: Maximum plan iterations
         max_step_num: Maximum step number
         agent_llm_preset: Agent LLM preset name
@@ -695,7 +695,6 @@ def get_langsmith_metadata(
     # Feature flags
     metadata["deepthinking"] = deepthinking
     metadata["auto_accepted_plan"] = auto_accepted_plan
-    metadata["track_tokens"] = track_tokens
 
     # Execution parameters
     if max_plan_iterations is not None:

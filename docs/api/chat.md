@@ -19,11 +19,17 @@ Stream PTC agent responses as Server-Sent Events. This is the primary endpoint f
 - Handles interrupts for human-in-the-loop (HITL) review
 - Background execution with event buffering
 
+**Request Headers**
+
+| Header | Type | Required | Description |
+|--------|------|----------|-------------|
+| X-User-Id | string | **Yes** | User identifier |
+| Content-Type | string | Yes | Must be `application/json` |
+
 **Request Body**
 
 ```json
 {
-  "user_id": "user_001",
   "workspace_id": "workspace-uuid",
   "thread_id": "__default__",
   "messages": [
@@ -32,7 +38,6 @@ Stream PTC agent responses as Server-Sent Events. This is the primary endpoint f
       "content": "Write a hello world script in Python"
     }
   ],
-  "track_tokens": true,
   "plan_mode": false,
   "locale": "en-US",
   "timezone": "America/New_York"
@@ -41,20 +46,16 @@ Stream PTC agent responses as Server-Sent Events. This is the primary endpoint f
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| user_id | string | No | "test_user_001" | User identifier |
 | workspace_id | string | **Yes** | - | Workspace ID (create first via POST /workspaces) |
 | thread_id | string | No | "__default__" | Thread identifier for checkpointing |
 | messages | array | No | [] | History of messages |
-| track_tokens | boolean | No | true | Whether to track token usage |
 | subagents_enabled | array | No | from config | List of subagent names to enable |
 | plan_mode | boolean | No | false | Require plan approval before execution |
-| sandbox_id | string | No | null | Legacy: direct sandbox reconnection |
 | hitl_response | object | No | null | Structured HITL response for interrupt handling |
-| interrupt_feedback | string | No | null | Deprecated: use hitl_response |
 | checkpoint_id | string | No | null | Specific checkpoint to resume from |
 | locale | string | No | null | Locale for output (e.g., "en-US", "zh-CN") |
 | timezone | string | No | null | IANA timezone (e.g., "America/New_York") |
-| additional_context | array | No | null | Additional context including state restoration |
+| additional_context | array | No | null | Additional context for skill loading |
 | llm_model | string | No | from config | LLM model name from models.json (see [Model Selection](#model-selection)) |
 
 **Response** `200 OK`
@@ -91,8 +92,8 @@ data: {"status": "completed", "thread_id": "abc-123"}
 ```bash
 curl -N -X POST "http://localhost:8000/api/v1/chat/stream" \
   -H "Content-Type: application/json" \
+  -H "X-User-Id: user-789" \
   -d '{
-    "user_id": "user-789",
     "workspace_id": "ws-abc123",
     "messages": [{"role": "user", "content": "Write a hello world script"}]
   }'
@@ -419,6 +420,49 @@ To resume from an interrupt, send a new request with the `hitl_response` field:
 
 ---
 
+## Skill Loading
+
+Use `additional_context` to load skill instructions for the agent. Skills are markdown-based instruction files that extend agent capabilities.
+
+**Skill Context Structure:**
+
+```json
+{
+  "type": "skills",
+  "name": "skill-name",
+  "instruction": "Optional additional instruction for the skill"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| type | string | Yes | Must be `"skills"` |
+| name | string | Yes | Skill name (e.g., `"user-profile"`) |
+| instruction | string | No | Additional instruction for the skill |
+
+**Example: User Onboarding with Skill**
+
+```bash
+curl -N -X POST "http://localhost:8000/api/v1/chat/stream" \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user-789" \
+  -d '{
+    "workspace_id": "ws-abc123",
+    "messages": [{"role": "user", "content": "Hi! I am new here and would like to set up my profile."}],
+    "additional_context": [
+      {
+        "type": "skills",
+        "name": "user-profile",
+        "instruction": "Help the user with first time onboarding. Reference the skills/user-profile/onboarding.md for details. You should use load_skill tool to load the user-profile skill before calling any of the tools."
+      }
+    ]
+  }'
+```
+
+The agent will load the skill's `SKILL.md` file and follow its instructions when processing the request.
+
+---
+
 ## Model Selection
 
 The `llm_model` field allows you to override the default LLM model on a per-request basis. Available models are defined in `src/llms/manifest/models.json`.
@@ -445,8 +489,8 @@ The `llm_model` field allows you to override the default LLM model on a per-requ
 ```bash
 curl -N -X POST "http://localhost:8000/api/v1/chat/stream" \
   -H "Content-Type: application/json" \
+  -H "X-User-Id: user-789" \
   -d '{
-    "user_id": "user-789",
     "workspace_id": "ws-abc123",
     "llm_model": "claude-sonnet-4-5",
     "messages": [{"role": "user", "content": "Explain quantum computing"}]

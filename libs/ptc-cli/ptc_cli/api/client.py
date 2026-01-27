@@ -364,7 +364,6 @@ class SSEStreamClient:
             "workspace_id": self.workspace_id,
             "thread_id": thread_id or self.thread_id or "__default__",
             "messages": [{"role": "user", "content": message}] if message else [],
-            "track_tokens": True,
             "plan_mode": plan_mode,
         }
 

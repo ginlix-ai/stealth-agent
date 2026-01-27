@@ -171,6 +171,9 @@ async def _astream_workflow(
     start_time = time.time()
     handler = None
     persistence_service = None
+    token_callback = None
+    tool_tracker = None
+    ptc_graph = None
 
     # Start execution tracking to capture agent messages
     ExecutionTracker.start_tracking()
@@ -189,7 +192,7 @@ async def _astream_workflow(
         # =====================================================================
 
         # Determine query type based on whether this is an interrupt resume
-        is_resume = request.hitl_response or request.interrupt_feedback
+        is_resume = bool(request.hitl_response)
         query_type = "resume_feedback" if is_resume else "initial"
 
         # Ensure thread exists in database (linked to workspace)
@@ -226,9 +229,6 @@ async def _astream_workflow(
             feedback_action = summary["feedback_action"]
             query_content = summary["content"]
             query_metadata["hitl_interrupt_ids"] = summary["interrupt_ids"]
-        elif request.interrupt_feedback:
-            # Legacy string-based feedback (deprecated).
-            feedback_action = request.interrupt_feedback
 
         await persistence_service.persist_query_start(
             content=query_content,
@@ -277,20 +277,14 @@ async def _astream_workflow(
         # Phase 3: Token and Tool Tracking
         # =====================================================================
 
-        # Initialize variables that may be used in error handling
-        ptc_graph = None
-        token_callback = None
-
-        # Initialize token tracking if enabled
+        # Initialize token tracking (always enabled)
         token_callback = TokenTrackingManager.initialize_tracking(
             thread_id=thread_id,
-            track_tokens=request.track_tokens
+            track_tokens=True
         )
 
         # Create tool tracker for infrastructure cost tracking
-        tool_tracker = None
-        if request.track_tokens:
-            tool_tracker = ToolUsageTracker(thread_id=thread_id)
+        tool_tracker = ToolUsageTracker(thread_id=thread_id)
 
         # =====================================================================
         # Session and Graph Setup
@@ -367,7 +361,7 @@ async def _astream_workflow(
         # and prepend as a separate message before user messages.
         # The original user_input is preserved for database persistence.
         skill_contexts = parse_skill_contexts(request.additional_context)
-        if skill_contexts and not request.hitl_response and not request.interrupt_feedback:
+        if skill_contexts and not request.hitl_response:
             # Get skill directories from config
             skill_dirs = [
                 local_dir for local_dir, _ in config.skills.local_skill_dirs_with_sandbox()
@@ -391,13 +385,6 @@ async def _astream_workflow(
                 f"[PTC_RESUME] thread_id={thread_id} "
                 f"hitl_response keys={list(request.hitl_response.keys())}"
             )
-        elif request.interrupt_feedback:
-            # Legacy: String-based feedback (deprecated but still supported)
-            resume_msg = f"[{request.interrupt_feedback}]"
-            if user_input:
-                resume_msg += f" {user_input}"
-            input_state = Command(resume=resume_msg)
-            logger.info(f"[PTC_RESUME] thread_id={thread_id} feedback={request.interrupt_feedback}")
         else:
             input_state = {
                 "messages": messages,
@@ -409,7 +396,7 @@ async def _astream_workflow(
         # =====================================================================
         # When plan_mode is enabled, inject a reminder for the agent to create
         # a plan and submit it for approval before executing any changes.
-        if request.plan_mode and not request.hitl_response and not request.interrupt_feedback:
+        if request.plan_mode and not request.hitl_response:
             plan_mode_reminder = (
                 "\n\n[PLAN MODE ENABLED]\n"
                 "Before making any changes, you MUST:\n"
@@ -452,7 +439,7 @@ async def _astream_workflow(
             timezone=timezone_str,
             deepthinking=False,
             auto_accepted_plan=False,
-            track_tokens=request.track_tokens,
+            track_tokens=True,
         )
 
         # Build LangGraph config
@@ -470,8 +457,8 @@ async def _astream_workflow(
         if request.checkpoint_id:
             config["configurable"]["checkpoint_id"] = request.checkpoint_id
 
-        # Add callbacks to config if token tracking is enabled
-        if request.track_tokens and token_callback:
+        # Add token tracking callbacks
+        if token_callback:
             config["callbacks"] = [token_callback]
 
         # Extract background task registry from orchestrator (single source of truth for SSE events)
@@ -484,7 +471,7 @@ async def _astream_workflow(
         # Reuse WorkflowStreamHandler for SSE streaming
         handler = WorkflowStreamHandler(
             thread_id=thread_id,
-            track_tokens=request.track_tokens,
+            track_tokens=True,
             token_callback=token_callback,
             tool_tracker=tool_tracker,
             background_registry=background_registry,
@@ -597,7 +584,7 @@ async def _astream_workflow(
                 )
 
         # Clear event buffer when resuming from interrupt
-        if request.hitl_response or request.interrupt_feedback:
+        if request.hitl_response:
             logger.info(f"[PTC_CHAT] Clearing event buffer for interrupt resume: {thread_id}")
             await manager.clear_event_buffer(thread_id)
 

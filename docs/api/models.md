@@ -16,13 +16,10 @@ Request model for streaming chat endpoint.
 | user_id | string | No | "test_user_001" | User identifier |
 | thread_id | string | No | "__default__" | Thread identifier for checkpointing (auto-generates UUID on first use) |
 | messages | ChatMessage[] | No | [] | History of messages |
-| track_tokens | boolean | No | true | Whether to track token usage |
 | subagents_enabled | string[] | No | from config | List of subagent names to enable |
 | background_auto_wait | boolean | No | from config | Whether to wait for background tasks |
 | plan_mode | boolean | No | false | Require plan approval before execution |
-| sandbox_id | string | No | null | Legacy: direct sandbox reconnection |
 | hitl_response | object | No | null | Structured HITL response |
-| interrupt_feedback | string | No | null | Deprecated: use hitl_response |
 | checkpoint_id | string | No | null | Specific checkpoint to resume from |
 | locale | string | No | null | Locale for output (e.g., "en-US") |
 | timezone | string | No | null | IANA timezone |
@@ -39,7 +36,6 @@ Request model for streaming chat endpoint.
   "messages": [
     {"role": "user", "content": "Hello"}
   ],
-  "track_tokens": true,
   "plan_mode": false
 }
 ```

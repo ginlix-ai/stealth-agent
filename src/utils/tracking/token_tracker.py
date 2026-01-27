@@ -24,28 +24,25 @@ class TokenTrackingManager:
     @staticmethod
     def initialize_tracking(
         thread_id: str,
-        track_tokens: bool = False
-    ) -> Optional[PerCallTokenTracker]:
+        track_tokens: bool = True
+    ) -> PerCallTokenTracker:
         """
         Initialize token and execution tracking for a workflow run.
 
         Args:
             thread_id: Thread identifier for logging
-            track_tokens: Whether to enable token tracking
+            track_tokens: Whether to enable token tracking (always True, kept for compatibility)
 
         Returns:
-            PerCallTokenTracker if tracking enabled, None otherwise
+            PerCallTokenTracker instance
         """
-        token_callback = None
+        # Initialize per-call token tracking callback for accurate tiered pricing
+        token_callback = PerCallTokenTracker()
 
-        if track_tokens:
-            # Initialize per-call token tracking callback for accurate tiered pricing
-            token_callback = PerCallTokenTracker()
+        # Start execution tracking to capture agent messages and tool calls
+        ExecutionTracker.start_tracking()
 
-            # Start execution tracking to capture agent messages and tool calls
-            ExecutionTracker.start_tracking()
-
-            logger.debug(f"Token tracking and execution tracking started for thread_id={thread_id}")
+        logger.debug(f"Token tracking and execution tracking started for thread_id={thread_id}")
 
         return token_callback
 

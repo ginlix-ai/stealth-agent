@@ -272,15 +272,16 @@ curl "http://localhost:8000/api/v1/workflow/abc-123/status"
 
 `POST /api/v1/workflow/{thread_id}/resume`
 
-**DEPRECATED**: Use the chat endpoint with `interrupt_feedback` parameter instead.
+**DEPRECATED**: Use the chat endpoint with `hitl_response` parameter instead.
 
 ```bash
 # Instead of this deprecated endpoint, use:
 curl -X POST "http://localhost:8000/api/v1/chat/stream" \
   -H "Content-Type: application/json" \
   -d '{
+    "workspace_id": "ws-abc123",
     "thread_id": "abc-123",
-    "interrupt_feedback": "ACCEPTED",
+    "hitl_response": {"interrupt-1": {"decisions": [{"type": "approve"}]}},
     "messages": [{"role": "user", "content": "Continue"}]
   }'
 ```
@@ -289,12 +290,13 @@ curl -X POST "http://localhost:8000/api/v1/chat/stream" \
 
 ```json
 {
-  "message": "This endpoint is deprecated. Use POST /api/v1/chat/stream with interrupt_feedback instead.",
+  "message": "This endpoint is deprecated. Use POST /api/v1/chat/stream with hitl_response instead.",
   "migration": {
     "endpoint": "POST /api/v1/chat/stream",
     "example": {
+      "workspace_id": "ws-abc123",
       "thread_id": "abc-123",
-      "interrupt_feedback": "ACCEPTED",
+      "hitl_response": {"interrupt-1": {"decisions": [{"type": "approve"}]}},
       "messages": [{"role": "user", "content": "Continue"}]
     }
   }

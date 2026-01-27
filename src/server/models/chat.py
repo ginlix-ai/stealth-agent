@@ -162,12 +162,6 @@ class ChatRequest(BaseModel):
         description="History of messages between the user and the assistant"
     )
 
-    # Logging and tracking
-    track_tokens: bool = Field(
-        default=True,
-        description="Whether to track token usage"
-    )
-
     # Agent options
     subagents_enabled: Optional[List[str]] = Field(
         default=None,
@@ -182,21 +176,11 @@ class ChatRequest(BaseModel):
         description="When True, agent must submit a plan for approval via submit_plan tool before execution"
     )
 
-    # Session management (legacy - kept for direct sandbox access)
-    sandbox_id: Optional[str] = Field(
-        default=None,
-        description="Existing sandbox ID to reconnect to (legacy, for direct sandbox access)"
-    )
-
     # Interrupt/resume support (HITL)
     hitl_response: Optional[Dict[str, HITLResponse]] = Field(
         default=None,
         description="Structured HITL response: {interrupt_id: HITLResponse}. "
                     "Use this to respond to interrupt events with approve/reject decisions."
-    )
-    interrupt_feedback: Optional[str] = Field(
-        default=None,
-        description="[DEPRECATED] Use hitl_response instead. Legacy string feedback for plan review."
     )
     checkpoint_id: Optional[str] = Field(
         default=None,

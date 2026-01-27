@@ -249,7 +249,7 @@ class WorkflowStreamHandler:
     def __init__(
         self,
         thread_id: str,
-        track_tokens: bool = False,
+        track_tokens: bool = True,
         token_callback: Optional[Any] = None,
         tool_tracker: Optional[Any] = None,
         keepalive_interval: Optional[float] = None,
@@ -262,7 +262,7 @@ class WorkflowStreamHandler:
 
         Args:
             thread_id: Thread identifier for this streaming session
-            track_tokens: Whether token tracking is enabled
+            track_tokens: Whether token tracking is enabled (always True, kept for compatibility)
             token_callback: Token tracking callback instance (PerCallTokenTracker)
             tool_tracker: Tool usage tracker instance (ToolUsageTracker) for infrastructure cost tracking
             keepalive_interval: Seconds between keepalive events (default from env)
@@ -271,7 +271,6 @@ class WorkflowStreamHandler:
             merged_stream_chunk_max_bytes: Max bytes per merged stored stream chunk
         """
         self.thread_id = thread_id
-        self.track_tokens = track_tokens
         self.token_callback = token_callback
         self.tool_tracker = tool_tracker
         self.keepalive_interval = keepalive_interval or SSE_KEEPALIVE_INTERVAL
@@ -624,58 +623,57 @@ class WorkflowStreamHandler:
                     self._last_event_time = time.time()
                     yield event
 
-            # After workflow completes, emit credit_usage event if tracking is enabled
-            if self.track_tokens:
-                try:
-                    from src.server.services.usage_persistence_service import UsagePersistenceService
+            # After workflow completes, emit credit_usage event
+            try:
+                from src.server.services.usage_persistence_service import UsagePersistenceService
 
-                    # Get token tracking from callback (already stored in self.token_callback)
-                    per_call_records = None
-                    if self.token_callback:
-                        per_call_records = self.token_callback.per_call_records
+                # Get token tracking from callback (already stored in self.token_callback)
+                per_call_records = None
+                if self.token_callback:
+                    per_call_records = self.token_callback.per_call_records
 
-                    # Get tool usage (non-destructive read, can be called multiple times)
-                    tool_usage = self.get_tool_usage()
+                # Get tool usage (non-destructive read, can be called multiple times)
+                tool_usage = self.get_tool_usage()
 
-                    # Calculate credits if we have usage data
-                    if per_call_records or tool_usage:
-                        # Calculate token usage for display
-                        token_usage = {}
-                        if per_call_records:
-                            from src.utils.tracking import calculate_cost_from_per_call_records
-                            token_usage = calculate_cost_from_per_call_records(per_call_records)
+                # Calculate credits if we have usage data
+                if per_call_records or tool_usage:
+                    # Calculate token usage for display
+                    token_usage = {}
+                    if per_call_records:
+                        from src.utils.tracking import calculate_cost_from_per_call_records
+                        token_usage = calculate_cost_from_per_call_records(per_call_records)
 
-                        # Calculate total credits using same logic as persistence
-                        credit_service = UsagePersistenceService(
-                            thread_id=self.thread_id,
-                            workspace_id="temp",  # Not needed for calculation
-                            user_id="temp"
-                        )
-
-                        if per_call_records:
-                            await credit_service.track_llm_usage(per_call_records)
-
-                        if tool_usage:
-                            credit_service.record_tool_usage_batch(tool_usage)
-
-                        total_credits = credit_service.get_total_credits()
-
-                        # Emit credit_usage event
-                        yield self._format_credit_usage_event(
-                            thread_id=self.thread_id,
-                            token_usage=token_usage,
-                            total_credits=total_credits
-                        )
-
-                        logger.info(
-                            f"[Credit SSE] Emitted credit_usage event: "
-                            f"{total_credits:.2f} credits for thread_id={self.thread_id}"
-                        )
-                except Exception as e:
-                    # Don't fail workflow if credit event fails
-                    logger.warning(
-                        f"[Credit SSE] Failed to emit credit_usage event for thread_id={self.thread_id}: {e}"
+                    # Calculate total credits using same logic as persistence
+                    credit_service = UsagePersistenceService(
+                        thread_id=self.thread_id,
+                        workspace_id="temp",  # Not needed for calculation
+                        user_id="temp"
                     )
+
+                    if per_call_records:
+                        await credit_service.track_llm_usage(per_call_records)
+
+                    if tool_usage:
+                        credit_service.record_tool_usage_batch(tool_usage)
+
+                    total_credits = credit_service.get_total_credits()
+
+                    # Emit credit_usage event
+                    yield self._format_credit_usage_event(
+                        thread_id=self.thread_id,
+                        token_usage=token_usage,
+                        total_credits=total_credits
+                    )
+
+                    logger.info(
+                        f"[Credit SSE] Emitted credit_usage event: "
+                        f"{total_credits:.2f} credits for thread_id={self.thread_id}"
+                    )
+            except Exception as e:
+                # Don't fail workflow if credit event fails
+                logger.warning(
+                    f"[Credit SSE] Failed to emit credit_usage event for thread_id={self.thread_id}: {e}"
+                )
 
         except asyncio.CancelledError:
             logger.info(f"SSE streaming ended for thread_id={self.thread_id} (client connection lost)")
