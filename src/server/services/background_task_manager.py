@@ -820,6 +820,11 @@ class BackgroundTaskManager:
                                 metadata, "interrupt", thread_id
                             )
 
+                            # Get streaming chunks for persistence (plan description, reasoning, etc.)
+                            streaming_chunks = get_streaming_chunks_from_handler(
+                                metadata, "interrupt", thread_id
+                            )
+
                             # Calculate execution time from start_time
                             execution_time = calculate_execution_time(metadata)
 
@@ -851,7 +856,8 @@ class BackgroundTaskManager:
                                 execution_time=execution_time,
                                 metadata=persist_metadata,
                                 per_call_records=per_call_records,
-                                tool_usage=tool_usage
+                                tool_usage=tool_usage,
+                                streaming_chunks=streaming_chunks
                             )
                             logger.info(f"[WorkflowPersistence] Workflow {thread_id} paused for human feedback")
                         except Exception as persist_error:

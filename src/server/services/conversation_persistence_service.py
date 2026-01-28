@@ -271,6 +271,7 @@ class ConversationPersistenceService:
                         metadata=metadata,
                         execution_time=execution_time,
                         timestamp=timestamp,
+                        streaming_chunks=streaming_chunks,
                         conn=conn
                     )
 

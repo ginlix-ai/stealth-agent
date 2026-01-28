@@ -330,6 +330,7 @@ async def _astream_workflow(
             checkpointer=setup.checkpointer,
             background_registry=background_registry,
             user_id=user_id,
+            plan_mode=request.plan_mode,
         )
 
         if session.sandbox:
@@ -605,6 +606,8 @@ async def _astream_workflow(
                 "msg_type": "ptc",
                 "locale": request.locale,
                 "timezone": timezone_str,
+                "handler": handler,
+                "token_callback": token_callback,
             },
             completion_callback=on_background_workflow_complete,
             graph=ptc_graph,  # Pass graph for state queries in completion/error handlers

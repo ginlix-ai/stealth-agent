@@ -203,6 +203,7 @@ class PTCAgent:
         operation_callback: Any | None = None,
         background_registry: BackgroundTaskRegistry | None = None,
         user_profile: dict | None = None,
+        plan_mode: bool = False,
     ) -> Any:
         """Create a deepagent with PTC pattern capabilities.
 
@@ -224,6 +225,8 @@ class PTCAgent:
             background_registry: Optional shared background task registry for subagents.
             user_profile: Optional user profile dict with name, timezone, locale for
                 injection into the system prompt.
+            plan_mode: If True, adds submit_plan tool for plan review workflow.
+                HITL middleware is always added for future interrupt features.
 
         Returns:
             Configured BackgroundSubagentOrchestrator wrapping the deepagent
@@ -321,21 +324,22 @@ class PTCAgent:
             background_tools=[t.name for t in background_middleware.tools],
         )
 
-        # Add submit_plan tool and HITL middleware (always available)
+        # Add HITL middleware (always available for future interrupt features)
         if HumanInTheLoopMiddleware is not None:
-            plan_middleware = PlanModeMiddleware()
-            middleware_list.append(plan_middleware)
-            tools.extend(plan_middleware.tools)
-
-            # Add HITL interrupt on submit_plan
+            # Add HITL interrupt config for submit_plan
             interrupt_config: Any = create_plan_mode_interrupt_config()
             hitl_middleware = HumanInTheLoopMiddleware(interrupt_on=interrupt_config)
             middleware_list.append(hitl_middleware)
 
-            logger.info(
-                "Plan tools enabled",
-                plan_tools=[getattr(t, "name", str(t)) for t in plan_middleware.tools],
-            )
+            # Only add submit_plan tool when plan_mode is enabled
+            if plan_mode:
+                plan_middleware = PlanModeMiddleware()
+                middleware_list.append(plan_middleware)
+                tools.extend(plan_middleware.tools)
+                logger.info(
+                    "Plan tools enabled",
+                    plan_tools=[getattr(t, "name", str(t)) for t in plan_middleware.tools],
+                )
 
         # Add dynamic skill loader middleware for user onboarding etc.
         skill_loader_middleware = DynamicSkillLoaderMiddleware(

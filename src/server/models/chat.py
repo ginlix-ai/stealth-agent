@@ -5,6 +5,7 @@ This module defines Pydantic models for the /api/v1/chat/stream endpoint
 that uses the ptc-agent library for code execution in Daytona sandboxes.
 """
 
+import copy
 from typing import Any, Dict, List, Literal, Mapping, Optional, Union
 from uuid import uuid4
 
@@ -37,27 +38,52 @@ class HITLResponse(BaseModel):
     )
 
 
+def _format_rejection_message(user_feedback: Optional[str]) -> str:
+    """Format a clear rejection message for the agent.
+
+    Args:
+        user_feedback: Optional feedback from the user explaining why they rejected.
+
+    Returns:
+        Formatted rejection message that clearly indicates the plan was rejected.
+    """
+    if user_feedback and user_feedback.strip():
+        return f"User rejected the plan with the following feedback: {user_feedback.strip()}"
+    return "User rejected the plan. No specific feedback was provided."
+
+
 def serialize_hitl_response_map(hitl_response: Mapping[str, Any]) -> Dict[str, dict]:
     """Convert validated HITLResponse models into plain dicts for LangGraph resume.
 
     LangChain's HumanInTheLoopMiddleware expects `resume` payloads to be
     subscriptable dicts (e.g. `{"decisions": [...]}`), not Pydantic model
     instances.
+
+    For rejection decisions, this function also formats the message to clearly
+    indicate that the user rejected the plan and includes their feedback.
     """
 
     serialized: Dict[str, dict] = {}
     for interrupt_id, response in hitl_response.items():
         if hasattr(response, "model_dump"):
-            serialized[interrupt_id] = response.model_dump()  # type: ignore[call-arg]
+            response_dict = response.model_dump()  # type: ignore[call-arg]
         elif hasattr(response, "dict"):
-            serialized[interrupt_id] = response.dict()  # type: ignore[call-arg]
+            response_dict = response.dict()  # type: ignore[call-arg]
         elif isinstance(response, dict):
-            serialized[interrupt_id] = response
+            response_dict = copy.deepcopy(response)  # Deep copy to avoid mutating nested structures
         else:
             raise TypeError(
                 "Unsupported HITL response type: "
                 f"interrupt_id={interrupt_id} type={type(response)!r}"
             )
+
+        # Format rejection messages to be clear and include feedback
+        if "decisions" in response_dict:
+            for decision in response_dict["decisions"]:
+                if decision.get("type") == "reject":
+                    decision["message"] = _format_rejection_message(decision.get("message"))
+
+        serialized[interrupt_id] = response_dict
 
     return serialized
 

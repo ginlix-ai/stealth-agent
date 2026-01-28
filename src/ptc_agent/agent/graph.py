@@ -170,6 +170,7 @@ async def build_ptc_graph_with_session(
     checkpointer: Any | None = None,
     background_registry: Any | None = None,
     user_id: str | None = None,
+    plan_mode: bool = False,
 ) -> Any:
     """
     Build a compiled LangGraph using a provided session.
@@ -185,6 +186,7 @@ async def build_ptc_graph_with_session(
         checkpointer: Optional LangGraph checkpointer for state persistence
         background_registry: Optional shared registry for background subagent tasks
         user_id: Optional user ID for fetching user profile to inject into system prompt
+        plan_mode: If True, enables submit_plan tool for plan review workflow
 
     Returns:
         Compiled StateGraph compatible with LangGraph streaming
@@ -228,6 +230,7 @@ async def build_ptc_graph_with_session(
         checkpointer=checkpointer,
         background_registry=background_registry,
         user_profile=user_profile,
+        plan_mode=plan_mode,
     )
 
     logger.info(
