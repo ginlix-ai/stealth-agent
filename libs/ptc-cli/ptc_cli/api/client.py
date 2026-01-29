@@ -71,6 +71,71 @@ class SSEStreamClient:
         await self.close()
 
     # =========================================================================
+    # Internal Helpers
+    # =========================================================================
+
+    def _require_workspace(self) -> str:
+        """Ensure workspace_id is set, raising ValueError if not.
+
+        Returns:
+            The workspace_id
+
+        Raises:
+            ValueError: If workspace_id is not set
+        """
+        if not self.workspace_id:
+            raise ValueError("workspace_id is required. Create a workspace first via POST /workspaces")
+        return self.workspace_id
+
+    def _make_headers(self, *, accept: str | None = None) -> Dict[str, str]:
+        """Build request headers with user ID and optional accept type.
+
+        Args:
+            accept: Optional Accept header value (e.g., "text/event-stream")
+
+        Returns:
+            Headers dict
+        """
+        headers = {"X-User-Id": self.user_id}
+        if accept:
+            headers["Accept"] = accept
+        return headers
+
+    async def _stream_sse_events(
+        self,
+        response: httpx.Response,
+        *,
+        update_state: bool = False,
+    ) -> AsyncGenerator[tuple[str, Dict[str, Any]], None]:
+        """Parse SSE events from a streaming response.
+
+        Args:
+            response: The streaming HTTP response
+            update_state: Whether to call _update_state for each event
+
+        Yields:
+            Tuples of (event_type, event_data)
+        """
+        buffer = ""
+        async for chunk in response.aiter_text():
+            buffer += chunk
+
+            while "\n\n" in buffer:
+                event_text, buffer = buffer.split("\n\n", 1)
+
+                if parsed := self._parse_sse_event(event_text):
+                    event_type, event_data = parsed
+
+                    # Track thread_id from events
+                    if "thread_id" in event_data:
+                        self.thread_id = event_data["thread_id"]
+
+                    if update_state:
+                        self._update_state(event_type, event_data)
+
+                    yield event_type, event_data
+
+    # =========================================================================
     # Workspace Management
     # =========================================================================
 
@@ -82,10 +147,7 @@ class SSEStreamClient:
             List of workspace dicts with id, name, status, etc.
         """
         url = urljoin(self.base_url, "/api/v1/workspaces")
-        response = await self.client.get(
-            url,
-            headers={"X-User-Id": self.user_id},
-        )
+        response = await self.client.get(url, headers=self._make_headers())
         response.raise_for_status()
         return response.json().get("workspaces", [])
 
@@ -104,7 +166,7 @@ class SSEStreamClient:
         url = urljoin(self.base_url, "/api/v1/workspaces")
         response = await self.client.post(
             url,
-            headers={"X-User-Id": self.user_id},
+            headers=self._make_headers(),
             json={"name": name},
             timeout=120.0,  # Extended timeout for sandbox creation
         )
@@ -123,10 +185,7 @@ class SSEStreamClient:
         """
         url = urljoin(self.base_url, f"/api/v1/workspaces/{workspace_id}")
         try:
-            response = await self.client.get(
-                url,
-                headers={"X-User-Id": self.user_id},
-            )
+            response = await self.client.get(url, headers=self._make_headers())
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
@@ -145,11 +204,7 @@ class SSEStreamClient:
             Updated workspace dict
         """
         url = urljoin(self.base_url, f"/api/v1/workspaces/{workspace_id}/start")
-        response = await self.client.post(
-            url,
-            headers={"X-User-Id": self.user_id},
-            timeout=30.0,
-        )
+        response = await self.client.post(url, headers=self._make_headers(), timeout=30.0)
         response.raise_for_status()
         return response.json()
 
@@ -164,11 +219,7 @@ class SSEStreamClient:
             Updated workspace dict
         """
         url = urljoin(self.base_url, f"/api/v1/workspaces/{workspace_id}/stop")
-        response = await self.client.post(
-            url,
-            headers={"X-User-Id": self.user_id},
-            timeout=30.0,
-        )
+        response = await self.client.post(url, headers=self._make_headers(), timeout=30.0)
         response.raise_for_status()
         return response.json()
 
@@ -183,11 +234,7 @@ class SSEStreamClient:
             Deletion confirmation dict
         """
         url = urljoin(self.base_url, f"/api/v1/workspaces/{workspace_id}")
-        response = await self.client.delete(
-            url,
-            headers={"X-User-Id": self.user_id},
-            timeout=30.0,
-        )
+        response = await self.client.delete(url, headers=self._make_headers(), timeout=30.0)
         response.raise_for_status()
         return response.json()
 
@@ -197,15 +244,9 @@ class SSEStreamClient:
 
     async def refresh_workspace(self) -> dict[str, Any]:
         """Rebuild sandbox tool modules and sync skills."""
-        if not self.workspace_id:
-            raise ValueError("workspace_id is required. Create a workspace first via POST /workspaces")
-
-        url = urljoin(self.base_url, f"/api/v1/workspaces/{self.workspace_id}/refresh")
-        response = await self.client.post(
-            url,
-            headers={"X-User-Id": self.user_id},
-            timeout=120.0,
-        )
+        workspace_id = self._require_workspace()
+        url = urljoin(self.base_url, f"/api/v1/workspaces/{workspace_id}/refresh")
+        response = await self.client.post(url, headers=self._make_headers(), timeout=120.0)
         response.raise_for_status()
         return response.json()
 
@@ -221,13 +262,11 @@ class SSEStreamClient:
         pattern: str = "**/*",
     ) -> list[str]:
         """List files in the active workspace sandbox."""
-        if not self.workspace_id:
-            raise ValueError("workspace_id is required. Create a workspace first via POST /workspaces")
-
-        url = urljoin(self.base_url, f"/api/v1/workspaces/{self.workspace_id}/files")
+        workspace_id = self._require_workspace()
+        url = urljoin(self.base_url, f"/api/v1/workspaces/{workspace_id}/files")
         response = await self.client.get(
             url,
-            headers={"X-User-Id": self.user_id},
+            headers=self._make_headers(),
             params={"path": path, "include_system": include_system, "pattern": pattern},
         )
         response.raise_for_status()
@@ -241,13 +280,11 @@ class SSEStreamClient:
         limit: int = 20000,
     ) -> dict[str, Any]:
         """Read a file from the active workspace sandbox."""
-        if not self.workspace_id:
-            raise ValueError("workspace_id is required. Create a workspace first via POST /workspaces")
-
-        url = urljoin(self.base_url, f"/api/v1/workspaces/{self.workspace_id}/files/read")
+        workspace_id = self._require_workspace()
+        url = urljoin(self.base_url, f"/api/v1/workspaces/{workspace_id}/files/read")
         response = await self.client.get(
             url,
-            headers={"X-User-Id": self.user_id},
+            headers=self._make_headers(),
             params={"path": path, "offset": offset, "limit": limit},
         )
         response.raise_for_status()
@@ -255,15 +292,9 @@ class SSEStreamClient:
 
     async def download_workspace_file(self, *, path: str) -> bytes:
         """Download raw bytes from the active workspace sandbox."""
-        if not self.workspace_id:
-            raise ValueError("workspace_id is required. Create a workspace first via POST /workspaces")
-
-        url = urljoin(self.base_url, f"/api/v1/workspaces/{self.workspace_id}/files/download")
-        response = await self.client.get(
-            url,
-            headers={"X-User-Id": self.user_id},
-            params={"path": path},
-        )
+        workspace_id = self._require_workspace()
+        url = urljoin(self.base_url, f"/api/v1/workspaces/{workspace_id}/files/download")
+        response = await self.client.get(url, headers=self._make_headers(), params={"path": path})
         response.raise_for_status()
         return response.content
 
@@ -275,14 +306,12 @@ class SSEStreamClient:
         filename: str | None = None,
     ) -> dict[str, Any]:
         """Upload bytes to a file in the active workspace sandbox."""
-        if not self.workspace_id:
-            raise ValueError("workspace_id is required. Create a workspace first via POST /workspaces")
-
-        url = urljoin(self.base_url, f"/api/v1/workspaces/{self.workspace_id}/files/upload")
+        workspace_id = self._require_workspace()
+        url = urljoin(self.base_url, f"/api/v1/workspaces/{workspace_id}/files/upload")
         files = {"file": (filename or path.split("/")[-1] or "upload", content)}
         response = await self.client.post(
             url,
-            headers={"X-User-Id": self.user_id},
+            headers=self._make_headers(),
             params={"path": path},
             files=files,
         )
@@ -305,7 +334,7 @@ class SSEStreamClient:
         url = urljoin(self.base_url, "/api/v1/conversations")
         response = await self.client.get(
             url,
-            headers={"X-User-Id": self.user_id},
+            headers=self._make_headers(),
             params={
                 "limit": limit,
                 "offset": offset,
@@ -323,24 +352,12 @@ class SSEStreamClient:
         async with self.client.stream(
             "GET",
             url,
-            headers={"Accept": "text/event-stream"},
+            headers=self._make_headers(accept="text/event-stream"),
             timeout=self.timeout,
         ) as response:
             response.raise_for_status()
-
-            buffer = ""
-            async for chunk in response.aiter_text():
-                buffer += chunk
-
-                while "\n\n" in buffer:
-                    event_text, buffer = buffer.split("\n\n", 1)
-
-                    if parsed := self._parse_sse_event(event_text):
-                        event_type, event_data = parsed
-                        # Track thread_id from events
-                        if "thread_id" in event_data:
-                            self.thread_id = event_data["thread_id"]
-                        yield event_type, event_data
+            async for event_type, event_data in self._stream_sse_events(response):
+                yield event_type, event_data
 
     # =========================================================================
     # Chat Streaming
@@ -370,13 +387,10 @@ class SSEStreamClient:
             Tuples of (event_type, event_data)
         """
         url = urljoin(self.base_url, "/api/v1/chat/stream")
-
-        # Build request body (workspace_id is required)
-        if not self.workspace_id:
-            raise ValueError("workspace_id is required. Create a workspace first via POST /workspaces")
+        workspace_id = self._require_workspace()
 
         request_body = {
-            "workspace_id": self.workspace_id,
+            "workspace_id": workspace_id,
             "thread_id": thread_id or self.thread_id or "__default__",
             "messages": [{"role": "user", "content": message}] if message else [],
             "plan_mode": plan_mode,
@@ -400,26 +414,14 @@ class SSEStreamClient:
             "POST",
             url,
             json=request_body,
-            headers={"Accept": "text/event-stream", "X-User-Id": self.user_id},
+            headers=self._make_headers(accept="text/event-stream"),
             timeout=self.timeout,
         ) as response:
             response.raise_for_status()
-
-            buffer = ""
-            async for chunk in response.aiter_text():
-                buffer += chunk
-
-                # Parse complete SSE events (separated by \n\n)
-                while "\n\n" in buffer:
-                    event_text, buffer = buffer.split("\n\n", 1)
-
-                    if parsed := self._parse_sse_event(event_text):
-                        event_type, event_data = parsed
-
-                        # Update internal state
-                        self._update_state(event_type, event_data)
-
-                        yield event_type, event_data
+            async for event_type, event_data in self._stream_sse_events(
+                response, update_state=True
+            ):
+                yield event_type, event_data
 
     async def reconnect_to_stream(
         self,
@@ -450,22 +452,14 @@ class SSEStreamClient:
             "GET",
             url,
             params=params,
-            headers={"Accept": "text/event-stream"},
+            headers=self._make_headers(accept="text/event-stream"),
             timeout=self.timeout,
         ) as response:
             response.raise_for_status()
-
-            buffer = ""
-            async for chunk in response.aiter_text():
-                buffer += chunk
-
-                while "\n\n" in buffer:
-                    event_text, buffer = buffer.split("\n\n", 1)
-
-                    if parsed := self._parse_sse_event(event_text):
-                        event_type, event_data = parsed
-                        self._update_state(event_type, event_data)
-                        yield event_type, event_data
+            async for event_type, event_data in self._stream_sse_events(
+                response, update_state=True
+            ):
+                yield event_type, event_data
 
     async def stream_subagent_status(
         self,
@@ -477,23 +471,12 @@ class SSEStreamClient:
         async with self.client.stream(
             "GET",
             url,
-            headers={"Accept": "text/event-stream"},
+            headers=self._make_headers(accept="text/event-stream"),
             timeout=self.timeout,
         ) as response:
             response.raise_for_status()
-
-            buffer = ""
-            async for chunk in response.aiter_text():
-                buffer += chunk
-
-                while "\n\n" in buffer:
-                    event_text, buffer = buffer.split("\n\n", 1)
-
-                    if parsed := self._parse_sse_event(event_text):
-                        event_type, event_data = parsed
-                        if "thread_id" in event_data:
-                            self.thread_id = event_data["thread_id"]
-                        yield event_type, event_data
+            async for event_type, event_data in self._stream_sse_events(response):
+                yield event_type, event_data
 
     # =========================================================================
     # Workflow Control
@@ -531,6 +514,25 @@ class SSEStreamClient:
         """
         url = urljoin(self.base_url, f"/api/v1/workflow/{thread_id}/soft-interrupt")
         response = await self.client.post(url)
+        response.raise_for_status()
+        return response.json()
+
+    async def summarize_thread(self, thread_id: str, keep_messages: int = 5) -> Dict[str, Any]:
+        """
+        Manually trigger conversation summarization for a thread.
+
+        This summarizes the conversation history and updates the thread state,
+        preserving the last `keep_messages` messages.
+
+        Args:
+            thread_id: Thread identifier
+            keep_messages: Number of recent messages to preserve (1-20, default 5)
+
+        Returns:
+            Dict with success, original_message_count, new_message_count, summary_length
+        """
+        url = urljoin(self.base_url, f"/api/v1/workflow/{thread_id}/summarize")
+        response = await self.client.post(url, params={"keep_messages": keep_messages})
         response.raise_for_status()
         return response.json()
 

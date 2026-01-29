@@ -10,18 +10,14 @@ import httpx
 from ptc_cli.core import console
 from ptc_cli.display import show_help
 from ptc_cli.streaming.executor import execute_task, reconnect_to_workflow, replay_conversation
+from ptc_cli.utils.http_helpers import handle_http_error
+from ptc_cli.utils.menu import create_interactive_menu
 
 
 async def _select_or_create_workspace_interactive(
     client: "SSEStreamClient",
 ) -> str | None:
     """Select an existing workspace or create a new one."""
-    from prompt_toolkit.application import Application
-    from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.layout import Layout
-    from prompt_toolkit.layout.containers import Window
-    from prompt_toolkit.layout.controls import FormattedTextControl
-
     workspaces = await client.list_workspaces()
 
     options: list[tuple[str, dict[str, Any]]] = [("Create a new workspace", {"action": "create"})]
@@ -36,46 +32,14 @@ async def _select_or_create_workspace_interactive(
             )
         )
 
-    selected = [0]
-
-    def menu_text() -> str:
-        lines = ["Select a workspace (Up/Down, Enter):", ""]
-        for idx, (label, _meta) in enumerate(options):
-            prefix = ">" if idx == selected[0] else " "
-            lines.append(f" {prefix} {idx+1}. {label}")
-        lines.append("")
-        lines.append("(Ctrl+C to cancel)")
-        return "\n".join(lines)
-
-    kb = KeyBindings()
-
-    @kb.add("up")
-    def _(_event: Any) -> None:
-        selected[0] = max(0, selected[0] - 1)
-
-    @kb.add("down")
-    def _(_event: Any) -> None:
-        selected[0] = min(len(options) - 1, selected[0] + 1)
-
-    @kb.add("enter")
-    def _(event: Any) -> None:
-        event.app.exit(result=selected[0])
-
-    @kb.add("c-c")
-    def _(event: Any) -> None:
-        event.app.exit(result=-1)
-
-    app: Application[int] = Application(
-        layout=Layout(Window(FormattedTextControl(menu_text))),
-        key_bindings=kb,
-        full_screen=False,
+    result = await create_interactive_menu(
+        options,
+        title="Select a workspace (Up/Down, Enter):",
     )
-
-    choice = await app.run_async()
-    if choice == -1:
+    if result is None:
         return None
 
-    picked = options[choice][1]
+    _index, picked = result
     if picked.get("action") == "use":
         return str(picked.get("workspace_id"))
 
@@ -96,6 +60,23 @@ async def _ensure_workspace_running(client: "SSEStreamClient", workspace_id: str
         return True
     except Exception:
         return False
+
+
+async def _ensure_workspace_available(client: "SSEStreamClient") -> bool:
+    """Check that client has a workspace and it's running.
+
+    Returns:
+        True if workspace is available, False otherwise (with error message printed)
+    """
+    if not client.workspace_id:
+        console.print("[yellow]No active workspace[/yellow]")
+        return False
+
+    if not await _ensure_workspace_running(client, client.workspace_id):
+        console.print(f"[red]Workspace not available: {client.workspace_id}[/red]")
+        return False
+
+    return True
 
 
 def _normalize_path(path: str) -> str:
@@ -159,12 +140,7 @@ def _render_tree(files: list[str]) -> list[str]:
 
 
 async def _handle_files_command(client: "SSEStreamClient", *, show_all: bool) -> list[str]:
-    if not client.workspace_id:
-        console.print("[yellow]No active workspace[/yellow]")
-        return []
-
-    if not await _ensure_workspace_running(client, client.workspace_id):
-        console.print(f"[red]Workspace not available: {client.workspace_id}[/red]")
+    if not await _ensure_workspace_available(client):
         return []
 
     files = await client.list_workspace_files(include_system=show_all)
@@ -183,12 +159,7 @@ async def _handle_view_command(client: "SSEStreamClient", path: str) -> None:
         console.print("[yellow]Usage:[/yellow] /view <path>")
         return
 
-    if not client.workspace_id:
-        console.print("[yellow]No active workspace[/yellow]")
-        return
-
-    if not await _ensure_workspace_running(client, client.workspace_id):
-        console.print(f"[red]Workspace not available: {client.workspace_id}[/red]")
+    if not await _ensure_workspace_available(client):
         return
 
     normalized = _normalize_path(path)
@@ -201,13 +172,7 @@ async def _handle_view_command(client: "SSEStreamClient", path: str) -> None:
                 pattern="*",
             )
         except httpx.HTTPStatusError as e:
-            detail = None
-            try:
-                detail = e.response.json().get("detail")
-            except Exception:
-                pass
-            msg = detail or f"HTTP {e.response.status_code}"
-            console.print(f"[red]{msg}[/red]")
+            handle_http_error(e, console)
             return
 
         console.print(f"[cyan]Directory:[/cyan] {normalized}")
@@ -232,13 +197,7 @@ async def _handle_view_command(client: "SSEStreamClient", path: str) -> None:
         try:
             content = await client.download_workspace_file(path=path)
         except httpx.HTTPStatusError as e:
-            detail = None
-            try:
-                detail = e.response.json().get("detail")
-            except Exception:
-                pass
-            msg = detail or f"HTTP {e.response.status_code}"
-            console.print(f"[red]{msg}[/red]")
+            handle_http_error(e, console)
             return
 
         from pathlib import Path
@@ -251,19 +210,11 @@ async def _handle_view_command(client: "SSEStreamClient", path: str) -> None:
     try:
         data = await client.read_workspace_file(path=path)
     except httpx.HTTPStatusError as e:
-        status_code = e.response.status_code
-        if status_code == 404:
+        if e.response.status_code == 404:
             # Might be a directory; fall back to listing.
             await _handle_directory_view(f"{path}/")
             return
-
-        detail = None
-        try:
-            detail = e.response.json().get("detail")
-        except Exception:
-            pass
-        msg = detail or f"HTTP {status_code}"
-        console.print(f"[red]{msg}[/red]")
+        handle_http_error(e, console)
         return
 
     content = str(data.get("content") or "")
@@ -286,24 +237,13 @@ async def _handle_copy_command(client: "SSEStreamClient", path: str) -> None:
         console.print("[yellow]Usage:[/yellow] /copy <path>")
         return
 
-    if not client.workspace_id:
-        console.print("[yellow]No active workspace[/yellow]")
-        return
-
-    if not await _ensure_workspace_running(client, client.workspace_id):
-        console.print(f"[red]Workspace not available: {client.workspace_id}[/red]")
+    if not await _ensure_workspace_available(client):
         return
 
     try:
         data = await client.read_workspace_file(path=path)
     except httpx.HTTPStatusError as e:
-        detail = None
-        try:
-            detail = e.response.json().get("detail")
-        except Exception:
-            pass
-        msg = detail or f"HTTP {e.response.status_code}"
-        console.print(f"[red]{msg}[/red]")
+        handle_http_error(e, console)
         return
 
     content = str(data.get("content") or "")
@@ -326,24 +266,13 @@ async def _handle_download_command(client: "SSEStreamClient", remote_path: str, 
         console.print("[yellow]Usage:[/yellow] /download <path> [local]")
         return
 
-    if not client.workspace_id:
-        console.print("[yellow]No active workspace[/yellow]")
-        return
-
-    if not await _ensure_workspace_running(client, client.workspace_id):
-        console.print(f"[red]Workspace not available: {client.workspace_id}[/red]")
+    if not await _ensure_workspace_available(client):
         return
 
     try:
         content = await client.download_workspace_file(path=remote_path)
     except httpx.HTTPStatusError as e:
-        detail = None
-        try:
-            detail = e.response.json().get("detail")
-        except Exception:
-            pass
-        msg = detail or f"HTTP {e.response.status_code}"
-        console.print(f"[red]{msg}[/red]")
+        handle_http_error(e, console)
         return
 
     from pathlib import Path
@@ -405,8 +334,7 @@ async def handle_command(
 
             client.workspace_id = workspace_id
 
-            if not await _ensure_workspace_running(client, client.workspace_id):
-                console.print(f"[red]Workspace not available: {client.workspace_id}[/red]")
+            if not await _ensure_workspace_available(client):
                 console.print()
                 return "handled"
 
@@ -453,13 +381,7 @@ async def handle_command(
             if msg:
                 console.print(f"[dim]{msg}[/dim]")
         except httpx.HTTPStatusError as e:
-            detail = None
-            try:
-                detail = e.response.json().get("detail")
-            except Exception:
-                pass
-            msg = detail or f"HTTP {e.response.status_code}"
-            console.print(f"[red]{msg}[/red]")
+            handle_http_error(e, console)
             console.print()
             return "handled"
 
@@ -733,14 +655,60 @@ async def handle_command(
         except Exception:
             pass
 
+    elif cmd_lower == "/summarize" or cmd_lower.startswith("/summarize "):
+        # Manually trigger conversation summarization
+        if not client.thread_id:
+            console.print("[yellow]No active conversation to summarize[/yellow]")
+            console.print()
+            return "handled"
+
+        # Parse optional keep_messages argument: /summarize keep=10
+        keep_messages = 5  # default
+        if cmd_lower.startswith("/summarize "):
+            args = cmd[11:].strip()  # after "/summarize "
+            if args.startswith("keep="):
+                try:
+                    keep_messages = int(args[5:])
+                    if keep_messages < 1 or keep_messages > 20:
+                        console.print("[yellow]keep must be between 1 and 20[/yellow]")
+                        console.print()
+                        return "handled"
+                except ValueError:
+                    console.print("[yellow]Invalid keep value. Usage: /summarize keep=5[/yellow]")
+                    console.print()
+                    return "handled"
+            elif args:
+                console.print("[yellow]Usage: /summarize [keep=N] (N between 1-20)[/yellow]")
+                console.print()
+                return "handled"
+
+        console.print(f"[dim]Summarizing conversation (keeping {keep_messages} recent messages)...[/dim]")
+        try:
+            result = await client.summarize_thread(client.thread_id, keep_messages=keep_messages)
+            if result.get("success"):
+                orig = result.get("original_message_count", 0)
+                new = result.get("new_message_count", 0)
+                summary_len = result.get("summary_length", 0)
+                console.print("[green]Summarization complete[/green]")
+                console.print(f"[dim]Messages: {orig} → {new} (summary: {summary_len} chars)[/dim]")
+            else:
+                console.print("[yellow]Summarization did not complete successfully[/yellow]")
+        except httpx.HTTPStatusError as e:
+            from ptc_cli.utils.http_helpers import parse_error_detail
+
+            if e.response.status_code == 400:
+                detail = parse_error_detail(e.response) or str(e)
+                console.print(f"[yellow]{detail}[/yellow]")
+            elif e.response.status_code == 404:
+                console.print("[yellow]Thread not found[/yellow]")
+            else:
+                console.print(f"[yellow]Could not summarize: {e}[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]Could not summarize: {e}[/yellow]")
+        console.print()
+
     elif cmd_lower == "/conversation":
         # List and open past conversations for this user
-        from prompt_toolkit.application import Application
-        from prompt_toolkit.key_binding import KeyBindings
-        from prompt_toolkit.layout import Layout
-        from prompt_toolkit.layout.containers import Window
-        from prompt_toolkit.layout.controls import FormattedTextControl
-
         console.print()
         data = await client.list_conversations(limit=50)
         threads = data.get("threads", []) or []
@@ -749,57 +717,29 @@ async def handle_command(
             console.print()
             return "handled"
 
-        selected = [0]
+        # Build options for menu
+        options: list[tuple[str, dict[str, Any]]] = []
+        for item in threads:
+            thread_id = str(item.get("thread_id", ""))
+            workspace_id = str(item.get("workspace_id", ""))
+            status = str(item.get("current_status", ""))
+            first_query = str(item.get("first_query_content") or "")
+            if len(first_query) > 60:
+                first_query = first_query[:57] + "..."
+            preview = f" - {first_query}" if first_query else ""
+            label = f"{thread_id[:12]}  ws={workspace_id[:12]}  {status}{preview}"
+            options.append((label, item))
 
-        def menu_text() -> str:
-            lines = ["Select a conversation (Up/Down, Enter):", ""]
-            for idx, item in enumerate(threads):
-                thread_id = str(item.get("thread_id", ""))
-                workspace_id = str(item.get("workspace_id", ""))
-                status = str(item.get("current_status", ""))
-                first_query = str(item.get("first_query_content") or "")
-                if len(first_query) > 60:
-                    first_query = first_query[:57] + "..."
-                prefix = ">" if idx == selected[0] else " "
-                preview = f" - {first_query}" if first_query else ""
-                lines.append(
-                    f" {prefix} {idx+1}. {thread_id[:12]}  ws={workspace_id[:12]}  {status}{preview}"
-                )
-            lines.append("")
-            lines.append("(Ctrl+C to cancel)")
-            return "\n".join(lines)
-
-        kb = KeyBindings()
-
-        @kb.add("up")
-        def _(_event: object) -> None:
-            selected[0] = max(0, selected[0] - 1)
-
-        @kb.add("down")
-        def _(_event: object) -> None:
-            selected[0] = min(len(threads) - 1, selected[0] + 1)
-
-        @kb.add("enter")
-        def _(event: Any) -> None:
-            event.app.exit(result=selected[0])
-
-        @kb.add("c-c")
-        def _(event: Any) -> None:
-            event.app.exit(result=-1)
-
-        app: Application[int] = Application(
-            layout=Layout(Window(FormattedTextControl(menu_text))),
-            key_bindings=kb,
-            full_screen=False,
+        result = await create_interactive_menu(
+            options,
+            title="Select a conversation (Up/Down, Enter):",
         )
-
-        choice = await app.run_async()
-        if choice == -1:
+        if result is None:
             console.print("[dim]Cancelled[/dim]")
             console.print()
             return "handled"
 
-        chosen = threads[choice]
+        _index, chosen = result
         thread_id = str(chosen.get("thread_id"))
         workspace_id = str(chosen.get("workspace_id"))
 
@@ -869,8 +809,7 @@ async def handle_command(
                 return "handled"
             client.workspace_id = workspace_id
 
-        if not await _ensure_workspace_running(client, client.workspace_id):
-            console.print(f"[red]Workspace not available: {client.workspace_id}[/red]")
+        if not await _ensure_workspace_available(client):
             console.print()
             return "handled"
 
@@ -908,7 +847,7 @@ async def handle_command(
         # Unknown command
         console.print(f"[yellow]Unknown command: {command}[/yellow]")
         console.print(
-            "[dim]Available: /help, /new, /workspace, /conversation, /tokens, /model, /status, /cancel, /reconnect, /onboarding, /exit[/dim]"
+            "[dim]Available: /help, /new, /workspace, /conversation, /tokens, /model, /status, /cancel, /summarize, /reconnect, /onboarding, /exit[/dim]"
         )
 
     return "handled"
