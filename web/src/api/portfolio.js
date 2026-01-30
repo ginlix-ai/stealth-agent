@@ -12,7 +12,7 @@ export async function listPortfolio(userId = DEFAULT_USER_ID) {
 }
 
 /**
- * @param {object} data - { symbol, instrument_type, quantity, average_cost?, exchange?, name?, currency?, account_name?, notes?, first_purchased_at? }
+ * @param {object} data - { symbol, instrument_type, quantity, average_cost?, exchange?, currency?, account_name?, notes?, first_purchased_at? }
  */
 export async function addPortfolioHolding(data, userId = DEFAULT_USER_ID) {
   try {

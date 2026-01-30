@@ -3,6 +3,10 @@
    All classes use dashboard- prefix to avoid conflicts
    ============================================ */
 
+.dashboard-title-font {
+  font-family: 'Playfair Display', serif;
+}
+
 .dashboard-container {
   width: 100%;
   min-height: 100vh;
@@ -11,6 +15,14 @@
   flex-direction: column;
   box-sizing: border-box;
   overflow: hidden;
+  background-color: var(--color-bg-page);
+  background-image: radial-gradient(
+    circle at center,
+    var(--color-dot-grid) 0.75px,
+    transparent 0.75px
+  );
+  background-size: 18px 18px;
+  background-position: 0 0;
 }
 
 /* Dashboard-specific scrollbar styling */
@@ -24,10 +36,10 @@
 }
 
 .dashboard-container ::-webkit-scrollbar-thumb {
-  background: hsl(var(--border-light));
+  background: var(--color-border-muted);
   border-radius: 4px;
 }
 
 .dashboard-container ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--border-light) / 0.8);
+  background: var(--color-border-muted);
 }

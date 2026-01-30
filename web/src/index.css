@@ -2,8 +2,8 @@
    Entry Point - Tailwind Directives + Global Styles
    ============================================ */
 
-/* Import global styles - must be before @tailwind */
-@import './styles/globals.css';
+/* Tokens + global base/utilities - must be before @tailwind */
+@import './styles/tokens.css';
 
 @tailwind base;
 @tailwind components;

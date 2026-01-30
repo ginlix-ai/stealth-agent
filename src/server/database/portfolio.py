@@ -35,7 +35,7 @@ async def get_user_portfolio(user_id: str) -> List[Dict[str, Any]]:
             await cur.execute("""
                 SELECT
                     holding_id, user_id, symbol, instrument_type, exchange,
-                    name, quantity, average_cost, currency, account_name,
+                    quantity, average_cost, currency, account_name,
                     notes, metadata, first_purchased_at, created_at, updated_at
                 FROM user_portfolio
                 WHERE user_id = %s
@@ -65,7 +65,7 @@ async def get_portfolio_holding(
             await cur.execute("""
                 SELECT
                     holding_id, user_id, symbol, instrument_type, exchange,
-                    name, quantity, average_cost, currency, account_name,
+                    quantity, average_cost, currency, account_name,
                     notes, metadata, first_purchased_at, created_at, updated_at
                 FROM user_portfolio
                 WHERE holding_id = %s AND user_id = %s
@@ -81,7 +81,6 @@ async def create_portfolio_holding(
     instrument_type: str,
     quantity: Decimal,
     exchange: Optional[str] = None,
-    name: Optional[str] = None,
     average_cost: Optional[Decimal] = None,
     currency: str = "USD",
     account_name: Optional[str] = None,
@@ -98,7 +97,6 @@ async def create_portfolio_holding(
         instrument_type: Type of instrument (stock, etf, etc.)
         quantity: Number of units held
         exchange: Exchange name
-        name: Full instrument name
         average_cost: Average cost per unit
         currency: Currency code
         account_name: Account name (e.g., 'Robinhood')
@@ -136,17 +134,17 @@ async def create_portfolio_holding(
             await cur.execute("""
                 INSERT INTO user_portfolio (
                     holding_id, user_id, symbol, instrument_type, exchange,
-                    name, quantity, average_cost, currency, account_name,
+                    quantity, average_cost, currency, account_name,
                     notes, metadata, first_purchased_at, created_at, updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                 RETURNING
                     holding_id, user_id, symbol, instrument_type, exchange,
-                    name, quantity, average_cost, currency, account_name,
+                    quantity, average_cost, currency, account_name,
                     notes, metadata, first_purchased_at, created_at, updated_at
             """, (
                 holding_id, user_id, symbol, instrument_type, exchange,
-                name, quantity, average_cost, currency, account_name,
+                quantity, average_cost, currency, account_name,
                 notes,
                 Json(metadata or {}),
                 first_purchased_at,
@@ -204,7 +202,7 @@ async def update_portfolio_holding(
 
     returning_columns = [
         "holding_id", "user_id", "symbol", "instrument_type", "exchange",
-        "name", "quantity", "average_cost", "currency", "account_name",
+        "quantity", "average_cost", "currency", "account_name",
         "notes", "metadata", "first_purchased_at", "created_at", "updated_at",
     ]
 

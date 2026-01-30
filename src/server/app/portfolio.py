@@ -23,6 +23,7 @@ from src.server.database.portfolio import (
     get_user_portfolio as db_get_user_portfolio,
     update_portfolio_holding as db_update_portfolio_holding,
 )
+from src.server.database.user import upsert_user as db_upsert_user
 from src.server.models.user import (
     PortfolioHoldingCreate,
     PortfolioHoldingResponse,
@@ -75,13 +76,13 @@ async def add_portfolio_holding(
     Raises:
         409: Holding already exists (same symbol + instrument_type + account_name)
     """
+    await db_upsert_user(user_id)
     holding = await db_create_portfolio_holding(
         user_id=user_id,
         symbol=request.symbol,
         instrument_type=request.instrument_type.value,
         quantity=request.quantity,
         exchange=request.exchange,
-        name=request.name,
         average_cost=request.average_cost,
         currency=request.currency,
         account_name=request.account_name,
@@ -147,7 +148,6 @@ async def update_portfolio_holding(
     holding = await db_update_portfolio_holding(
         holding_id=holding_id,
         user_id=user_id,
-        name=request.name,
         quantity=request.quantity,
         average_cost=request.average_cost,
         currency=request.currency,

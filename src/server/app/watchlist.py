@@ -21,6 +21,7 @@ Note: Use "default" as watchlist_id to operate on the user's default watchlist.
 """
 
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
@@ -364,6 +365,7 @@ async def get_watchlist_item(
     Raises:
         404: Item not found or not owned by user
     """
+    _validate_item_id(item_id)
     resolved_id = await _resolve_watchlist_id(watchlist_id, user_id)
     item = await db_get_watchlist_item(item_id, user_id)
 
@@ -449,6 +451,7 @@ async def delete_watchlist_item(
     Raises:
         404: Item not found or not owned by user
     """
+    _validate_item_id(item_id)
     resolved_id = await _resolve_watchlist_id(watchlist_id, user_id)
     existing = await db_get_watchlist_item(item_id, user_id)
     if not existing or str(existing["watchlist_id"]) != resolved_id:

@@ -18,11 +18,14 @@ from src.server.models.market_data import (
     BatchCacheStats,
     STOCK_INTERVALS,
     INDEX_INTERVALS,
+    StockNamesRequest,
+    StockNamesResponse,
 )
 from src.server.services.intraday_cache_service import (
     IntradayCacheService,
     IntradayCacheKeyBuilder,
 )
+from src.data_client.fmp import get_fmp_client
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +159,35 @@ async def get_batch_stocks_intraday(
     except Exception as e:
         logger.error(f"Error fetching batch stock intraday data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/stocks/names",
+    response_model=StockNamesResponse,
+    summary="Get company names for symbols",
+    description="Return company name for each stock symbol (FMP profile companyName).",
+)
+async def get_stock_company_names(request: StockNamesRequest):
+    """Get company names for a list of stock symbols."""
+    symbols = [s.strip().upper() for s in request.symbols if s and s.strip()]
+    if not symbols:
+        return StockNamesResponse(names={})
+    try:
+        client = await get_fmp_client()
+        profiles = await client.get_batch_profiles(symbols)
+        names = {}
+        if isinstance(profiles, list):
+            for p in profiles:
+                sym = (p.get("symbol") or "").strip().upper()
+                if sym:
+                    names[sym] = (p.get("companyName") or p.get("name") or sym)
+        for sym in symbols:
+            if sym and sym not in names:
+                names[sym] = sym
+        return StockNamesResponse(names=names)
+    except Exception as e:
+        logger.warning(f"Error fetching stock names for {symbols}: {e}")
+        return StockNamesResponse(names={s: s for s in symbols})
 
 
 # =============================================================================

@@ -243,14 +243,14 @@ function UserConfigPanel({ isOpen, onClose }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
+      style={{ backgroundColor: 'var(--color-bg-overlay-strong)' }}
       onClick={handleClose}
     >
       <div
         className="relative w-full max-w-2xl rounded-lg p-6"
         style={{
-          backgroundColor: '#1B1D25',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          backgroundColor: 'var(--color-bg-elevated)',
+          border: '1px solid var(--color-border-muted)',
           maxHeight: '90vh',
           overflowY: 'auto',
         }}
@@ -260,25 +260,25 @@ function UserConfigPanel({ isOpen, onClose }) {
         <button
           onClick={handleClose}
           className="absolute top-4 right-4 p-1 rounded-full transition-colors hover:bg-white/10"
-          style={{ color: '#FFFFFF' }}
+          style={{ color: 'var(--color-text-primary)' }}
         >
           <X className="h-5 w-5" />
         </button>
 
         {/* Header */}
-        <h2 className="text-xl font-semibold mb-6" style={{ color: '#FFFFFF' }}>
+        <h2 className="text-xl font-semibold mb-6" style={{ color: 'var(--color-text-primary)' }}>
           User Settings
         </h2>
 
         {/* Tab Navigation */}
-        <div className="flex gap-2 mb-6 border-b" style={{ borderColor: 'rgba(255, 255, 255, 0.1)' }}>
+        <div className="flex gap-2 mb-6 border-b" style={{ borderColor: 'var(--color-border-muted)' }}>
           <button
             type="button"
             onClick={() => setActiveTab('userInfo')}
             className="px-4 py-2 text-sm font-medium transition-colors relative"
             style={{
-              color: activeTab === 'userInfo' ? '#FFFFFF' : 'rgba(255, 255, 255, 0.6)',
-              borderBottom: activeTab === 'userInfo' ? '2px solid #6155F5' : '2px solid transparent',
+              color: activeTab === 'userInfo' ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+              borderBottom: activeTab === 'userInfo' ? '2px solid var(--color-accent-primary)' : '2px solid transparent',
             }}
           >
             User Info
@@ -288,8 +288,8 @@ function UserConfigPanel({ isOpen, onClose }) {
             onClick={() => setActiveTab('preferences')}
             className="px-4 py-2 text-sm font-medium transition-colors relative"
             style={{
-              color: activeTab === 'preferences' ? '#FFFFFF' : 'rgba(255, 255, 255, 0.6)',
-              borderBottom: activeTab === 'preferences' ? '2px solid #6155F5' : '2px solid transparent',
+              color: activeTab === 'preferences' ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+              borderBottom: activeTab === 'preferences' ? '2px solid var(--color-accent-primary)' : '2px solid transparent',
             }}
           >
             Preferences
@@ -299,7 +299,7 @@ function UserConfigPanel({ isOpen, onClose }) {
         {/* Loading state */}
         {isLoading && (
           <div className="flex items-center justify-center py-8">
-            <p className="text-sm" style={{ color: '#FFFFFF', opacity: 0.7 }}>
+            <p className="text-sm" style={{ color: 'var(--color-text-primary)', opacity: 0.7 }}>
               Loading...
             </p>
           </div>
@@ -310,8 +310,8 @@ function UserConfigPanel({ isOpen, onClose }) {
           <form onSubmit={handleUserInfoSubmit} className="space-y-5">
             {/* Email input */}
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: '#FFFFFF' }}>
-                Email <span style={{ color: '#999999', fontSize: '12px' }}>(Optional)</span>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                Email <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>(Optional)</span>
               </label>
               <Input
                 type="email"
@@ -320,9 +320,9 @@ function UserConfigPanel({ isOpen, onClose }) {
                 placeholder="Enter your email"
                 className="w-full"
                 style={{
-                  backgroundColor: '#0A0A0A',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  color: '#FFFFFF',
+                  backgroundColor: 'var(--color-bg-card)',
+                  border: '1px solid var(--color-border-muted)',
+                  color: 'var(--color-text-primary)',
                 }}
                 disabled={isSubmitting}
               />
@@ -330,8 +330,8 @@ function UserConfigPanel({ isOpen, onClose }) {
 
             {/* Name input */}
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: '#FFFFFF' }}>
-                Name <span style={{ color: '#999999', fontSize: '12px' }}>(Optional)</span>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                Name <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>(Optional)</span>
               </label>
               <Input
                 type="text"
@@ -340,9 +340,9 @@ function UserConfigPanel({ isOpen, onClose }) {
                 placeholder="Enter your name"
                 className="w-full"
                 style={{
-                  backgroundColor: '#0A0A0A',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  color: '#FFFFFF',
+                  backgroundColor: 'var(--color-bg-card)',
+                  border: '1px solid var(--color-border-muted)',
+                  color: 'var(--color-text-primary)',
                 }}
                 disabled={isSubmitting}
               />
@@ -350,17 +350,17 @@ function UserConfigPanel({ isOpen, onClose }) {
 
             {/* Timezone select */}
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: '#FFFFFF' }}>
-                Timezone <span style={{ color: '#999999', fontSize: '12px' }}>(Optional)</span>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                Timezone <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>(Optional)</span>
               </label>
               <select
                 value={timezone}
                 onChange={(e) => setTimezone(e.target.value)}
                 className="w-full rounded-md px-3 py-2 text-sm"
                 style={{
-                  backgroundColor: '#0A0A0A',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  color: '#FFFFFF',
+                  backgroundColor: 'var(--color-bg-card)',
+                  border: '1px solid var(--color-border-muted)',
+                  color: 'var(--color-text-primary)',
                 }}
                 disabled={isSubmitting}
               >
@@ -368,19 +368,19 @@ function UserConfigPanel({ isOpen, onClose }) {
                   if (item.value !== undefined) {
                     // Regular option
                     return (
-                      <option key={index} value={item.value} style={{ backgroundColor: '#0A0A0A' }}>
+                      <option key={index} value={item.value} style={{ backgroundColor: 'var(--color-bg-card)' }}>
                         {item.label}
                       </option>
                     );
                   } else {
                     // Group with options
                     return (
-                      <optgroup key={index} label={item.group} style={{ backgroundColor: '#0A0A0A' }}>
+                      <optgroup key={index} label={item.group} style={{ backgroundColor: 'var(--color-bg-card)' }}>
                         {item.options.map((opt, optIndex) => (
                           <option
                             key={`${index}-${optIndex}`}
                             value={opt.value}
-                            style={{ backgroundColor: '#0A0A0A' }}
+                            style={{ backgroundColor: 'var(--color-bg-card)' }}
                           >
                             {opt.label}
                           </option>
@@ -394,22 +394,22 @@ function UserConfigPanel({ isOpen, onClose }) {
 
             {/* Locale select */}
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: '#FFFFFF' }}>
-                Locale <span style={{ color: '#999999', fontSize: '12px' }}>(Optional)</span>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                Locale <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>(Optional)</span>
               </label>
               <select
                 value={locale}
                 onChange={(e) => setLocale(e.target.value)}
                 className="w-full rounded-md px-3 py-2 text-sm"
                 style={{
-                  backgroundColor: '#0A0A0A',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  color: '#FFFFFF',
+                  backgroundColor: 'var(--color-bg-card)',
+                  border: '1px solid var(--color-border-muted)',
+                  color: 'var(--color-text-primary)',
                 }}
                 disabled={isSubmitting}
               >
                 {locales.map((item, index) => (
-                  <option key={index} value={item.value} style={{ backgroundColor: '#0A0A0A' }}>
+                  <option key={index} value={item.value} style={{ backgroundColor: 'var(--color-bg-card)' }}>
                     {item.label}
                   </option>
                 ))}
@@ -418,8 +418,8 @@ function UserConfigPanel({ isOpen, onClose }) {
 
             {/* Error message */}
             {error && (
-              <div className="p-3 rounded-md" style={{ backgroundColor: 'rgba(255, 56, 60, 0.1)', border: '1px solid rgba(255, 56, 60, 0.3)' }}>
-                <p className="text-sm" style={{ color: '#FF383C' }}>
+              <div className="p-3 rounded-md" style={{ backgroundColor: 'var(--color-loss-soft)', border: '1px solid var(--color-border-loss)' }}>
+                <p className="text-sm" style={{ color: 'var(--color-loss)' }}>
                   {error}
                 </p>
               </div>
@@ -432,7 +432,7 @@ function UserConfigPanel({ isOpen, onClose }) {
                 onClick={handleClose}
                 disabled={isSubmitting}
                 className="px-4 py-2 rounded-md text-sm font-medium transition-colors hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ color: '#FFFFFF' }}
+                style={{ color: 'var(--color-text-primary)' }}
               >
                 Cancel
               </button>
@@ -441,8 +441,8 @@ function UserConfigPanel({ isOpen, onClose }) {
                 disabled={isSubmitting}
                 className="px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
-                  backgroundColor: isSubmitting ? 'rgba(97, 85, 245, 0.5)' : '#6155F5',
-                  color: '#FFFFFF',
+                  backgroundColor: isSubmitting ? 'var(--color-accent-disabled)' : 'var(--color-accent-primary)',
+                  color: 'var(--color-text-on-accent)',
                 }}
               >
                 {isSubmitting ? 'Updating...' : 'Update'}
@@ -456,128 +456,128 @@ function UserConfigPanel({ isOpen, onClose }) {
           <form onSubmit={handlePreferencesSubmit} className="space-y-5">
             {/* Risk Tolerance */}
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: '#FFFFFF' }}>
-                Risk Tolerance <span style={{ color: '#999999', fontSize: '12px' }}>(Optional)</span>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                Risk Tolerance <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>(Optional)</span>
               </label>
               <select
                 value={riskTolerance}
                 onChange={(e) => setRiskTolerance(e.target.value)}
                 className="w-full rounded-md px-3 py-2 text-sm"
                 style={{
-                  backgroundColor: '#0A0A0A',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  color: '#FFFFFF',
+                  backgroundColor: 'var(--color-bg-card)',
+                  border: '1px solid var(--color-border-muted)',
+                  color: 'var(--color-text-primary)',
                 }}
                 disabled={isSubmitting}
               >
-                <option value="" style={{ backgroundColor: '#0A0A0A' }}>Select risk tolerance...</option>
-                <option value="low" style={{ backgroundColor: '#0A0A0A' }}>Low</option>
-                <option value="medium" style={{ backgroundColor: '#0A0A0A' }}>Medium</option>
-                <option value="high" style={{ backgroundColor: '#0A0A0A' }}>High</option>
-                <option value="long_term_focus" style={{ backgroundColor: '#0A0A0A' }}>Long-term Focus</option>
+                <option value="" style={{ backgroundColor: 'var(--color-bg-card)' }}>Select risk tolerance...</option>
+                <option value="low" style={{ backgroundColor: 'var(--color-bg-card)' }}>Low</option>
+                <option value="medium" style={{ backgroundColor: 'var(--color-bg-card)' }}>Medium</option>
+                <option value="high" style={{ backgroundColor: 'var(--color-bg-card)' }}>High</option>
+                <option value="long_term_focus" style={{ backgroundColor: 'var(--color-bg-card)' }}>Long-term Focus</option>
               </select>
             </div>
 
             {/* Company Interest */}
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: '#FFFFFF' }}>
-                Company Interest <span style={{ color: '#999999', fontSize: '12px' }}>(Optional)</span>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                Company Interest <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>(Optional)</span>
               </label>
               <select
                 value={companyInterest}
                 onChange={(e) => setCompanyInterest(e.target.value)}
                 className="w-full rounded-md px-3 py-2 text-sm"
                 style={{
-                  backgroundColor: '#0A0A0A',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  color: '#FFFFFF',
+                  backgroundColor: 'var(--color-bg-card)',
+                  border: '1px solid var(--color-border-muted)',
+                  color: 'var(--color-text-primary)',
                 }}
                 disabled={isSubmitting}
               >
-                <option value="" style={{ backgroundColor: '#0A0A0A' }}>Select company interest...</option>
-                <option value="growth" style={{ backgroundColor: '#0A0A0A' }}>Growth</option>
-                <option value="stable" style={{ backgroundColor: '#0A0A0A' }}>Stable</option>
-                <option value="value" style={{ backgroundColor: '#0A0A0A' }}>Value</option>
-                <option value="esg" style={{ backgroundColor: '#0A0A0A' }}>ESG</option>
+                <option value="" style={{ backgroundColor: 'var(--color-bg-card)' }}>Select company interest...</option>
+                <option value="growth" style={{ backgroundColor: 'var(--color-bg-card)' }}>Growth</option>
+                <option value="stable" style={{ backgroundColor: 'var(--color-bg-card)' }}>Stable</option>
+                <option value="value" style={{ backgroundColor: 'var(--color-bg-card)' }}>Value</option>
+                <option value="esg" style={{ backgroundColor: 'var(--color-bg-card)' }}>ESG</option>
               </select>
             </div>
 
             {/* Holding Period */}
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: '#FFFFFF' }}>
-                Holding Period <span style={{ color: '#999999', fontSize: '12px' }}>(Optional)</span>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                Holding Period <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>(Optional)</span>
               </label>
               <select
                 value={holdingPeriod}
                 onChange={(e) => setHoldingPeriod(e.target.value)}
                 className="w-full rounded-md px-3 py-2 text-sm"
                 style={{
-                  backgroundColor: '#0A0A0A',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  color: '#FFFFFF',
+                  backgroundColor: 'var(--color-bg-card)',
+                  border: '1px solid var(--color-border-muted)',
+                  color: 'var(--color-text-primary)',
                 }}
                 disabled={isSubmitting}
               >
-                <option value="" style={{ backgroundColor: '#0A0A0A' }}>Select holding period...</option>
-                <option value="short_term" style={{ backgroundColor: '#0A0A0A' }}>Short-term</option>
-                <option value="mid_term" style={{ backgroundColor: '#0A0A0A' }}>Mid-term</option>
-                <option value="long_term" style={{ backgroundColor: '#0A0A0A' }}>Long-term</option>
-                <option value="flexible" style={{ backgroundColor: '#0A0A0A' }}>Flexible</option>
+                <option value="" style={{ backgroundColor: 'var(--color-bg-card)' }}>Select holding period...</option>
+                <option value="short_term" style={{ backgroundColor: 'var(--color-bg-card)' }}>Short-term</option>
+                <option value="mid_term" style={{ backgroundColor: 'var(--color-bg-card)' }}>Mid-term</option>
+                <option value="long_term" style={{ backgroundColor: 'var(--color-bg-card)' }}>Long-term</option>
+                <option value="flexible" style={{ backgroundColor: 'var(--color-bg-card)' }}>Flexible</option>
               </select>
             </div>
 
             {/* Analysis Focus */}
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: '#FFFFFF' }}>
-                Analysis Focus <span style={{ color: '#999999', fontSize: '12px' }}>(Optional)</span>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                Analysis Focus <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>(Optional)</span>
               </label>
               <select
                 value={analysisFocus}
                 onChange={(e) => setAnalysisFocus(e.target.value)}
                 className="w-full rounded-md px-3 py-2 text-sm"
                 style={{
-                  backgroundColor: '#0A0A0A',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  color: '#FFFFFF',
+                  backgroundColor: 'var(--color-bg-card)',
+                  border: '1px solid var(--color-border-muted)',
+                  color: 'var(--color-text-primary)',
                 }}
                 disabled={isSubmitting}
               >
-                <option value="" style={{ backgroundColor: '#0A0A0A' }}>Select analysis focus...</option>
-                <option value="growth" style={{ backgroundColor: '#0A0A0A' }}>Growth</option>
-                <option value="valuation" style={{ backgroundColor: '#0A0A0A' }}>Valuation</option>
-                <option value="moat" style={{ backgroundColor: '#0A0A0A' }}>Moat</option>
-                <option value="risk" style={{ backgroundColor: '#0A0A0A' }}>Risk</option>
+                <option value="" style={{ backgroundColor: 'var(--color-bg-card)' }}>Select analysis focus...</option>
+                <option value="growth" style={{ backgroundColor: 'var(--color-bg-card)' }}>Growth</option>
+                <option value="valuation" style={{ backgroundColor: 'var(--color-bg-card)' }}>Valuation</option>
+                <option value="moat" style={{ backgroundColor: 'var(--color-bg-card)' }}>Moat</option>
+                <option value="risk" style={{ backgroundColor: 'var(--color-bg-card)' }}>Risk</option>
               </select>
             </div>
 
             {/* Output Style */}
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: '#FFFFFF' }}>
-                Output Style <span style={{ color: '#999999', fontSize: '12px' }}>(Optional)</span>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                Output Style <span style={{ color: 'var(--color-text-secondary)', fontSize: '12px' }}>(Optional)</span>
               </label>
               <select
                 value={outputStyle}
                 onChange={(e) => setOutputStyle(e.target.value)}
                 className="w-full rounded-md px-3 py-2 text-sm"
                 style={{
-                  backgroundColor: '#0A0A0A',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  color: '#FFFFFF',
+                  backgroundColor: 'var(--color-bg-card)',
+                  border: '1px solid var(--color-border-muted)',
+                  color: 'var(--color-text-primary)',
                 }}
                 disabled={isSubmitting}
               >
-                <option value="" style={{ backgroundColor: '#0A0A0A' }}>Select output style...</option>
-                <option value="summary" style={{ backgroundColor: '#0A0A0A' }}>Summary</option>
-                <option value="data" style={{ backgroundColor: '#0A0A0A' }}>Data</option>
-                <option value="deep_dive" style={{ backgroundColor: '#0A0A0A' }}>Deep Dive</option>
-                <option value="quick" style={{ backgroundColor: '#0A0A0A' }}>Quick</option>
+                <option value="" style={{ backgroundColor: 'var(--color-bg-card)' }}>Select output style...</option>
+                <option value="summary" style={{ backgroundColor: 'var(--color-bg-card)' }}>Summary</option>
+                <option value="data" style={{ backgroundColor: 'var(--color-bg-card)' }}>Data</option>
+                <option value="deep_dive" style={{ backgroundColor: 'var(--color-bg-card)' }}>Deep Dive</option>
+                <option value="quick" style={{ backgroundColor: 'var(--color-bg-card)' }}>Quick</option>
               </select>
             </div>
 
             {/* Error message */}
             {error && (
-              <div className="p-3 rounded-md" style={{ backgroundColor: 'rgba(255, 56, 60, 0.1)', border: '1px solid rgba(255, 56, 60, 0.3)' }}>
-                <p className="text-sm" style={{ color: '#FF383C' }}>
+              <div className="p-3 rounded-md" style={{ backgroundColor: 'var(--color-loss-soft)', border: '1px solid var(--color-border-loss)' }}>
+                <p className="text-sm" style={{ color: 'var(--color-loss)' }}>
                   {error}
                 </p>
               </div>
@@ -590,7 +590,7 @@ function UserConfigPanel({ isOpen, onClose }) {
                 onClick={handleClose}
                 disabled={isSubmitting}
                 className="px-4 py-2 rounded-md text-sm font-medium transition-colors hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ color: '#FFFFFF' }}
+                style={{ color: 'var(--color-text-primary)' }}
               >
                 Cancel
               </button>
@@ -599,8 +599,8 @@ function UserConfigPanel({ isOpen, onClose }) {
                 disabled={isSubmitting}
                 className="px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
-                  backgroundColor: isSubmitting ? 'rgba(97, 85, 245, 0.5)' : '#6155F5',
-                  color: '#FFFFFF',
+                  backgroundColor: isSubmitting ? 'var(--color-accent-disabled)' : 'var(--color-accent-primary)',
+                  color: 'var(--color-text-on-accent)',
                 }}
               >
                 {isSubmitting ? 'Updating...' : 'Update'}

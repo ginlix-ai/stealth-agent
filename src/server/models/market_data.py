@@ -162,3 +162,21 @@ class BatchIntradayResponse(BaseModel):
                 }
             }
         }
+
+
+class StockNamesRequest(BaseModel):
+    """Request for batch stock company names."""
+    symbols: List[str] = Field(
+        ...,
+        description="List of stock symbols (max 50)",
+        min_length=1,
+        max_length=50
+    )
+
+
+class StockNamesResponse(BaseModel):
+    """Response with symbol -> company name mapping."""
+    names: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Map of symbol to company name (e.g. AAPL -> Apple Inc.)"
+    )

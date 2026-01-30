@@ -167,6 +167,22 @@ const DEFAULT_WATCHLIST_NAMES = { AAPL: 'Apple', MSFT: 'Microsoft', NVDA: 'NVIDI
 
 export { DEFAULT_WATCHLIST_SYMBOLS, DEFAULT_WATCHLIST_NAMES };
 
+/**
+ * Get company names for a list of stock symbols (FMP profile companyName).
+ * @param {string[]} symbols - e.g. ['AAPL', 'MSFT']
+ * @returns {Promise<Record<string, string>>} symbol -> company name
+ */
+export async function getStockCompanyNames(symbols) {
+  const list = [...(symbols || [])].map((s) => String(s).trim().toUpperCase()).filter(Boolean);
+  if (!list.length) return {};
+  try {
+    const { data } = await api.post('/api/v1/market-data/stocks/names', { symbols: list });
+    return data?.names ?? {};
+  } catch {
+    return {};
+  }
+}
+
 export async function getStockPrices(symbols) {
   const list = [...(symbols || [])].map((s) => String(s).trim().toUpperCase()).filter(Boolean);
   if (!list.length) return [];
