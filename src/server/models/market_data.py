@@ -162,3 +162,39 @@ class BatchIntradayResponse(BaseModel):
                 }
             }
         }
+
+
+class StockSearchResult(BaseModel):
+    """Single stock search result."""
+    symbol: str = Field(..., description="Stock ticker symbol")
+    name: str = Field(..., description="Company name")
+    currency: Optional[str] = Field(None, description="Currency code")
+    stockExchange: Optional[str] = Field(None, description="Stock exchange name")
+    exchangeShortName: Optional[str] = Field(None, description="Short exchange name")
+
+
+class StockSearchResponse(BaseModel):
+    """Response for stock search request."""
+    query: str = Field(..., description="Search query string")
+    results: List[StockSearchResult] = Field(
+        default_factory=list,
+        description="List of matching stocks"
+    )
+    count: int = Field(0, description="Number of results returned")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "query": "AAPL",
+                "results": [
+                    {
+                        "symbol": "AAPL",
+                        "name": "Apple Inc.",
+                        "currency": "USD",
+                        "stockExchange": "NASDAQ Global Select",
+                        "exchangeShortName": "NASDAQ"
+                    }
+                ],
+                "count": 1
+            }
+        }

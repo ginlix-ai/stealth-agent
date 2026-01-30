@@ -16,6 +16,8 @@ from src.server.models.market_data import (
     BatchIntradayResponse,
     CacheMetadata,
     BatchCacheStats,
+    StockSearchResult,
+    StockSearchResponse,
     STOCK_INTERVALS,
     INDEX_INTERVALS,
 )
@@ -266,4 +268,62 @@ async def get_batch_indexes_intraday(
         raise
     except Exception as e:
         logger.error(f"Error fetching batch index intraday data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Stock Search Endpoint
+# =============================================================================
+
+
+@router.get(
+    "/search/stocks",
+    response_model=StockSearchResponse,
+    summary="Search stocks by symbol or name",
+    description="Search for stocks matching a query string in ticker symbols or company names.",
+)
+async def search_stocks(
+    query: str = Query(..., description="Search query (e.g., 'AAPL', 'Apple', 'AA')"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of results (1-100)"),
+) -> StockSearchResponse:
+    """Search for stocks by symbol or company name."""
+    if not query or not query.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Query parameter is required and cannot be empty"
+        )
+
+    try:
+        from src.data_client.fmp import FMPClient
+
+        client = FMPClient()
+        try:
+            raw_results = await client.search_stocks(query.strip(), limit=limit)
+
+            # Convert raw FMP results to StockSearchResult models
+            search_results = []
+            for item in raw_results:
+                if isinstance(item, dict):
+                    search_results.append(
+                        StockSearchResult(
+                            symbol=item.get("symbol", ""),
+                            name=item.get("name", ""),
+                            currency=item.get("currency"),
+                            stockExchange=item.get("stockExchange"),
+                            exchangeShortName=item.get("exchangeShortName"),
+                        )
+                    )
+
+            return StockSearchResponse(
+                query=query.strip(),
+                results=search_results,
+                count=len(search_results),
+            )
+        finally:
+            await client.close()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error searching stocks for query '{query}': {e}")
         raise HTTPException(status_code=500, detail=str(e))
