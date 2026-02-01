@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import './index.css'
 import { shouldUseMSW } from './config/msw'
+import { Toaster } from './components/ui/toaster'
 
 // Conditionally enable MSW
 async function enableMocking() {
@@ -18,8 +19,9 @@ async function enableMocking() {
 // Start MSW before rendering the app
 enableMocking().then(() => {
   ReactDOM.createRoot(document.getElementById('root')).render(
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <App />
+      <Toaster />
     </BrowserRouter>,
   )
 })

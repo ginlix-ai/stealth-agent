@@ -1,0 +1,186 @@
+/* ============================================
+   Centralized Tokens + Global Styles
+   Semantic color tokens + Tailwind theme + base/utilities
+   ============================================ */
+
+/* ---------- Semantic color tokens (hex/rgba for inline use) ---------- */
+:root {
+  --color-bg-page: #1B1D25;
+  --color-bg-card: #0A0A0A;
+  --color-bg-elevated: #1B1D25;
+  --color-bg-input: #1C1917;
+  --color-bg-tag: #27272A;
+  --color-bg-chart-placeholder: #FFFFFF;
+  --color-bg-overlay: rgba(0, 0, 0, 0.5);
+  --color-bg-overlay-strong: rgba(0, 0, 0, 0.7);
+
+  --color-border-muted: rgba(255, 255, 255, 0.1);
+  --color-border-default: #202020;
+  --color-border-elevated: #2a2d38;
+  --color-border-subtle: #1F1F1F;
+  --color-border-input: #44403C;
+
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #999999;
+  --color-text-tertiary: rgba(255, 255, 255, 0.6);
+  --color-text-muted: #BBBBBB;
+  --color-text-on-accent: #FFFFFF;
+  --color-icon-muted: #78716C;
+
+  --color-accent-primary: #6155F5;
+  --color-accent-soft: rgba(97, 85, 245, 0.2);
+  --color-accent-disabled: rgba(97, 85, 245, 0.5);
+  --color-accent-overlay: rgba(108, 97, 243, 0.5);
+  --color-accent-gradient: linear-gradient(90deg, #6155F5 0%, #8F88EC 28.85%, #39328F 100%);
+
+  --color-profit: #0FEDBE;
+  --color-loss: #FF383C;
+  --color-loss-soft: rgba(255, 56, 60, 0.1);
+  --color-border-loss: rgba(255, 56, 60, 0.3);
+
+  --color-dot-grid: rgba(255, 255, 255, 0.14);
+
+  /* ---------- Tailwind/shadcn theme (HSL, no "hsl()" wrapper) ---------- */
+  --background: 222.2 47% 5%;
+  --foreground: 0 0% 98%;
+  --card: 222 28% 12%;
+  --card-foreground: 0 0% 98%;
+  --popover: 222.2 47% 5%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 260 82% 70%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 215 20.2% 65.1%;
+  --muted-foreground: 0 0% 100% / 0.60;
+  --accent: 260 82% 70%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 0 0% 100% / 0.10;
+  --input: 222 28% 12%;
+  --ring: 260 82% 70%;
+  --radius: 0.5rem;
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.35);
+
+  --bg-main: 222 47% 5%;
+  --bg-panel: 0 0% 4% / 0.65;
+  --border-light: 0 0% 100% / 0.10;
+  --border-card: 0 0% 13%;
+  --color-up: 160 80% 50%;
+  --color-up-soft: 160 80% 50% / 0.16;
+  --color-down: 359 80% 60%;
+  --color-down-soft: 359 80% 60% / 0.16;
+  --accent-fin: 260 82% 70%;
+  --sidebar-bg: 222 47% 5%;
+  --sidebar-border: 0 0% 100% / 0.10;
+  --sidebar-hover: 0 0% 100% / 0.08;
+  --sidebar-active: 260 82% 70% / 0.15;
+  --sidebar-icon: 0 0% 100% / 0.60;
+  --sidebar-icon-active: 260 82% 70%;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Golos Text', 'Inter', system-ui, sans-serif;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100vh;
+    min-width: 320px;
+    overflow: hidden;
+  }
+
+  #root {
+    width: 100%;
+    height: 100vh;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+@layer utilities {
+  .bg-app {
+    background: radial-gradient(1200px 600px at 20% 0%, rgba(255, 255, 255, 0.06), transparent),
+                radial-gradient(900px 500px at 85% 15%, rgba(124, 58, 237, 0.12), transparent),
+                hsl(var(--bg-main));
+  }
+
+  .panel {
+    background: hsl(var(--bg-panel));
+    border: 1px solid hsl(var(--border-light));
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+  }
+
+  .fin-card {
+    background: hsl(var(--bg-main) / 0.65);
+    border: 1px solid hsl(var(--border-light));
+    border-radius: 8px;
+    box-shadow: var(--shadow-card);
+  }
+
+  .fin-card-inner {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-default);
+    border-radius: 8px;
+  }
+
+  .text-muted-fin {
+    color: hsl(var(--muted));
+    opacity: 0.65;
+  }
+
+  .text-muted2 {
+    color: hsl(var(--muted));
+  }
+
+  .text-up {
+    color: hsl(var(--color-up));
+  }
+
+  .text-down {
+    color: hsl(var(--color-down));
+  }
+
+  .bg-up-soft {
+    background: hsl(var(--color-up-soft));
+  }
+
+  .bg-down-soft {
+    background: hsl(var(--color-down-soft));
+  }
+
+  .ring-accent {
+    box-shadow: 0 0 0 1px hsl(var(--accent-fin) / 0.30);
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-muted);
+}

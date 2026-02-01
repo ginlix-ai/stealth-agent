@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { sendChatMessageStream, getConversations, replayThreadHistory } from '../utils/api';
+import { sendChatMessageStream, getConversations, replayThreadHistory } from '@/api';
 
 /**
  * Storage key prefix for thread IDs

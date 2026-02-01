@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import WorkspaceCard from './WorkspaceCard';
 import CreateWorkspaceModal from './CreateWorkspaceModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
-import { getWorkspaces, createWorkspace, deleteWorkspace } from '../utils/api';
+import { getWorkspaces, createWorkspace, deleteWorkspace } from '@/api';
 
 /**
  * WorkspaceGallery Component
