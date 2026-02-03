@@ -67,29 +67,11 @@ function Dashboard() {
   const fetchIndices = useCallback(async () => {
     setIndicesLoading(true);
     try {
-      console.log('[Dashboard] Fetching indices - Request params:', {
-        symbols: INDEX_SYMBOLS,
-        timestamp: new Date().toISOString(),
-      });
-      
       // API doesn't require from/to params - just call with symbols
       const { indices: next } = await getIndices(INDEX_SYMBOLS);
-      
-      console.log('[Dashboard] Received indices response:', {
-        indices: next,
-        count: next?.length,
-        sample: next?.[0],
-        timestamp: new Date().toISOString(),
-      });
-      
       setIndices(next);
     } catch (error) {
-      console.error('[Dashboard] Error fetching indices:', {
-        error,
-        message: error?.message,
-        stack: error?.stack,
-        timestamp: new Date().toISOString(),
-      });
+      console.error('[Dashboard] Error fetching indices:', error?.message);
       setIndices(INDEX_SYMBOLS.map((s) => fallbackIndex(normalizeIndexSymbol(s))));
     } finally {
       setIndicesLoading(false);
@@ -102,7 +84,7 @@ function Dashboard() {
     
     // Set up interval to fetch every minute (60000ms)
     const intervalId = setInterval(() => {
-      console.log('[Dashboard] Auto-refreshing Index Movement data (1 minute interval)');
+      console.log('[Dashboard] Refreshing Index Movement data');
       fetchIndices();
     }, 60000); // 60 seconds = 1 minute
     
@@ -178,7 +160,7 @@ function Dashboard() {
     
     // Set up interval to fetch every minute (60000ms)
     const intervalId = setInterval(() => {
-      console.log('[Dashboard] Auto-refreshing Watchlist data (1 minute interval)');
+      console.log('[Dashboard] Refreshing Watchlist data');
       fetchWatchlist();
     }, 60000); // 60 seconds = 1 minute
     
@@ -338,7 +320,7 @@ function Dashboard() {
     
     // Set up interval to fetch every minute (60000ms)
     const intervalId = setInterval(() => {
-      console.log('[Dashboard] Auto-refreshing Portfolio data (1 minute interval)');
+      console.log('[Dashboard] Refreshing Portfolio data');
       fetchPortfolio();
     }, 60000); // 60 seconds = 1 minute
     

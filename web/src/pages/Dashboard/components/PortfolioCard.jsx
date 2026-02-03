@@ -38,7 +38,7 @@ function PortfolioCard({
       <CardHeader className="px-3 py-4 flex-shrink-0">
         <button type="button" onClick={onHeaderAddClick} className="flex items-center justify-between w-full text-left">
           <CardTitle className="dashboard-title-font text-base font-semibold" style={{ color: 'var(--color-text-primary)', letterSpacing: '0.15px' }}>
-            Create My Portfolio
+            Add Portfolio Holding
           </CardTitle>
           <Plus className="h-4 w-4 shrink-0" style={{ color: 'var(--color-text-primary)' }} />
         </button>

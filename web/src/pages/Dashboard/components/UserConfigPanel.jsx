@@ -127,21 +127,22 @@ function UserConfigPanel({ isOpen, onClose }) {
 
   /**
    * Loads current preferences data to populate the form
+   * API returns UserPreferencesResponse directly (not nested under 'preferences')
    */
   const loadPreferencesData = async () => {
     try {
       const preferencesData = await getPreferences();
-      if (preferencesData?.preferences) {
-        const prefs = preferencesData.preferences;
-        setRiskTolerance(prefs.risk_preference?.risk_tolerance || '');
-        setCompanyInterest(prefs.investment_preference?.company_interest || '');
-        setHoldingPeriod(prefs.investment_preference?.holding_period || '');
-        setAnalysisFocus(prefs.investment_preference?.analysis_focus || '');
-        setOutputStyle(prefs.agent_preference?.output_style || '');
+      // API returns UserPreferencesResponse directly
+      if (preferencesData) {
+        setRiskTolerance(preferencesData.risk_preference?.risk_tolerance || '');
+        setCompanyInterest(preferencesData.investment_preference?.company_interest || '');
+        setHoldingPeriod(preferencesData.investment_preference?.holding_period || '');
+        setAnalysisFocus(preferencesData.investment_preference?.analysis_focus || '');
+        setOutputStyle(preferencesData.agent_preference?.output_style || '');
       }
     } catch (err) {
       console.error('Error loading preferences data:', err);
-      // Don't show error on load - preferences might not exist yet
+      // Don't show error on load - preferences might not exist yet (404 is expected for new users)
     }
   };
 

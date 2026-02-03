@@ -136,7 +136,7 @@ function AddPortfolioHoldingDialog({
           <>
             <DialogHeader>
               <DialogTitle className="dashboard-title-font" style={{ color: 'var(--color-text-primary)' }}>
-                Search for stock
+                Add Portfolio Holding
               </DialogTitle>
             </DialogHeader>
             <div className="pt-2">
@@ -196,7 +196,7 @@ function AddPortfolioHoldingDialog({
                   <ArrowLeft className="h-4 w-4" />
                 </button>
                 <DialogTitle className="dashboard-title-font" style={{ color: 'var(--color-text-primary)' }}>
-                  Add holding details
+                  Add Portfolio Holding
                 </DialogTitle>
               </div>
             </DialogHeader>

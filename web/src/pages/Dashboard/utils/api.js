@@ -77,38 +77,18 @@ function fallbackIndex(norm) {
 export async function getIndex(symbol, opts = {}) {
   const norm = normalizeIndexSymbol(String(symbol).trim());
   try {
-    // According to API docs, no query parameters needed - just the symbol in path
-    console.log(`[API] getIndex - ${norm}: Request URL:`, `/api/v1/market-data/intraday/indexes/${norm}`);
-    
     const { data } = await api.get(`/api/v1/market-data/intraday/indexes/${encodeURIComponent(norm)}`);
-    
-    console.log(`[API] getIndex - ${norm}: Raw response:`, {
-      symbol: data?.symbol,
-      interval: data?.interval,
-      dataCount: data?.data?.length,
-      count: data?.count,
-      firstDataPoint: data?.data?.[0],
-      lastDataPoint: data?.data?.[data?.data?.length - 1],
-      fullResponse: data,
-    });
     
     const pts = data?.data ?? [];
     
     // Use the most recent data point (first item in array, as backend returns newest first)
     if (!Array.isArray(pts) || !pts.length) {
-      console.log(`[API] getIndex - ${norm}: No data points available`);
       throw new Error(`No intraday data for ${norm}`);
     }
     
     // Most recent data point is the first one
     const mostRecent = pts[0];
     const oldest = pts[pts.length - 1];
-    
-    console.log(`[API] getIndex - ${norm}: Data points:`, {
-      totalPoints: pts.length,
-      mostRecent,
-      oldest,
-    });
     
     // Calculate change from oldest to newest (most recent)
     const open = Number(oldest?.open ?? 0);
@@ -125,26 +105,9 @@ export async function getIndex(symbol, opts = {}) {
       isPositive: change >= 0,
     };
     
-    console.log(`[API] getIndex - ${norm}: Parsed result:`, {
-      mostRecent,
-      oldest,
-      open,
-      close,
-      change,
-      changePercent,
-      result,
-    });
-    
     return result;
   } catch (e) {
-    console.error(`[API] getIndex - ${norm}: Error:`, {
-      error: e,
-      response: e.response,
-      status: e.response?.status,
-      statusText: e.response?.statusText,
-      data: e.response?.data,
-      message: e.message,
-    });
+    console.error(`[API] getIndex - ${norm}: Error:`, e?.message);
     const msg = e.response?.data?.detail ?? e.message;
     throw new Error(typeof msg === 'string' ? msg : String(msg));
   }
@@ -158,18 +121,13 @@ export async function getIndex(symbol, opts = {}) {
 export async function getIndices(symbols = INDEX_SYMBOLS, opts = {}) {
   const list = symbols.map((s) => normalizeIndexSymbol(String(s).trim()));
   
-  console.log('[API] getIndices - Fetching indices:', {
-    symbols: list,
-    opts,
-  });
-  
   // Make individual GET requests for each symbol (no query params per API docs)
   const promises = list.map(async (norm) => {
     try {
       const result = await getIndex(norm);
       return { success: true, symbol: norm, data: result };
     } catch (error) {
-      console.error(`[API] getIndices - Failed to fetch ${norm}:`, error);
+      console.error(`[API] getIndices - Failed to fetch ${norm}:`, error?.message);
       return { success: false, symbol: norm, error };
     }
   });
@@ -180,18 +138,11 @@ export async function getIndices(symbols = INDEX_SYMBOLS, opts = {}) {
     if (result.success) {
       return result.data;
     } else {
-      console.warn(`[API] getIndices - Using fallback for ${result.symbol}`);
       return fallbackIndex(result.symbol);
     }
   });
   
   const failed = results.filter((r) => !r.success).length;
-  
-  console.log('[API] getIndices - Final result:', {
-    indices,
-    failedCount: failed,
-    successCount: results.length - failed,
-  });
   
   return { indices, failedCount: failed };
 }
