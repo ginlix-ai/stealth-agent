@@ -50,6 +50,15 @@ from ptc_agent.agent.tools import (
     TodoWrite,
 )
 from src.tools.search import get_web_search_tool
+from src.tools.fetch import web_fetch_tool
+from src.tools.sec.tool import get_sec_filing
+from src.tools.market_data.tool import (
+    get_stock_daily_prices,
+    get_company_overview,
+    get_stock_realtime_quote,
+    get_market_indices,
+    get_sector_performance,
+)
 from ptc_agent.config import AgentConfig
 from ptc_agent.core.mcp_registry import MCPRegistry
 from ptc_agent.core.sandbox import ExecutionResult, PTCSandbox
@@ -291,7 +300,20 @@ class PTCAgent:
             verbose=False,
         )
         tools.append(web_search_tool)
-        logger.info("Web search tool enabled", tool="web_search")
+        tools.append(web_fetch_tool)
+        logger.info("Web tools enabled", tools=["web_search", "web_fetch"])
+
+        # Add finance tools
+        finance_tools = [
+            get_sec_filing,            # SEC filing extraction (10-K, 10-Q, 8-K)
+            get_stock_daily_prices,    # Stock OHLCV price data
+            get_company_overview,      # Company investment analysis
+            get_stock_realtime_quote,  # Real-time stock quotes
+            get_market_indices,        # Market indices data
+            get_sector_performance,    # Sector performance metrics
+        ]
+        tools.extend(finance_tools)
+        logger.info("Finance tools enabled", tool_count=len(finance_tools))
 
         # Default to subagents from config if none specified
         if subagent_names is None:
