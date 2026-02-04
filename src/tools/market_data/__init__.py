@@ -7,8 +7,7 @@ and HK stocks. Tools are organized with clear separation between LangChain inter
 
 Available tools:
 - get_stock_daily_prices: Historical daily OHLCV price data
-- get_company_overview: Comprehensive investment intelligence overview
-- get_stock_realtime_quote: Real-time quotes with market hours detection
+- get_company_overview: Comprehensive investment intelligence overview (includes real-time quote)
 - get_market_indices: Market indices data (S&P 500, NASDAQ, Dow Jones)
 - get_sector_performance: Sector performance metrics
 """
@@ -16,7 +15,6 @@ Available tools:
 from .tool import (
     get_stock_daily_prices,
     get_company_overview,
-    get_stock_realtime_quote,
     get_market_indices,
     get_sector_performance,
 )
@@ -24,7 +22,6 @@ from .tool import (
 __all__ = [
     "get_stock_daily_prices",
     "get_company_overview",
-    "get_stock_realtime_quote",
     "get_market_indices",
     "get_sector_performance",
 ]

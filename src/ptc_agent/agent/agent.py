@@ -13,7 +13,11 @@ import structlog
 from langchain.agents import create_agent
 
 from ptc_agent.agent.backends import DaytonaBackend
-from deepagents.middleware import FilesystemMiddleware, SkillsMiddleware, SubAgentMiddleware
+from deepagents.middleware import (
+    FilesystemMiddleware,
+    SkillsMiddleware,
+    SubAgentMiddleware,
+)
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
@@ -39,7 +43,11 @@ from ptc_agent.agent.middleware import (
 )
 from ptc_agent.agent.skills import SKILL_REGISTRY
 from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
-from ptc_agent.agent.prompts import format_subagent_summary, format_tool_summary, get_loader
+from ptc_agent.agent.prompts import (
+    format_subagent_summary,
+    format_tool_summary,
+    get_loader,
+)
 from ptc_agent.agent.subagents import create_subagents_from_names
 from ptc_agent.agent.tools import (
     create_execute_bash_tool,
@@ -55,7 +63,6 @@ from src.tools.sec.tool import get_sec_filing
 from src.tools.market_data.tool import (
     get_stock_daily_prices,
     get_company_overview,
-    get_stock_realtime_quote,
     get_market_indices,
     get_sector_performance,
 )
@@ -118,7 +125,9 @@ class PTCAgent:
         """
         self.config = config
         self.llm: Any = config.get_llm_client()
-        self.subagents: dict[str, Any] = {}  # Populated in create_agent() for introspection
+        self.subagents: dict[
+            str, Any
+        ] = {}  # Populated in create_agent() for introspection
 
         # Get provider/model info for logging
         if config.llm_definition is not None:
@@ -128,7 +137,9 @@ class PTCAgent:
             # LLM client was passed directly via AgentConfig.create()
             # Try to extract info from the LLM instance
             provider = getattr(self.llm, "_llm_type", "unknown")
-            model = getattr(self.llm, "model", getattr(self.llm, "model_name", "unknown"))
+            model = getattr(
+                self.llm, "model", getattr(self.llm, "model_name", "unknown")
+            )
 
         logger.info(
             "Initialized PTCAgent with deepagent",
@@ -281,11 +292,11 @@ class PTCAgent:
             operation_callback=operation_callback,
         )
         filesystem_tools = [
-            read_file,                        # overrides middleware read_file
-            write_file,                       # overrides middleware write_file
-            edit_file,                        # overrides middleware edit_file
-            create_glob_tool(sandbox),        # overrides middleware glob
-            create_grep_tool(sandbox),        # overrides middleware grep
+            read_file,  # overrides middleware read_file
+            write_file,  # overrides middleware write_file
+            edit_file,  # overrides middleware edit_file
+            create_glob_tool(sandbox),  # overrides middleware glob
+            create_grep_tool(sandbox),  # overrides middleware grep
         ]
         tools.extend(filesystem_tools)
         logger.info(
@@ -305,12 +316,11 @@ class PTCAgent:
 
         # Add finance tools
         finance_tools = [
-            get_sec_filing,            # SEC filing extraction (10-K, 10-Q, 8-K)
-            get_stock_daily_prices,    # Stock OHLCV price data
-            get_company_overview,      # Company investment analysis
-            get_stock_realtime_quote,  # Real-time stock quotes
-            get_market_indices,        # Market indices data
-            get_sector_performance,    # Sector performance metrics
+            get_sec_filing,  # SEC filing extraction (10-K, 10-Q, 8-K)
+            get_stock_daily_prices,  # Stock OHLCV price data
+            get_company_overview,  # Company investment analysis (includes real-time quote)
+            get_market_indices,  # Market indices data
+            get_sector_performance,  # Sector performance metrics
         ]
         tools.extend(finance_tools)
         logger.info("Finance tools enabled", tool_count=len(finance_tools))
@@ -324,12 +334,16 @@ class PTCAgent:
 
         # Tool middleware - handles argument parsing, error handling, and result normalization
         # These run in order: parse args -> execute -> handle errors -> normalize results
-        shared_middleware.extend([
-            ToolArgumentParsingMiddleware(),   # Parse JSON string args to Python types
-            ToolErrorHandlingMiddleware(),     # Catch tool errors, return simplified messages
-            ToolResultNormalizationMiddleware(),  # Ensure all results are strings for LLM
-        ])
-        logger.info("Tool middleware enabled: argument parsing, error handling, result normalization")
+        shared_middleware.extend(
+            [
+                ToolArgumentParsingMiddleware(),  # Parse JSON string args to Python types
+                ToolErrorHandlingMiddleware(),  # Catch tool errors, return simplified messages
+                ToolResultNormalizationMiddleware(),  # Ensure all results are strings for LLM
+            ]
+        )
+        logger.info(
+            "Tool middleware enabled: argument parsing, error handling, result normalization"
+        )
 
         # File operation SSE middleware - emits events for write_file/edit_file
         shared_middleware.append(FileOperationMiddleware())
@@ -396,7 +410,9 @@ class PTCAgent:
                 tools.extend(plan_middleware.tools)
                 logger.info(
                     "Plan tools enabled",
-                    plan_tools=[getattr(t, "name", str(t)) for t in plan_middleware.tools],
+                    plan_tools=[
+                        getattr(t, "name", str(t)) for t in plan_middleware.tools
+                    ],
                 )
 
         # Create subagents from names using the registry
@@ -421,7 +437,9 @@ class PTCAgent:
         subagent_summary = format_subagent_summary(subagents)
 
         # Build system prompt
-        system_prompt = self._build_system_prompt(tool_summary, subagent_summary, user_profile)
+        system_prompt = self._build_system_prompt(
+            tool_summary, subagent_summary, user_profile
+        )
 
         # Append suffix if provided (e.g., agent.md content)
         if system_prompt_suffix:
@@ -432,7 +450,9 @@ class PTCAgent:
         for subagent in subagents:
             name = subagent.get("name", "unknown")
             subagent_tools = subagent.get("tools", [])
-            tool_names = [t.name if hasattr(t, "name") else str(t) for t in subagent_tools]
+            tool_names = [
+                t.name if hasattr(t, "name") else str(t) for t in subagent_tools
+            ]
             self.subagents[name] = {
                 "description": subagent.get("description", ""),
                 "tools": tool_names,
@@ -458,26 +478,31 @@ class PTCAgent:
         # Skills middleware (optional, based on config)
         skills_middleware: list[Any] = []
         if skill_sources:
-            skills_middleware = [SkillsMiddleware(backend=backend, sources=skill_sources)]
+            skills_middleware = [
+                SkillsMiddleware(backend=backend, sources=skill_sources)
+            ]
 
         # Custom SSE-enabled summarization emits 'summarization_signal' events
         summarization = SummarizationMiddleware()
 
         # Subagent middleware (shared only, no SubAgentMiddleware/BackgroundSubagentMiddleware/HITL)
         subagent_middleware = [
-            m for m in [
+            m
+            for m in [
                 *skills_middleware,
                 FilesystemMiddleware(backend=backend),
                 *shared_middleware,
                 summarization,
                 AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
                 PatchToolCallsMiddleware(),
-            ] if m is not None
+            ]
+            if m is not None
         ]
 
         # Main agent middleware (includes SubAgentMiddleware + main_only)
         deepagent_middleware = [
-            m for m in [
+            m
+            for m in [
                 *skills_middleware,
                 FilesystemMiddleware(backend=backend),
                 SubAgentMiddleware(
@@ -494,7 +519,8 @@ class PTCAgent:
                 summarization,
                 AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
                 PatchToolCallsMiddleware(),
-            ] if m is not None
+            ]
+            if m is not None
         ]
 
         # Create agent with middleware stack
@@ -685,6 +711,7 @@ async def create_ptc_agent(config: AgentConfig | None = None) -> PTCAgent:
     """
     if config is None:
         from ptc_agent.config import load_from_files
+
         config = await load_from_files()
         config.validate_api_keys()
 

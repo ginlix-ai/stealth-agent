@@ -32,11 +32,7 @@ class IntradayDataFetcher:
         self._owns_client = fmp_client is None
 
     async def fetch_intraday_data(
-        self,
-        ticker: str,
-        interval: str,
-        start_date: str,
-        end_date: str
+        self, ticker: str, interval: str, start_date: str, end_date: str
     ) -> pd.DataFrame:
         """
         Fetch intraday OHLCV data from FMP
@@ -80,14 +76,18 @@ class IntradayDataFetcher:
                 f"Date range ({days_diff} days) exceeds recommended limit "
                 f"({max_days} days) for {interval} interval. Fetching in chunks..."
             )
-            return await self._fetch_in_chunks(ticker, interval, start_dt, end_dt, max_days)
+            return await self._fetch_in_chunks(
+                ticker, interval, start_dt, end_dt, max_days
+            )
 
         # Fetch data from FMP
         try:
             data = await self._fetch_from_fmp(ticker, interval, start_date, end_date)
 
             if not data:
-                logger.warning(f"No data returned for {ticker} {interval} {start_date} to {end_date}")
+                logger.warning(
+                    f"No data returned for {ticker} {interval} {start_date} to {end_date}"
+                )
                 return pd.DataFrame()
 
             # Convert to DataFrame
@@ -108,19 +108,12 @@ class IntradayDataFetcher:
             raise
 
     async def _fetch_from_fmp(
-        self,
-        ticker: str,
-        interval: str,
-        start_date: str,
-        end_date: str
+        self, ticker: str, interval: str, start_date: str, end_date: str
     ) -> List[Dict[str, Any]]:
         """Fetch data from FMP API"""
         # Use the intraday chart method
         data = await self.client.get_intraday_chart(
-            ticker,
-            interval,
-            from_date=start_date,
-            to_date=end_date
+            ticker, interval, from_date=start_date, to_date=end_date
         )
         return data if data else []
 
@@ -130,7 +123,7 @@ class IntradayDataFetcher:
         interval: str,
         start_dt: datetime,
         end_dt: datetime,
-        chunk_days: int
+        chunk_days: int,
     ) -> pd.DataFrame:
         """Fetch data in chunks when date range is too large"""
         all_data = []
@@ -144,7 +137,7 @@ class IntradayDataFetcher:
                     ticker,
                     interval,
                     current_start.strftime("%Y-%m-%d"),
-                    current_end.strftime("%Y-%m-%d")
+                    current_end.strftime("%Y-%m-%d"),
                 )
 
                 if chunk_data:
@@ -168,7 +161,7 @@ class IntradayDataFetcher:
         df = self._process_dataframe(df)
 
         # Remove duplicates that might occur at chunk boundaries
-        df = cast(pd.DataFrame, df.loc[~df.index.duplicated(keep='first'), :])
+        df = cast(pd.DataFrame, df.loc[~df.index.duplicated(keep="first"), :])
 
         return df
 
@@ -178,33 +171,36 @@ class IntradayDataFetcher:
             return df
 
         # Ensure required columns exist
-        required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
+        required_cols = ["date", "open", "high", "low", "close", "volume"]
         missing_cols = [col for col in required_cols if col not in df.columns]
 
         if missing_cols:
             raise ValueError(f"Missing required columns: {missing_cols}")
 
         # Convert date to datetime and set as index
-        df['date'] = pd.to_datetime(df['date'])
-        df.set_index('date', inplace=True)
+        df["date"] = pd.to_datetime(df["date"])
+        df.set_index("date", inplace=True)
         df.sort_index(inplace=True)
 
         # Ensure numeric types
-        numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+        numeric_cols = ["open", "high", "low", "close", "volume"]
         for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
         # Remove rows with NaN values in OHLC
-        df.dropna(subset=['open', 'high', 'low', 'close'], inplace=True)
+        df.dropna(subset=["open", "high", "low", "close"], inplace=True)
 
         # Capitalize column names for consistency with mplfinance
-        df.rename(columns={
-            'open': 'Open',
-            'high': 'High',
-            'low': 'Low',
-            'close': 'Close',
-            'volume': 'Volume'
-        }, inplace=True)
+        df.rename(
+            columns={
+                "open": "Open",
+                "high": "High",
+                "low": "Low",
+                "close": "Close",
+                "volume": "Volume",
+            },
+            inplace=True,
+        )
 
         return df
 
@@ -215,12 +211,12 @@ class IntradayDataFetcher:
         FMP has rate limits and data size limits. These are conservative estimates.
         """
         max_days_map = {
-            "1min": 5,      # ~390 bars per day * 5 = ~1950 bars
-            "5min": 15,     # ~78 bars per day * 15 = ~1170 bars
-            "15min": 30,    # ~26 bars per day * 30 = ~780 bars
-            "30min": 60,    # ~13 bars per day * 60 = ~780 bars
-            "1hour": 90,    # ~6.5 bars per day * 90 = ~585 bars
-            "4hour": 180,   # ~1.6 bars per day * 180 = ~288 bars
+            "1min": 5,  # ~390 bars per day * 5 = ~1950 bars
+            "5min": 15,  # ~78 bars per day * 15 = ~1170 bars
+            "15min": 30,  # ~26 bars per day * 30 = ~780 bars
+            "30min": 60,  # ~13 bars per day * 60 = ~780 bars
+            "1hour": 90,  # ~6.5 bars per day * 90 = ~585 bars
+            "4hour": 180,  # ~1.6 bars per day * 180 = ~288 bars
         }
 
         return max_days_map.get(interval, 30)
@@ -234,10 +230,10 @@ class IntradayDataFetcher:
 # Unified data fetching function (async)
 async def get_stock_data(
     symbol: str,
-    interval: str = '1day',
+    interval: str = "1day",
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    fmp_client: Optional[FMPClient] = None
+    fmp_client: Optional[FMPClient] = None,
 ) -> pd.DataFrame:
     """
     Unified function to get stock OHLCV data for any time interval.
@@ -280,12 +276,10 @@ async def get_stock_data(
         interval_lower = interval.lower()
 
         # Handle daily data
-        if interval_lower in ['1day', 'daily', '1d', 'day']:
+        if interval_lower in ["1day", "daily", "1d", "day"]:
             # Fetch daily data
             data = await client.get_stock_price(
-                symbol,
-                from_date=start_date,
-                to_date=end_date
+                symbol, from_date=start_date, to_date=end_date
             )
 
             if not data:
@@ -300,7 +294,7 @@ async def get_stock_data(
                 return df
 
             # Ensure required columns exist
-            required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
+            required_cols = ["date", "open", "high", "low", "close", "volume"]
             missing_cols = [col for col in required_cols if col not in df.columns]
 
             if missing_cols:
@@ -308,26 +302,29 @@ async def get_stock_data(
                 return pd.DataFrame()
 
             # Convert date to datetime and set as index
-            df['date'] = pd.to_datetime(df['date'])
-            df.set_index('date', inplace=True)
+            df["date"] = pd.to_datetime(df["date"])
+            df.set_index("date", inplace=True)
             df.sort_index(inplace=True)
 
             # Ensure numeric types
-            numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+            numeric_cols = ["open", "high", "low", "close", "volume"]
             for col in numeric_cols:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+                df[col] = pd.to_numeric(df[col], errors="coerce")
 
             # Remove rows with NaN values in OHLC
-            df.dropna(subset=['open', 'high', 'low', 'close'], inplace=True)
+            df.dropna(subset=["open", "high", "low", "close"], inplace=True)
 
             # Capitalize column names for consistency
-            df.rename(columns={
-                'open': 'Open',
-                'high': 'High',
-                'low': 'Low',
-                'close': 'Close',
-                'volume': 'Volume'
-            }, inplace=True)
+            df.rename(
+                columns={
+                    "open": "Open",
+                    "high": "High",
+                    "low": "Low",
+                    "close": "Close",
+                    "volume": "Volume",
+                },
+                inplace=True,
+            )
 
             logger.info(f"Fetched {len(df)} daily data points for {symbol}")
             return df
@@ -344,7 +341,9 @@ async def get_stock_data(
             assert start_date is not None and end_date is not None
 
             fetcher = IntradayDataFetcher(client)
-            return await fetcher.fetch_intraday_data(symbol, interval, start_date, end_date)
+            return await fetcher.fetch_intraday_data(
+                symbol, interval, start_date, end_date
+            )
 
     finally:
         # Close client if we created it
@@ -358,7 +357,7 @@ async def fetch_intraday_data(
     interval: str,
     start_date: str,
     end_date: str,
-    fmp_client: Optional[FMPClient] = None
+    fmp_client: Optional[FMPClient] = None,
 ) -> pd.DataFrame:
     """
     Convenience function to fetch intraday data

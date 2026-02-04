@@ -4,13 +4,13 @@ LangChain tool wrappers for market data operations.
 This module provides @tool decorated functions that serve as the LangChain interface.
 The actual business logic is implemented in implementations.py.
 """
+
 from typing import Optional, Dict, Any, List
 from langchain_core.tools import tool
 
 from .implementations import (
     fetch_stock_daily_prices,
     fetch_company_overview,
-    fetch_stock_realtime_quote,
     fetch_market_indices,
     fetch_sector_performance,
 )
@@ -21,7 +21,7 @@ async def get_stock_daily_prices(
     symbol: str,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    limit: Optional[int] = None
+    limit: Optional[int] = None,
 ) -> "List[Dict[str, Any]] | str":
     """
     Get stock daily OHLCV price data with smart normalization.
@@ -75,9 +75,10 @@ async def get_company_overview(symbol: str) -> str:
     """
     Get comprehensive investment analysis overview for a company.
 
-    Retrieves and formats investment-relevant data including financial health ratings,
-    analyst consensus, earnings performance, and revenue segmentation. Data is presented
-    in a human-readable format optimized for investment decision-making.
+    Retrieves and formats investment-relevant data including real-time quotes,
+    financial health ratings, analyst consensus, earnings performance, and
+    revenue segmentation. Data is presented in a human-readable format optimized
+    for investment decision-making.
 
     Supports US stocks, A-shares (Chinese), and HK stocks.
 
@@ -89,10 +90,13 @@ async def get_company_overview(symbol: str) -> str:
 
     Returns:
         Formatted string with comprehensive investment intelligence including:
+        - Real-time quote (market status, price, day range, 52-week range, volume, after-hours)
         - Company basic information (name, sector, market cap, price)
-        - Financial health ratings (overall score, valuation, profitability, leverage)
-        - Analyst consensus (price targets, buy/sell recommendations, recent changes)
+        - Stock price performance (1D, 5D, 1M, 3M, 6M, YTD, 1Y, 3Y, 5Y returns)
+        - Key financial metrics (valuation, profitability, leverage ratios)
+        - SEC filing dates and next earnings report
         - Earnings performance (latest results vs estimates, surprises)
+        - Analyst consensus (price targets, buy/sell recommendations, recent changes)
         - Revenue breakdown (by product line and geographic region)
 
     Example:
@@ -110,51 +114,11 @@ async def get_company_overview(symbol: str) -> str:
 
 
 @tool
-async def get_stock_realtime_quote(symbol: str) -> str:
-    """
-    Get real-time stock quote with market hours detection.
-
-    Automatically detects current market session (regular hours, after-market, or closed)
-    and fetches appropriate real-time quote data. Formats output in a human-readable
-    format optimized for quick decision-making.
-
-    Supports US stocks, A-shares (Chinese), and HK stocks.
-
-    Args:
-        symbol: Stock ticker symbol
-            - US: "AAPL", "MSFT", "GOOGL"
-            - A-Share: "600519.SS" (Shanghai), "000858.SZ" (Shenzhen)
-            - HK: "0700.HK" (Tencent), "9988.HK" (Alibaba)
-
-    Returns:
-        Formatted string with real-time quote information including:
-        - Market status and last update time
-        - Current price with daily change
-        - Day range and 52-week range
-        - Volume and average volume
-        - Market cap, EPS, P/E ratio
-        - After-hours price (if applicable)
-
-    Example:
-        # Get real-time quote for Apple
-        quote = get_stock_realtime_quote("AAPL")
-        print(quote)  # Displays formatted real-time quote
-
-        # Get quote for Wuliangye (A-share)
-        quote = get_stock_realtime_quote("000858.SZ")
-
-        # Get quote during after-hours for Tencent (HK)
-        quote = get_stock_realtime_quote("0700.HK")
-    """
-    return await fetch_stock_realtime_quote(symbol)
-
-
-@tool
 async def get_market_indices(
     indices: Optional[List[str]] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    limit: int = 60
+    limit: int = 60,
 ) -> "List[Dict[str, Any]] | str":
     """
     Get market indices data with smart normalization.

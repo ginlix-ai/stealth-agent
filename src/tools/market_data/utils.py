@@ -3,6 +3,7 @@ Utility functions for market data tools.
 
 Provides helper functions for formatting, market session detection, and FMP client access.
 """
+
 from typing import Optional, Tuple
 from datetime import datetime, time
 import pytz
@@ -20,7 +21,7 @@ def get_market_session() -> Tuple[str, datetime]:
         session_name: "REGULAR_HOURS", "AFTER_HOURS", or "CLOSED"
     """
     # Get current time in US Eastern Time
-    et_tz = pytz.timezone('US/Eastern')
+    et_tz = pytz.timezone("US/Eastern")
     now_et = datetime.now(et_tz)
 
     # Check if it's a weekday (Monday=0, Sunday=6)
@@ -35,7 +36,7 @@ def get_market_session() -> Tuple[str, datetime]:
     # Regular hours: 9:30 AM - 4:00 PM
     # After hours: 4:00 PM - 8:00 PM
 
-    market_open = time(9, 30)   # 9:30 AM
+    market_open = time(9, 30)  # 9:30 AM
     market_close = time(16, 0)  # 4:00 PM
     after_hours_close = time(20, 0)  # 8:00 PM
 
@@ -62,11 +63,11 @@ def format_number(value: Optional[float], suffix: bool = True) -> str:
         return "N/A"
 
     if suffix and abs(value) >= 1e12:
-        return f"${value/1e12:.2f}T"
+        return f"${value / 1e12:.2f}T"
     elif suffix and abs(value) >= 1e9:
-        return f"${value/1e9:.2f}B"
+        return f"${value / 1e9:.2f}B"
     elif suffix and abs(value) >= 1e6:
-        return f"${value/1e6:.2f}M"
+        return f"${value / 1e6:.2f}M"
     elif suffix:
         return f"${value:,.2f}"
     else:
