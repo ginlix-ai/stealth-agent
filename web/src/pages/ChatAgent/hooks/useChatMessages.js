@@ -37,6 +37,20 @@ const setStoredThreadId = (workspaceId, threadId) => {
 };
 
 /**
+ * Removes the stored thread ID for a workspace from localStorage
+ * Used when a workspace is deleted or thread is invalidated
+ * @param {string} workspaceId - The workspace ID
+ */
+export const removeStoredThreadId = (workspaceId) => {
+  if (!workspaceId) return;
+  try {
+    localStorage.removeItem(`${THREAD_ID_STORAGE_PREFIX}${workspaceId}`);
+  } catch (error) {
+    console.warn('Failed to remove thread ID from localStorage:', error);
+  }
+};
+
+/**
  * Custom hook for managing chat messages and streaming
  * 
  * Handles:
@@ -123,7 +137,10 @@ export function useChatMessages(workspaceId) {
 
       if (!workspaceThread || !workspaceThread.thread_id) {
         // No history found for this workspace
-        console.log('[History] No thread found for workspace');
+        // Clear localStorage if thread doesn't exist (thread may have been deleted on backend)
+        console.log('[History] No thread found for workspace, clearing localStorage');
+        removeStoredThreadId(workspaceId);
+        setThreadId('__default__');
         setIsLoadingHistory(false);
         historyLoadingRef.current = false;
         return;

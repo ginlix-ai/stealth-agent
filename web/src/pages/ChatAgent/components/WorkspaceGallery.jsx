@@ -5,6 +5,7 @@ import WorkspaceCard from './WorkspaceCard';
 import CreateWorkspaceModal from './CreateWorkspaceModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import { getWorkspaces, createWorkspace, deleteWorkspace } from '../utils/api';
+import { removeStoredThreadId } from '../hooks/useChatMessages';
 
 /**
  * WorkspaceGallery Component
@@ -122,6 +123,9 @@ function WorkspaceGallery({ onWorkspaceSelect }) {
 
     try {
       await deleteWorkspace(workspaceId);
+
+      // Clean up localStorage: remove thread ID for deleted workspace
+      removeStoredThreadId(workspaceId);
 
       // Remove workspace from list
       setWorkspaces((prev) =>
