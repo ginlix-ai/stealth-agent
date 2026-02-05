@@ -34,17 +34,23 @@ from src.server.models.chat import (
     summarize_hitl_response_map,
 )
 from src.server.handlers.streaming_handler import WorkflowStreamHandler
-from ptc_agent.agent.graph import build_ptc_graph, build_ptc_graph_with_session
-from src.server.services.session_manager import SessionService, get_session_provider
+from ptc_agent.agent.graph import build_ptc_graph_with_session
+from ptc_agent.agent.flash import build_flash_graph
+from src.server.services.session_manager import SessionService
 from src.server.services.workspace_manager import WorkspaceManager
-from src.server.database.workspace import update_workspace_activity
-from src.server.services.background_task_manager import BackgroundTaskManager, TaskStatus
+from src.server.database.workspace import update_workspace_activity, create_workspace as db_create_workspace
+from src.server.services.background_task_manager import (
+    BackgroundTaskManager,
+    TaskStatus,
+)
 from src.server.services.background_registry_store import BackgroundRegistryStore
 from src.server.services.workflow_tracker import WorkflowTracker
 
 # Database persistence imports
 from src.server.database import conversation as qr_db
-from src.server.services.conversation_persistence_service import ConversationPersistenceService
+from src.server.services.conversation_persistence_service import (
+    ConversationPersistenceService,
+)
 
 # Token and tool tracking imports
 from src.utils.tracking import (
@@ -85,19 +91,22 @@ async def chat_stream(request: ChatRequest, user_id: CurrentUserId):
     """
     Stream PTC agent responses as Server-Sent Events.
 
-    This endpoint:
-    - Uses a Daytona sandbox session from the specified workspace
-    - Streams agent responses in real-time
-    - Supports tool execution and file operations
-    - Handles interrupts for plan review
+    This endpoint supports two modes:
+    - **ptc** (default): Uses Daytona sandbox session with full code execution capabilities
+    - **flash**: Lightweight, fast responses without sandbox (external tools only)
 
     Args:
-        request: ChatRequest with messages and configuration (workspace_id required)
+        request: ChatRequest with messages and configuration
+            - workspace_id required for 'ptc' mode, optional for 'flash' mode
+            - agent_mode: 'ptc' (default) or 'flash'
         user_id: User ID from X-User-Id header
 
     Returns:
         StreamingResponse with SSE events
     """
+    # Determine agent mode
+    agent_mode = request.agent_mode or "ptc"
+
     # Extract identity fields (user_id from header, workspace_id from body)
     workspace_id = request.workspace_id
     thread_id = request.thread_id
@@ -105,12 +114,18 @@ async def chat_stream(request: ChatRequest, user_id: CurrentUserId):
         thread_id = str(uuid4())
 
     # Validate that agent_config is initialized
-    if not hasattr(setup, 'agent_config') or setup.agent_config is None:
+    if not hasattr(setup, "agent_config") or setup.agent_config is None:
         raise HTTPException(
             status_code=503,
-            detail="PTC Agent not initialized. Check server startup logs."
+            detail="PTC Agent not initialized. Check server startup logs.",
         )
 
+    # Validate workspace_id for ptc mode
+    if agent_mode == "ptc" and not workspace_id:
+        raise HTTPException(
+            status_code=400,
+            detail="workspace_id is required for 'ptc' agent mode. Create workspace first via POST /workspaces, or use agent_mode='flash' for lightweight queries.",
+        )
     # Extract user input
     user_input = ""
     if request.messages:
@@ -119,14 +134,32 @@ async def chat_stream(request: ChatRequest, user_id: CurrentUserId):
             user_input = last_msg.content
         elif isinstance(last_msg.content, list):
             for item in last_msg.content:
-                if hasattr(item, 'text') and item.text:
+                if hasattr(item, "text") and item.text:
                     user_input = item.text
                     break
 
     logger.info(
-        f"[PTC_CHAT] New request: workspace_id={workspace_id} "
-        f"thread_id={thread_id} user_id={user_id}"
+        f"[{'FLASH' if agent_mode == 'flash' else 'PTC'}_CHAT] New request: "
+        f"workspace_id={workspace_id} thread_id={thread_id} user_id={user_id} "
+        f"mode={agent_mode}"
     )
+
+    # Route to appropriate streaming function based on agent mode
+    if agent_mode == "flash":
+        return StreamingResponse(
+            _astream_flash_workflow(
+                request=request,
+                thread_id=thread_id,
+                user_input=user_input,
+                user_id=user_id,
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
 
     return StreamingResponse(
         _astream_workflow(
@@ -141,8 +174,258 @@ async def chat_stream(request: ChatRequest, user_id: CurrentUserId):
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
-        }
+        },
     )
+
+
+async def _astream_flash_workflow(
+    request: ChatRequest,
+    thread_id: str,
+    user_input: str,
+    user_id: str,
+):
+    """
+    Async generator that streams Flash agent workflow events.
+
+    Flash mode is optimized for speed - no sandbox, no MCP, no workspace required.
+    Uses only external tools (web search, market data, SEC filings).
+
+    Args:
+        request: The chat request
+        thread_id: Thread identifier
+        user_input: Extracted user input text
+        user_id: User identifier
+
+    Yields:
+        SSE-formatted event strings
+    """
+    start_time = time.time()
+    handler = None
+    token_callback = None
+    tool_tracker = None
+    flash_graph = None
+    persistence_service = None
+
+    # Flash mode uses thread_id as workspace_id (1:1 mapping)
+    workspace_id = thread_id
+
+    logger.info(f"[FLASH_CHAT] Starting flash workflow: thread_id={thread_id}")
+
+    try:
+        # Validate agent_config is available
+        if not setup.agent_config:
+            raise HTTPException(
+                status_code=503,
+                detail="Flash Agent not initialized. Check server startup logs.",
+            )
+
+        # =====================================================================
+        # Database Persistence Setup
+        # =====================================================================
+
+        # Create flash workspace with thread_id as workspace_id (no sandbox)
+        try:
+            await db_create_workspace(
+                user_id=user_id,
+                name="__flash__",
+                description="Flash mode conversation",
+                config={"flash_mode": True},
+                workspace_id=workspace_id,
+                status="flash",
+            )
+        except Exception as e:
+            # Workspace may already exist (resuming conversation)
+            if "duplicate key" not in str(e).lower():
+                raise
+            logger.debug(f"[FLASH_CHAT] Flash workspace already exists: {workspace_id}")
+
+        # Ensure thread exists in database
+        await qr_db.ensure_thread_exists(
+            workspace_id=workspace_id,
+            thread_id=thread_id,
+            user_id=user_id,
+            initial_query=user_input,
+            initial_status="in_progress",
+            msg_type="flash",
+        )
+
+        # Initialize persistence service
+        persistence_service = ConversationPersistenceService.get_instance(
+            thread_id=thread_id, workspace_id=workspace_id, user_id=user_id
+        )
+
+        # Persist query start
+        await persistence_service.persist_query_start(
+            content=user_input,
+            query_type="initial",
+            metadata={"msg_type": "flash"},
+        )
+
+        logger.info(f"[FLASH_CHAT] Database records created: workspace_id={workspace_id}")
+
+        # =====================================================================
+        # Token and Tool Tracking
+        # =====================================================================
+
+        # Initialize token tracking
+        token_callback = TokenTrackingManager.initialize_tracking(
+            thread_id=thread_id, track_tokens=True
+        )
+
+        # Create tool tracker for infrastructure cost tracking
+        tool_tracker = ToolUsageTracker(thread_id=thread_id)
+
+        # =====================================================================
+        # Build Flash Agent Graph
+        # =====================================================================
+
+        # Resolve LLM config for this request
+        config = setup.agent_config
+        if request.llm_model:
+            # Per-request LLM override takes precedence
+            config = config.model_copy(deep=True)
+            config.llm.flash = request.llm_model
+            logger.info(
+                f"[FLASH_CHAT] Using per-request LLM model: {request.llm_model}"
+            )
+        elif config.llm.flash:
+            logger.info(f"[FLASH_CHAT] Using flash-specific LLM: {config.llm.flash}")
+
+        # Build flash graph (no sandbox, no session)
+        flash_graph = build_flash_graph(
+            config=config,
+            checkpointer=setup.checkpointer,
+        )
+
+        # Build input state from messages
+        messages = []
+        for msg in request.messages:
+            if isinstance(msg.content, str):
+                messages.append({"role": msg.role, "content": msg.content})
+            elif isinstance(msg.content, list):
+                content_items = []
+                for item in msg.content:
+                    if hasattr(item, "type"):
+                        if item.type == "text" and item.text:
+                            content_items.append({"type": "text", "text": item.text})
+                        elif item.type == "image" and item.image_url:
+                            content_items.append(
+                                {"type": "image_url", "image_url": item.image_url}
+                            )
+                messages.append(
+                    {"role": msg.role, "content": content_items or str(msg.content)}
+                )
+
+        input_state = {"messages": messages}
+
+        # Build LangGraph config
+        graph_config = {
+            "configurable": {
+                "thread_id": thread_id,
+                "user_id": user_id,
+            },
+            "recursion_limit": 100,
+            "tags": ["flash_agent"],
+            "metadata": {
+                "user_id": user_id,
+                "thread_id": thread_id,
+                "workflow_type": "flash_agent",
+            },
+        }
+
+        # Add token tracking callbacks
+        if token_callback:
+            graph_config["callbacks"] = [token_callback]
+
+        # Create stream handler
+        handler = WorkflowStreamHandler(
+            thread_id=thread_id,
+            track_tokens=True,
+            token_callback=token_callback,
+            tool_tracker=tool_tracker,
+        )
+
+        # Stream flash agent responses directly (no background execution)
+        async for event in handler.stream_workflow(
+            graph=flash_graph,
+            input_state=input_state,
+            config=graph_config,
+        ):
+            yield event
+
+        execution_time = time.time() - start_time
+
+        # Persist completion
+        if persistence_service:
+            try:
+                per_call_records = (
+                    token_callback.per_call_records if token_callback else None
+                )
+                tool_usage = handler.get_tool_usage() if handler else None
+                streaming_chunks = handler.get_streaming_chunks() if handler else None
+
+                await persistence_service.persist_completion(
+                    metadata={"msg_type": "flash"},
+                    execution_time=execution_time,
+                    per_call_records=per_call_records,
+                    tool_usage=tool_usage,
+                    streaming_chunks=streaming_chunks,
+                )
+                logger.debug(f"[FLASH_CHAT] Completion persisted: thread_id={thread_id}")
+            except Exception as persist_error:
+                logger.error(f"[FLASH_CHAT] Failed to persist completion: {persist_error}")
+
+        logger.info(
+            f"[FLASH_CHAT] Completed: thread_id={thread_id} "
+            f"duration={execution_time:.2f}s"
+        )
+
+    except Exception as e:
+        logger.exception(f"[FLASH_ERROR] thread_id={thread_id}: {e}")
+
+        # Persist error
+        if persistence_service:
+            try:
+                execution_time = time.time() - start_time
+                per_call_records = (
+                    token_callback.per_call_records if token_callback else None
+                )
+                tool_usage = handler.get_tool_usage() if handler else None
+                streaming_chunks = handler.get_streaming_chunks() if handler else None
+
+                await persistence_service.persist_error(
+                    error_message=str(e),
+                    execution_time=execution_time,
+                    metadata={"msg_type": "flash"},
+                    per_call_records=per_call_records,
+                    tool_usage=tool_usage,
+                    streaming_chunks=streaming_chunks,
+                )
+            except Exception as persist_error:
+                logger.error(f"[FLASH_CHAT] Failed to persist error: {persist_error}")
+
+        # Yield error event
+        if handler:
+            error_event = handler._format_sse_event(
+                "error",
+                {
+                    "thread_id": thread_id,
+                    "error": str(e),
+                    "type": "workflow_error",
+                },
+            )
+            yield error_event
+        else:
+            error_event = json.dumps(
+                {
+                    "thread_id": thread_id,
+                    "error": str(e),
+                    "type": "workflow_error",
+                }
+            )
+            yield f"event: error\ndata: {error_event}\n\n"
+
+        raise
 
 
 async def _astream_workflow(
@@ -184,7 +467,7 @@ async def _astream_workflow(
         if not setup.agent_config:
             raise HTTPException(
                 status_code=503,
-                detail="PTC Agent not initialized. Check server startup logs."
+                detail="PTC Agent not initialized. Check server startup logs.",
             )
 
         # =====================================================================
@@ -207,9 +490,7 @@ async def _astream_workflow(
 
         # Initialize persistence service for this thread
         persistence_service = ConversationPersistenceService.get_instance(
-            thread_id=thread_id,
-            workspace_id=workspace_id,
-            user_id=user_id
+            thread_id=thread_id, workspace_id=workspace_id, user_id=user_id
         )
 
         # Get current pair_index for this thread (will be used by file logger)
@@ -265,7 +546,7 @@ async def _astream_workflow(
             # Fallback to locale-based timezone
             locale_config = get_locale_config(
                 request.locale or "en-US",
-                "en"  # Default prompt language
+                "en",  # Default prompt language
             )
             timezone_str = locale_config.get("timezone", "UTC")
             logger.debug(
@@ -279,8 +560,7 @@ async def _astream_workflow(
 
         # Initialize token tracking (always enabled)
         token_callback = TokenTrackingManager.initialize_tracking(
-            thread_id=thread_id,
-            track_tokens=True
+            thread_id=thread_id, track_tokens=True
         )
 
         # Create tool tracker for infrastructure cost tracking
@@ -313,7 +593,9 @@ async def _astream_workflow(
         # Use WorkspaceManager for workspace-based sessions
         logger.info(f"[PTC_CHAT] Using workspace: {workspace_id}")
         workspace_manager = WorkspaceManager.get_instance()
-        session = await workspace_manager.get_session_for_workspace(workspace_id, user_id=user_id)
+        session = await workspace_manager.get_session_for_workspace(
+            workspace_id, user_id=user_id
+        )
 
         # Update workspace activity
         await update_workspace_activity(workspace_id)
@@ -334,7 +616,7 @@ async def _astream_workflow(
         )
 
         if session.sandbox:
-            sandbox_id = getattr(session.sandbox, 'sandbox_id', None)
+            sandbox_id = getattr(session.sandbox, "sandbox_id", None)
 
         # Store graph for persistence snapshots
         setup.graph = ptc_graph
@@ -348,12 +630,16 @@ async def _astream_workflow(
                 # Handle multi-part content
                 content_items = []
                 for item in msg.content:
-                    if hasattr(item, 'type'):
+                    if hasattr(item, "type"):
                         if item.type == "text" and item.text:
                             content_items.append({"type": "text", "text": item.text})
                         elif item.type == "image" and item.image_url:
-                            content_items.append({"type": "image_url", "image_url": item.image_url})
-                messages.append({"role": msg.role, "content": content_items or str(msg.content)})
+                            content_items.append(
+                                {"type": "image_url", "image_url": item.image_url}
+                            )
+                messages.append(
+                    {"role": msg.role, "content": content_items or str(msg.content)}
+                )
 
         # =====================================================================
         # Skill Context Injection
@@ -365,9 +651,12 @@ async def _astream_workflow(
         if skill_contexts and not request.hitl_response:
             # Get skill directories from config
             skill_dirs = [
-                local_dir for local_dir, _ in config.skills.local_skill_dirs_with_sandbox()
+                local_dir
+                for local_dir, _ in config.skills.local_skill_dirs_with_sandbox()
             ]
-            skill_prefix_msg = build_skill_prefix_message(skill_contexts, skill_dirs=skill_dirs)
+            skill_prefix_msg = build_skill_prefix_message(
+                skill_contexts, skill_dirs=skill_dirs
+            )
             if skill_prefix_msg:
                 # Insert skill message before user messages
                 messages.insert(0, skill_prefix_msg)
@@ -415,7 +704,9 @@ async def _astream_workflow(
                         last_msg["content"] = last_msg["content"] + plan_mode_reminder
                     elif isinstance(last_msg.get("content"), list):
                         # Multi-part content - add as text item
-                        last_msg["content"].append({"type": "text", "text": plan_mode_reminder})
+                        last_msg["content"].append(
+                            {"type": "text", "text": plan_mode_reminder}
+                        )
             logger.info(f"[PTC_CHAT] Plan mode enabled for thread_id={thread_id}")
 
         # =====================================================================
@@ -447,7 +738,7 @@ async def _astream_workflow(
         config = {
             "configurable": {
                 "thread_id": thread_id,
-                "user_id": user_id,           # For user-scoped tools
+                "user_id": user_id,  # For user-scoped tools
                 "workspace_id": workspace_id,  # For workspace-scoped tools
             },
             "recursion_limit": 1000,
@@ -465,9 +756,13 @@ async def _astream_workflow(
         # Extract background task registry from orchestrator (single source of truth for SSE events)
         # The orchestrator wraps the middleware which owns the registry
         background_registry = None
-        if hasattr(ptc_graph, 'middleware') and hasattr(ptc_graph.middleware, 'registry'):
+        if hasattr(ptc_graph, "middleware") and hasattr(
+            ptc_graph.middleware, "registry"
+        ):
             background_registry = ptc_graph.middleware.registry
-            logger.debug(f"[PTC_CHAT] Background registry attached for thread_id={thread_id}")
+            logger.debug(
+                f"[PTC_CHAT] Background registry attached for thread_id={thread_id}"
+            )
 
         # Reuse WorkflowStreamHandler for SSE streaming
         handler = WorkflowStreamHandler(
@@ -489,7 +784,7 @@ async def _astream_workflow(
                 "sandbox_id": sandbox_id,
                 "locale": request.locale,
                 "timezone": timezone_str,
-            }
+            },
         )
 
         # =====================================================================
@@ -500,7 +795,9 @@ async def _astream_workflow(
 
         # Wait for any soft-interrupted workflow to complete before starting new one
         # This ensures seamless continuation after ESC interrupt
-        ready_for_new_request = await manager.wait_for_soft_interrupted(thread_id, timeout=30.0)
+        ready_for_new_request = await manager.wait_for_soft_interrupted(
+            thread_id, timeout=30.0
+        )
         if not ready_for_new_request:
             raise HTTPException(
                 status_code=409,
@@ -515,10 +812,14 @@ async def _astream_workflow(
             """Persists workflow data after background execution completes."""
             try:
                 execution_time = time.time() - start_time
-                _persistence_service = ConversationPersistenceService.get_instance(thread_id)
+                _persistence_service = ConversationPersistenceService.get_instance(
+                    thread_id
+                )
 
                 # Get per-call records for usage tracking
-                _per_call_records = token_callback.per_call_records if token_callback else None
+                _per_call_records = (
+                    token_callback.per_call_records if token_callback else None
+                )
 
                 # Get tool usage summary from handler
                 _tool_usage = None
@@ -540,11 +841,15 @@ async def _astream_workflow(
 
                 state_snapshot = None
                 try:
-                    snapshot = await ptc_graph.aget_state({"configurable": {"thread_id": thread_id}})
+                    snapshot = await ptc_graph.aget_state(
+                        {"configurable": {"thread_id": thread_id}}
+                    )
                     if snapshot and snapshot.values:
                         state_snapshot = serialize_state_snapshot(snapshot.values)
                 except Exception as state_error:
-                    logger.warning(f"[PTC_COMPLETE] Failed to get state snapshot: {state_error}")
+                    logger.warning(
+                        f"[PTC_COMPLETE] Failed to get state snapshot: {state_error}"
+                    )
 
                 # Persist completion to database
                 _streaming_chunks = handler.get_streaming_chunks() if handler else None
@@ -570,7 +875,7 @@ async def _astream_workflow(
                     metadata={
                         "completed_at": datetime.now().isoformat(),
                         "execution_time": execution_time,
-                    }
+                    },
                 )
 
                 logger.info(
@@ -581,12 +886,14 @@ async def _astream_workflow(
             except Exception as e:
                 logger.error(
                     f"[PTC_CHAT] Background completion persistence failed for {thread_id}: {e}",
-                    exc_info=True
+                    exc_info=True,
                 )
 
         # Clear event buffer when resuming from interrupt
         if request.hitl_response:
-            logger.info(f"[PTC_CHAT] Clearing event buffer for interrupt resume: {thread_id}")
+            logger.info(
+                f"[PTC_CHAT] Clearing event buffer for interrupt resume: {thread_id}"
+            )
             await manager.clear_event_buffer(thread_id)
 
         # Start workflow in background with event buffering
@@ -634,7 +941,11 @@ async def _astream_workflow(
                 except asyncio.TimeoutError:
                     # No events yet, check if workflow completed
                     status = await manager.get_task_status(thread_id)
-                    if status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
+                    if status in [
+                        TaskStatus.COMPLETED,
+                        TaskStatus.FAILED,
+                        TaskStatus.CANCELLED,
+                    ]:
                         break
                     continue  # Keep waiting for events
 
@@ -643,24 +954,34 @@ async def _astream_workflow(
             is_explicit_cancel = await tracker.is_cancelled(thread_id)
 
             if is_explicit_cancel:
-                logger.info(f"[PTC_CHAT] Workflow explicitly cancelled by user: thread_id={thread_id}")
+                logger.info(
+                    f"[PTC_CHAT] Workflow explicitly cancelled by user: thread_id={thread_id}"
+                )
                 await tracker.mark_cancelled(thread_id)
 
                 # Get token/tool usage for billing
-                _per_call_records = token_callback.per_call_records if token_callback else None
+                _per_call_records = (
+                    token_callback.per_call_records if token_callback else None
+                )
                 _tool_usage = handler.get_tool_usage() if handler else None
 
                 state_snapshot = None
                 try:
-                    snapshot = await ptc_graph.aget_state({"configurable": {"thread_id": thread_id}})
+                    snapshot = await ptc_graph.aget_state(
+                        {"configurable": {"thread_id": thread_id}}
+                    )
                     if snapshot and snapshot.values:
                         state_snapshot = serialize_state_snapshot(snapshot.values)
                 except Exception as state_error:
-                    logger.warning(f"[PTC_CHAT] Failed to get state snapshot for cancellation: {state_error}")
+                    logger.warning(
+                        f"[PTC_CHAT] Failed to get state snapshot for cancellation: {state_error}"
+                    )
 
                 # Persist cancellation to database
                 try:
-                    _streaming_chunks = handler.get_streaming_chunks() if handler else None
+                    _streaming_chunks = (
+                        handler.get_streaming_chunks() if handler else None
+                    )
                     await persistence_service.persist_cancelled(
                         execution_time=time.time() - start_time,
                         metadata={
@@ -673,7 +994,9 @@ async def _astream_workflow(
                         streaming_chunks=_streaming_chunks,
                     )
                 except Exception as persist_error:
-                    logger.error(f"[PTC_CHAT] Failed to persist cancellation: {persist_error}")
+                    logger.error(
+                        f"[PTC_CHAT] Failed to persist cancellation: {persist_error}"
+                    )
 
                 # Cancel the background workflow
                 await manager.cancel_workflow(thread_id)
@@ -690,11 +1013,13 @@ async def _astream_workflow(
                     metadata={
                         "workspace_id": workspace_id,
                         "user_id": user_id,
-                        "disconnected_at": datetime.now().isoformat()
-                    }
+                        "disconnected_at": datetime.now().isoformat(),
+                    },
                 )
                 # Background task will continue running!
-                logger.info(f"[PTC_CHAT] Background task for {thread_id} will complete independently")
+                logger.info(
+                    f"[PTC_CHAT] Background task for {thread_id} will complete independently"
+                )
 
             raise
 
@@ -714,20 +1039,24 @@ async def _astream_workflow(
 
         state_snapshot = None
         try:
-            snapshot = await ptc_graph.aget_state({"configurable": {"thread_id": thread_id}})
+            snapshot = await ptc_graph.aget_state(
+                {"configurable": {"thread_id": thread_id}}
+            )
             if snapshot and snapshot.values:
                 state_snapshot = serialize_state_snapshot(snapshot.values)
         except Exception as state_error:
-            logger.warning(f"[PTC_CHAT] Failed to get state snapshot after error: {state_error}")
+            logger.warning(
+                f"[PTC_CHAT] Failed to get state snapshot after error: {state_error}"
+            )
 
         # Non-recoverable error types (code bugs, config issues)
         non_recoverable_types = (
-            AttributeError,   # Code bug - missing attribute
-            NameError,        # Code bug - undefined variable
-            SyntaxError,      # Code bug - syntax error
-            ImportError,      # Missing dependency
-            TypeError,        # Wrong type passed
-            KeyError,         # Missing key (usually code issue)
+            AttributeError,  # Code bug - missing attribute
+            NameError,  # Code bug - undefined variable
+            SyntaxError,  # Code bug - syntax error
+            ImportError,  # Missing dependency
+            TypeError,  # Wrong type passed
+            KeyError,  # Missing key (usually code issue)
         )
 
         is_non_recoverable = isinstance(e, non_recoverable_types)
@@ -735,30 +1064,29 @@ async def _astream_workflow(
         # Recoverable error patterns (transient issues)
         import psycopg
 
-        is_postgres_connection = (
-            isinstance(e, psycopg.OperationalError) and
-            "server closed the connection" in str(e)
-        )
+        is_postgres_connection = isinstance(
+            e, psycopg.OperationalError
+        ) and "server closed the connection" in str(e)
 
         is_timeout = (
-            isinstance(e, TimeoutError) or
-            "timeout" in str(e).lower() or
-            "timed out" in str(e).lower()
+            isinstance(e, TimeoutError)
+            or "timeout" in str(e).lower()
+            or "timed out" in str(e).lower()
         )
 
         is_network_issue = (
-            isinstance(e, ConnectionError) or
-            "connection" in str(e).lower() or
-            "network" in str(e).lower() or
-            "unreachable" in str(e).lower() or
-            "connection refused" in str(e).lower()
+            isinstance(e, ConnectionError)
+            or "connection" in str(e).lower()
+            or "network" in str(e).lower()
+            or "unreachable" in str(e).lower()
+            or "connection refused" in str(e).lower()
         )
 
         # API errors (transient server errors, rate limits, etc.)
         is_api_error = False
         error_str = str(e).lower()
         error_type_name = type(e).__name__.lower()
-        
+
         # Check for API error types (InternalServerError, APIError, etc.)
         api_error_indicators = [
             "internal server error",
@@ -773,19 +1101,18 @@ async def _astream_workflow(
             "bad gateway",
             "gateway timeout",
         ]
-        
+
         is_api_error = (
-            any(indicator in error_str for indicator in api_error_indicators) or
-            "internal" in error_type_name or
-            "api" in error_type_name or
-            "server" in error_type_name
+            any(indicator in error_str for indicator in api_error_indicators)
+            or "internal" in error_type_name
+            or "api" in error_type_name
+            or "server" in error_type_name
         )
 
         # Determine if error is recoverable
         is_recoverable = (
-            (is_postgres_connection or is_timeout or is_network_issue or is_api_error) and
-            not is_non_recoverable
-        )
+            is_postgres_connection or is_timeout or is_network_issue or is_api_error
+        ) and not is_non_recoverable
 
         MAX_RETRIES = 3  # Maximum automatic retries
 
@@ -794,9 +1121,12 @@ async def _astream_workflow(
             retry_count = await tracker.increment_retry_count(thread_id)
 
             error_type = (
-                "connection_error" if is_postgres_connection or is_network_issue
-                else "timeout_error" if is_timeout
-                else "api_error" if is_api_error
+                "connection_error"
+                if is_postgres_connection or is_network_issue
+                else "timeout_error"
+                if is_timeout
+                else "api_error"
+                if is_api_error
                 else "transient_error"
             )
 
@@ -811,7 +1141,9 @@ async def _astream_workflow(
                 if persistence_service:
                     try:
                         error_msg = f"Max retries exceeded ({retry_count}/{MAX_RETRIES}): {type(e).__name__}: {str(e)}"
-                        _streaming_chunks = handler.get_streaming_chunks() if handler else None
+                        _streaming_chunks = (
+                            handler.get_streaming_chunks() if handler else None
+                        )
                         await persistence_service.persist_error(
                             error_message=error_msg,
                             errors=[error_msg],
@@ -826,7 +1158,9 @@ async def _astream_workflow(
                             streaming_chunks=_streaming_chunks,
                         )
                     except Exception as persist_error:
-                        logger.error(f"[PTC_CHAT] Failed to persist error: {persist_error}")
+                        logger.error(
+                            f"[PTC_CHAT] Failed to persist error: {persist_error}"
+                        )
 
                 # Yield error with retry info
                 error_data = {
@@ -854,7 +1188,7 @@ async def _astream_workflow(
                     "error_type": error_type,
                     "error_class": type(e).__name__,
                     "retry_count": retry_count,
-                    "max_retries": MAX_RETRIES
+                    "max_retries": MAX_RETRIES,
                 }
                 yield f"event: retry\ndata: {json.dumps(retry_data)}\n\n"
 
@@ -868,7 +1202,9 @@ async def _astream_workflow(
             # Persist error to database
             if persistence_service:
                 try:
-                    _streaming_chunks = handler.get_streaming_chunks() if handler else None
+                    _streaming_chunks = (
+                        handler.get_streaming_chunks() if handler else None
+                    )
                     await persistence_service.persist_error(
                         error_message=str(e),
                         execution_time=time.time() - start_time,
@@ -892,16 +1228,18 @@ async def _astream_workflow(
                         "thread_id": thread_id,
                         "error": str(e),
                         "type": "workflow_error",
-                    }
+                    },
                 )
                 yield error_event
             else:
                 # Fallback error formatting
-                error_event = json.dumps({
-                    "thread_id": thread_id,
-                    "error": str(e),
-                    "type": "workflow_error",
-                })
+                error_event = json.dumps(
+                    {
+                        "thread_id": thread_id,
+                        "error": str(e),
+                        "type": "workflow_error",
+                    }
+                )
                 yield f"event: error\ndata: {error_event}\n\n"
 
         raise
@@ -937,13 +1275,9 @@ async def reconnect_to_workflow(
     if not task_info:
         if workflow_status and workflow_status.get("status") == "completed":
             raise HTTPException(
-                status_code=410,
-                detail="Workflow completed and results expired"
+                status_code=410, detail="Workflow completed and results expired"
             )
-        raise HTTPException(
-            status_code=404,
-            detail=f"Workflow {thread_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Workflow {thread_id} not found")
 
     async def stream_reconnection():
         try:
@@ -973,13 +1307,19 @@ async def reconnect_to_workflow(
                 try:
                     while True:
                         try:
-                            event = await asyncio.wait_for(live_queue.get(), timeout=1.0)
+                            event = await asyncio.wait_for(
+                                live_queue.get(), timeout=1.0
+                            )
                             if event is None:
                                 break
                             yield event
                         except asyncio.TimeoutError:
                             current_status = await manager.get_task_status(thread_id)
-                            if current_status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
+                            if current_status in [
+                                TaskStatus.COMPLETED,
+                                TaskStatus.FAILED,
+                                TaskStatus.CANCELLED,
+                            ]:
                                 break
                             continue
                 finally:
@@ -988,7 +1328,7 @@ async def reconnect_to_workflow(
 
         except Exception as e:
             logger.error(f"[PTC_RECONNECT] Error: {e}", exc_info=True)
-            yield f"event: error\ndata: {{\"error\": \"Reconnection failed: {str(e)}\"}}\n\n"
+            yield f'event: error\ndata: {{"error": "Reconnection failed: {str(e)}"}}\n\n'
 
     return StreamingResponse(
         stream_reconnection(),
@@ -997,7 +1337,7 @@ async def reconnect_to_workflow(
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
-        }
+        },
     )
 
 
@@ -1020,7 +1360,9 @@ async def stream_subagent_status(thread_id: str):
                 active_tasks = [
                     {
                         "id": task.display_id,
-                        "description": task.description[:100] if task.description else "",
+                        "description": task.description[:100]
+                        if task.description
+                        else "",
                         "type": task.subagent_type,
                         "tool_calls": task.total_tool_calls,
                         "current_tool": task.current_tool,

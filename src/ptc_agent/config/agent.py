@@ -27,6 +27,15 @@ if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
 
+class FlashConfig(BaseModel):
+    """Flash agent configuration.
+
+    Flash agent is a lightweight agent optimized for speed
+    """
+
+    enabled: bool = True
+
+
 class SkillsConfig(BaseModel):
     """Skills configuration for agent capabilities.
 
@@ -40,10 +49,14 @@ class SkillsConfig(BaseModel):
 
     enabled: bool = True
     user_skills_dir: str = "~/.ptc-agent/skills"
-    project_skills_dir: str = "skills"  # Project skills directory (relative to project root)
+    project_skills_dir: str = (
+        "skills"  # Project skills directory (relative to project root)
+    )
     sandbox_skills_base: str = "/home/daytona/skills"  # Where skills live in sandbox
 
-    def local_skill_dirs_with_sandbox(self, *, cwd: Path | None = None) -> list[tuple[str, str]]:
+    def local_skill_dirs_with_sandbox(
+        self, *, cwd: Path | None = None
+    ) -> list[tuple[str, str]]:
         """Return ordered (local_dir, sandbox_dir) sources.
 
         Precedence is last-wins (later sources override earlier ones).
@@ -74,7 +87,9 @@ class LLMDefinition(BaseModel):
     api_key_env: str  # Name of environment variable containing API key
     base_url: str | None = None
     output_version: str | None = None
-    use_previous_response_id: bool | None = False  # Use only for OpenAI responses api endpoint
+    use_previous_response_id: bool | None = (
+        False  # Use only for OpenAI responses api endpoint
+    )
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -82,6 +97,7 @@ class LLMConfig(BaseModel):
     """LLM configuration - references an LLM from models.json."""
 
     name: str  # Name/alias from src/llms/manifest/models.json
+    flash: str | None = None  # LLM for flash agent, defaults to main llm if None
 
 
 class AgentConfig(BaseModel):
@@ -104,6 +120,9 @@ class AgentConfig(BaseModel):
     # Skills configuration
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
 
+    # Flash agent configuration
+    flash: FlashConfig = Field(default_factory=FlashConfig)
+
     # Vision tool configuration
     # If True, enable view_image tool for viewing images (requires vision-capable model)
     enable_view_image: bool = True
@@ -124,7 +143,9 @@ class AgentConfig(BaseModel):
     # Runtime data (not from config files)
     llm_definition: LLMDefinition | None = Field(default=None, exclude=True)
     llm_client: Any | None = Field(default=None, exclude=True)  # BaseChatModel instance
-    config_file_dir: Path | None = Field(default=None, exclude=True)  # For path resolution
+    config_file_dir: Path | None = Field(
+        default=None, exclude=True
+    )  # For path resolution
 
     @classmethod
     def create(
@@ -215,12 +236,22 @@ class AgentConfig(BaseModel):
         # Create Security config with defaults
         security_defaults = create_default_security_config()
         security_config = SecurityConfig(
-            max_execution_time=kwargs.pop("max_execution_time", security_defaults.max_execution_time),
-            max_code_length=kwargs.pop("max_code_length", security_defaults.max_code_length),
+            max_execution_time=kwargs.pop(
+                "max_execution_time", security_defaults.max_execution_time
+            ),
+            max_code_length=kwargs.pop(
+                "max_code_length", security_defaults.max_code_length
+            ),
             max_file_size=kwargs.pop("max_file_size", security_defaults.max_file_size),
-            enable_code_validation=kwargs.pop("enable_code_validation", security_defaults.enable_code_validation),
-            allowed_imports=kwargs.pop("allowed_imports", list(security_defaults.allowed_imports)),
-            blocked_patterns=kwargs.pop("blocked_patterns", list(security_defaults.blocked_patterns)),
+            enable_code_validation=kwargs.pop(
+                "enable_code_validation", security_defaults.enable_code_validation
+            ),
+            allowed_imports=kwargs.pop(
+                "allowed_imports", list(security_defaults.allowed_imports)
+            ),
+            blocked_patterns=kwargs.pop(
+                "blocked_patterns", list(security_defaults.blocked_patterns)
+            ),
         )
 
         # Create MCP config
@@ -249,7 +280,9 @@ class AgentConfig(BaseModel):
             enabled=kwargs.pop("skills_enabled", True),
             user_skills_dir=kwargs.pop("user_skills_dir", "~/.ptc-agent/skills"),
             project_skills_dir=kwargs.pop("project_skills_dir", "skills"),
-            sandbox_skills_base=kwargs.pop("sandbox_skills_base", "/home/daytona/skills"),
+            sandbox_skills_base=kwargs.pop(
+                "sandbox_skills_base", "/home/daytona/skills"
+            ),
         )
 
         # Create the config

@@ -7,7 +7,6 @@ that uses the ptc-agent library for code execution in Daytona sandboxes.
 
 import copy
 from typing import Any, Dict, List, Literal, Mapping, Optional, Union
-from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +17,7 @@ from src.server.models.additional_context import AdditionalContext
 # HITL (Human-in-the-Loop) Models
 # =============================================================================
 
+
 class HITLDecision(BaseModel):
     """Decision for a single HITL action request."""
 
@@ -26,7 +26,7 @@ class HITLDecision(BaseModel):
     )
     message: Optional[str] = Field(
         None,
-        description="Feedback message, typically used when rejecting to explain why or request changes"
+        description="Feedback message, typically used when rejecting to explain why or request changes",
     )
 
 
@@ -70,7 +70,9 @@ def serialize_hitl_response_map(hitl_response: Mapping[str, Any]) -> Dict[str, d
         elif hasattr(response, "dict"):
             response_dict = response.dict()  # type: ignore[call-arg]
         elif isinstance(response, dict):
-            response_dict = copy.deepcopy(response)  # Deep copy to avoid mutating nested structures
+            response_dict = copy.deepcopy(
+                response
+            )  # Deep copy to avoid mutating nested structures
         else:
             raise TypeError(
                 "Unsupported HITL response type: "
@@ -81,7 +83,9 @@ def serialize_hitl_response_map(hitl_response: Mapping[str, Any]) -> Dict[str, d
         if "decisions" in response_dict:
             for decision in response_dict["decisions"]:
                 if decision.get("type") == "reject":
-                    decision["message"] = _format_rejection_message(decision.get("message"))
+                    decision["message"] = _format_rejection_message(
+                        decision.get("message")
+                    )
 
         serialized[interrupt_id] = response_dict
 
@@ -147,6 +151,7 @@ def summarize_hitl_response_map(hitl_response: Mapping[str, Any]) -> Dict[str, A
 # Common Message Types
 # =============================================================================
 
+
 class ContentItem(BaseModel):
     type: str = Field(..., description="The type of content (text, image, etc.)")
     text: Optional[str] = Field(None, description="The text content if type is 'text'")
@@ -169,70 +174,76 @@ class ChatMessage(BaseModel):
 # Chat Request/Response Models
 # =============================================================================
 
+
 class ChatRequest(BaseModel):
     """Request model for streaming chat endpoint."""
 
+    # Agent mode selection
+    agent_mode: Optional[Literal["ptc", "flash"]] = Field(
+        default=None,
+        description="Agent mode: 'ptc' (default) for sandbox-based execution, "
+        "'flash' for lightweight, fast responses without sandbox",
+    )
+
     # Identity fields (user_id comes from X-User-Id header)
-    workspace_id: str = Field(
-        ...,
-        description="Workspace identifier - required. Create workspace first via POST /workspaces"
+    workspace_id: Optional[str] = Field(
+        default=None,
+        description="Workspace identifier - required for 'full' mode, optional for 'flash' mode",
     )
     thread_id: str = Field(
         default="__default__",
-        description="Thread identifier for checkpointing within a workspace"
+        description="Thread identifier for checkpointing within a workspace",
     )
 
     # Messages
     messages: List[ChatMessage] = Field(
         default_factory=list,
-        description="History of messages between the user and the assistant"
+        description="History of messages between the user and the assistant",
     )
 
     # Agent options
     subagents_enabled: Optional[List[str]] = Field(
         default=None,
-        description="List of subagent names to enable (default: from config)"
+        description="List of subagent names to enable (default: from config)",
     )
     background_auto_wait: Optional[bool] = Field(
         default=None,
-        description="Whether to wait for background tasks (default: from config)"
+        description="Whether to wait for background tasks (default: from config)",
     )
     plan_mode: bool = Field(
         default=False,
-        description="When True, agent must submit a plan for approval via submit_plan tool before execution"
+        description="When True, agent must submit a plan for approval via submit_plan tool before execution",
     )
 
     # Interrupt/resume support (HITL)
     hitl_response: Optional[Dict[str, HITLResponse]] = Field(
         default=None,
         description="Structured HITL response: {interrupt_id: HITLResponse}. "
-                    "Use this to respond to interrupt events with approve/reject decisions."
+        "Use this to respond to interrupt events with approve/reject decisions.",
     )
     checkpoint_id: Optional[str] = Field(
-        default=None,
-        description="Specific checkpoint ID to resume from"
+        default=None, description="Specific checkpoint ID to resume from"
     )
 
     # Localization and context
     locale: Optional[str] = Field(
-        default=None,
-        description="Locale for output language, e.g., 'en-US' or 'zh-CN'"
+        default=None, description="Locale for output language, e.g., 'en-US' or 'zh-CN'"
     )
     timezone: Optional[str] = Field(
         default=None,
-        description="IANA timezone identifier (e.g., 'America/New_York', 'Asia/Shanghai')"
+        description="IANA timezone identifier (e.g., 'America/New_York', 'Asia/Shanghai')",
     )
 
     # Skill loading
     additional_context: Optional[List[AdditionalContext]] = Field(
         default=None,
-        description="Additional context to be included. Supports: skills (skill instructions)"
+        description="Additional context to be included. Supports: skills (skill instructions)",
     )
 
     # LLM selection (optional - defaults to agent_config.yaml setting)
     llm_model: Optional[str] = Field(
         default=None,
-        description="LLM model name from models.json (e.g., 'minimax-m2.1', 'claude-sonnet-4-5')"
+        description="LLM model name from models.json (e.g., 'minimax-m2.1', 'claude-sonnet-4-5')",
     )
 
 
@@ -269,6 +280,7 @@ class StatusResponse(BaseModel):
 # Utility Request Models
 # =============================================================================
 
+
 class TTSRequest(BaseModel):
     text: str = Field(..., description="The text to convert to speech")
     voice_type: Optional[str] = Field(
@@ -298,29 +310,21 @@ class WorkflowResumeRequest(BaseModel):
 
     checkpoint_id: Optional[str] = Field(
         None,
-        description="Specific checkpoint ID to resume from (None = resume from latest)"
+        description="Specific checkpoint ID to resume from (None = resume from latest)",
     )
 
     new_input: Optional[dict] = Field(
-        None,
-        description="Optional new state/messages to add before resuming execution"
+        None, description="Optional new state/messages to add before resuming execution"
     )
 
     retry_failed: bool = Field(
-        False,
-        description="Automatically retry from last checkpoint before failure"
+        False, description="Automatically retry from last checkpoint before failure"
     )
 
     max_retries: int = Field(
-        3,
-        ge=1,
-        le=5,
-        description="Maximum retry attempts for failed workflows (1-5)"
+        3, ge=1, le=5, description="Maximum retry attempts for failed workflows (1-5)"
     )
 
     track_tokens: bool = Field(
-        True,
-        description="Track token usage and save execution logs"
+        True, description="Track token usage and save execution logs"
     )
-
-

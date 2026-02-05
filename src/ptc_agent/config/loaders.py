@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from ptc_agent.agent.backends.daytona import create_default_security_config
-from ptc_agent.config.agent import AgentConfig, LLMConfig, SkillsConfig
+from ptc_agent.config.agent import AgentConfig, FlashConfig, LLMConfig, SkillsConfig
 from ptc_agent.config.core import CoreConfig
 from ptc_agent.config.utils import (
     configure_logging,
@@ -99,7 +99,9 @@ async def load_from_files(
 
     # Auto-generate if missing and requested
     if (config_file is None or not config_file.exists()) and auto_generate:
-        generated = generate_config_template(get_default_config_dir(), include_llms=False)
+        generated = generate_config_template(
+            get_default_config_dir(), include_llms=False
+        )
         config_file = generated["agent_config.yaml"]
 
     if config_file is None or not config_file.exists():
@@ -238,22 +240,24 @@ def load_from_dict(
     required_sections = ["llm", "daytona", "mcp", "logging", "filesystem"]
     validate_required_sections(config_data, required_sections)
 
-    # Load LLM configuration - just extract the name
+    # Load LLM configuration - extract name and flash LLM
     llm_data = config_data["llm"]
 
     # Handle different formats
     if isinstance(llm_data, str):
         # Simple string format: "claude-sonnet-4-5"
         llm_name = llm_data
+        flash_llm = None
     elif isinstance(llm_data, dict):
         llm_name = llm_data.get("name", "minimax-m2.1")
+        flash_llm = llm_data.get("flash")  # None means use main llm
     else:
         raise ValueError(
             "llm section must be either a string (LLM name) or dict with 'name' key"
         )
 
     # Create LLM config - model resolution happens in get_llm_client()
-    llm_config = LLMConfig(name=llm_name)
+    llm_config = LLMConfig(name=llm_name, flash=flash_llm)
 
     # Load configurations using shared factory functions
     daytona_config = create_daytona_config(config_data["daytona"])
@@ -281,7 +285,16 @@ def load_from_dict(
         enabled=skills_data.get("enabled", True),
         user_skills_dir=skills_data.get("user_skills_dir", "~/.ptc-agent/skills"),
         project_skills_dir=skills_data.get("project_skills_dir", "skills"),
-        sandbox_skills_base=skills_data.get("sandbox_skills_base", "/home/daytona/skills"),
+        sandbox_skills_base=skills_data.get(
+            "sandbox_skills_base", "/home/daytona/skills"
+        ),
+    )
+
+    # Load Flash configuration (optional section)
+    # Flash LLM is now in llm.flash, summarization uses main summarization config
+    flash_data = config_data.get("flash") or {}
+    flash_config = FlashConfig(
+        enabled=flash_data.get("enabled", True),
     )
 
     # Create config object
@@ -293,6 +306,7 @@ def load_from_dict(
         mcp=mcp_config,
         filesystem=filesystem_config,
         skills=skills_config,
+        flash=flash_config,
         enable_view_image=enable_view_image,
         subagents_enabled=subagents_enabled,
         background_auto_wait=background_auto_wait,
@@ -381,6 +395,7 @@ subagents:
     - "general-purpose"
     # - "research"
 """
+
 
 def generate_config_template(
     output_dir: Path,
