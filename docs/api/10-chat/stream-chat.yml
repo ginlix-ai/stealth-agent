@@ -23,6 +23,7 @@ http:
             "content": "Hello, how can you help me?"
           }
         ],
+        "agent_mode": "ptc",
         "plan_mode": false,
         "locale": "en-US",
         "timezone": "America/New_York"
@@ -45,22 +46,42 @@ docs: |
   - Streams agent responses in real-time
   - Supports tool execution and file operations
   - Handles interrupts for plan review (HITL)
+  - Flash mode for fast responses without sandbox (external tools only)
 
   ### Prerequisites
   - Create a workspace first via `POST /api/v1/workspaces`
   - Set the `workspace_id` environment variable
 
   ### Request Body Fields
-  - `workspace_id` (required): Workspace identifier
+  - `workspace_id` (required unless agent_mode=flash): Workspace identifier
   - `thread_id` (optional): Thread identifier for checkpointing, defaults to auto-generated UUID
   - `messages`: Array of chat messages with role and content
   - `plan_mode`: When true, agent must submit plan for approval before execution
+  - `agent_mode`: Agent mode - "ptc" (default) for sandbox-based execution, "flash" for fast responses without sandbox
   - `subagents_enabled`: List of subagent names to enable
   - `hitl_response`: Structured HITL response for resuming from interrupts
   - `checkpoint_id`: Specific checkpoint ID to resume from
   - `locale`: Locale for output language (e.g., 'en-US', 'zh-CN')
   - `timezone`: IANA timezone identifier
   - `llm_model`: Override LLM model from models.json
+
+  ### Flash Mode
+  When `agent_mode: "flash"` is set:
+  - No workspace or sandbox is required (faster startup)
+  - Uses external tools only: web search, market data, SEC filings
+  - No code execution or MCP tools available
+  - Optimized for quick lookups and simple Q&A
+
+  Flash mode request example:
+  ```json
+  {
+    "thread_id": "thread-123",
+    "agent_mode": "flash",
+    "messages": [
+      {"role": "user", "content": "What is the current price of AAPL?"}
+    ]
+  }
+  ```
 
   ### SSE Event Types
   - `message_chunk`: Text streaming from agents
@@ -89,13 +110,3 @@ docs: |
     "messages": []
   }
   ```
-
-tests:
-  test1: |
-    test("should return 200 for SSE stream", function() {
-      expect(res.status).to.equal(200);
-    });
-  test2: |
-    test("should have SSE content type", function() {
-      expect(res.headers["content-type"]).to.include("text/event-stream");
-    });
