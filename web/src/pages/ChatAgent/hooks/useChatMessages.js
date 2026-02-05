@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { sendChatMessageStream, getConversations, replayThreadHistory } from '../utils/api';
+import { sendChatMessageStream, getConversations, replayThreadHistory, DEFAULT_USER_ID } from '../utils/api';
 
 /**
  * Storage key prefix for thread IDs
@@ -61,12 +61,16 @@ export const removeStoredThreadId = (workspaceId) => {
  * - Streaming updates and error handling
  * 
  * @param {string} workspaceId - The workspace ID for the chat session
+ * @param {string} [initialThreadId] - Optional initial thread ID (from URL params)
  * @returns {Object} Message state and handlers
  */
-export function useChatMessages(workspaceId) {
+export function useChatMessages(workspaceId, initialThreadId = null) {
   const [messages, setMessages] = useState([]);
   const [threadId, setThreadId] = useState(() => {
-    // Initialize thread ID from localStorage for this workspace
+    // If threadId is provided from URL, use it; otherwise use localStorage
+    if (initialThreadId) {
+      return initialThreadId;
+    }
     return workspaceId ? getStoredThreadId(workspaceId) : '__default__';
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -90,12 +94,13 @@ export function useChatMessages(workspaceId) {
     }
   }, [workspaceId, threadId]);
 
-  // Reset thread ID when workspace changes
+  // Reset thread ID when workspace or initialThreadId changes
   useEffect(() => {
     if (workspaceId) {
-      const storedThreadId = getStoredThreadId(workspaceId);
-      setThreadId(storedThreadId);
-      // Clear messages when switching workspaces
+      // If initialThreadId is provided, use it; otherwise use localStorage
+      const newThreadId = initialThreadId || getStoredThreadId(workspaceId);
+      setThreadId(newThreadId);
+      // Clear messages when switching workspaces or threads
       setMessages([]);
       // Reset refs
       contentOrderCounterRef.current = 0;
@@ -105,11 +110,11 @@ export function useChatMessages(workspaceId) {
       historyMessagesRef.current.clear();
       newMessagesStartIndexRef.current = 0;
     }
-  }, [workspaceId]);
+  }, [workspaceId, initialThreadId]);
 
   /**
-   * Loads conversation history for the current workspace
-   * Finds the thread_id for the workspace and replays the conversation
+   * Loads conversation history for the current workspace and thread
+   * If threadId is provided (from URL), uses it directly; otherwise searches for thread by workspace
    */
   const loadConversationHistory = async () => {
     if (!workspaceId || historyLoadingRef.current) {
@@ -121,47 +126,54 @@ export function useChatMessages(workspaceId) {
       setIsLoadingHistory(true);
       setMessageError(null);
 
-      // Step 1: Get all conversations to find thread_id for this workspace
-      console.log('[History] Loading conversations for workspace:', workspaceId);
-      const conversationsData = await getConversations();
-      console.log('[History] Conversations data:', conversationsData);
-      const threads = conversationsData.threads || [];
-      console.log('[History] Found threads:', threads.length);
+      // If we have a specific threadId (from URL), use it directly
+      let threadIdToUse = threadId;
       
-      // Find thread for this workspace (assuming one thread per workspace)
-      const workspaceThread = threads.find(
-        (thread) => thread.workspace_id === workspaceId
-      );
+      if (!threadIdToUse || threadIdToUse === '__default__') {
+        // Step 1: Get all conversations to find thread_id for this workspace
+        console.log('[History] Loading conversations for workspace:', workspaceId);
+        const conversationsData = await getConversations();
+        console.log('[History] Conversations data:', conversationsData);
+        const threads = conversationsData.threads || [];
+        console.log('[History] Found threads:', threads.length);
+        
+        // Find thread for this workspace (assuming one thread per workspace)
+        const workspaceThread = threads.find(
+          (t) => t.workspace_id === workspaceId
+        );
 
-      console.log('[History] Workspace thread:', workspaceThread);
+        console.log('[History] Workspace thread:', workspaceThread);
 
-      if (!workspaceThread || !workspaceThread.thread_id) {
-        // No history found for this workspace
-        // Clear localStorage if thread doesn't exist (thread may have been deleted on backend)
-        console.log('[History] No thread found for workspace, clearing localStorage');
-        removeStoredThreadId(workspaceId);
-        setThreadId('__default__');
-        setIsLoadingHistory(false);
-        historyLoadingRef.current = false;
-        return;
+        if (!workspaceThread || !workspaceThread.thread_id) {
+          // No history found for this workspace
+          // Clear localStorage if thread doesn't exist (thread may have been deleted on backend)
+          console.log('[History] No thread found for workspace, clearing localStorage');
+          removeStoredThreadId(workspaceId);
+          setThreadId('__default__');
+          setIsLoadingHistory(false);
+          historyLoadingRef.current = false;
+          return;
+        }
+
+        threadIdToUse = workspaceThread.thread_id;
+        console.log('[History] Found thread ID:', threadIdToUse);
+        
+        // Update thread ID if different
+        if (threadIdToUse !== threadId && threadIdToUse !== '__default__') {
+          setThreadId(threadIdToUse);
+          setStoredThreadId(workspaceId, threadIdToUse);
+        }
+      } else {
+        console.log('[History] Using thread ID from URL/state:', threadIdToUse);
       }
 
-      const foundThreadId = workspaceThread.thread_id;
-      console.log('[History] Found thread ID:', foundThreadId);
-      
-      // Update thread ID if different
-      if (foundThreadId !== threadId && foundThreadId !== '__default__') {
-        setThreadId(foundThreadId);
-        setStoredThreadId(workspaceId, foundThreadId);
-      }
-
-      // Step 2: Replay conversation history
-      console.log('[History] Starting replay for thread:', foundThreadId);
+      // Step 2: Replay conversation history for the specific thread
+      console.log('[History] Starting replay for thread:', threadIdToUse);
       // Track pairs being processed - use Map to handle multiple pairs
       const assistantMessagesByPair = new Map(); // Map<pair_index, assistantMessageId>
       const pairStateByPair = new Map(); // Map<pair_index, { contentOrderCounter, reasoningId, toolCallId }>
 
-      await replayThreadHistory(foundThreadId, (event) => {
+      await replayThreadHistory(threadIdToUse, (event) => {
         // Debug: Log all events to see what we're receiving
         console.log('[History] Received event:', event);
         
@@ -650,8 +662,9 @@ export function useChatMessages(workspaceId) {
    * 
    * @param {string} message - The user's message
    * @param {boolean} planMode - Whether to use plan mode
+   * @param {Array|null} additionalContext - Optional additional context for skill loading
    */
-  const handleSendMessage = async (message, planMode = false) => {
+  const handleSendMessage = async (message, planMode = false, additionalContext = null) => {
     if (!workspaceId || !message.trim() || isLoading) {
       return;
     }
@@ -1088,7 +1101,9 @@ export function useChatMessages(workspaceId) {
               }
             }
           }
-        }
+        },
+        DEFAULT_USER_ID,
+        additionalContext
       );
 
       // Mark message as complete
