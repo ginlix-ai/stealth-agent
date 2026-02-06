@@ -54,8 +54,14 @@ function TextMessageContent({ content, isStreaming, hasError }) {
             <em className="italic" style={{ color: '#FFFFFF' }} {...props} />
           ),
           // Customize code styling
-          code: ({ node, inline, ...props }) => {
-            if (inline) {
+          // In react-markdown v9, the inline prop was removed
+          // We detect inline code by checking if className contains 'language-' (block code has language prefix)
+          code: ({ node, className, children, ...props }) => {
+            // In v9, inline code is NOT inside a <pre> element, so it won't have language- prefix
+            const isBlock = /language-/.test(className || '');
+
+            if (!isBlock) {
+              // Inline code styling
               return (
                 <code
                   className="px-1.5 py-0.5 rounded text-xs font-mono"
@@ -65,9 +71,13 @@ function TextMessageContent({ content, isStreaming, hasError }) {
                     border: '1px solid rgba(97, 85, 245, 0.3)',
                   }}
                   {...props}
-                />
+                >
+                  {children}
+                </code>
               );
             }
+
+            // Block code styling
             return (
               <code
                 className="block p-3 rounded text-xs font-mono overflow-x-auto"
@@ -77,7 +87,9 @@ function TextMessageContent({ content, isStreaming, hasError }) {
                   border: '1px solid rgba(255, 255, 255, 0.1)',
                 }}
                 {...props}
-              />
+              >
+                {children}
+              </code>
             );
           },
           // Customize pre (code block) styling
