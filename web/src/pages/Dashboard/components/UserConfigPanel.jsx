@@ -348,7 +348,7 @@ function UserConfigPanel({ isOpen, onClose }) {
                 onClick={() => fileInputRef.current?.click()}
               >
                 {avatarUrl ? (
-                  <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" />
+                  <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" onError={() => setAvatarUrl(null)}/>
                 ) : (
                   <User className="h-8 w-8" style={{ color: 'var(--color-accent-primary)' }} />
                 )}
