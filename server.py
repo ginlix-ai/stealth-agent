@@ -2,6 +2,20 @@
 Server script
 """
 
+import sys
+import os
+import asyncio
+import selectors
+
+# Windows: 必须在任意 asyncio 使用前设置，否则 psycopg 会报 ProactorEventLoop 错误
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+def _selector_loop_factory():
+    """Windows 下供 uvicorn 使用，创建 SelectorEventLoop 以兼容 psycopg。"""
+    return asyncio.SelectorEventLoop(selectors.SelectSelector())
+
 import argparse
 import logging
 import uvicorn
@@ -61,15 +75,19 @@ if __name__ == "__main__":
 
     try:
         logger.info(f"Starting server on {args.host}:{args.port}")
-        uvicorn.run(
-            "src.server.app:app",
-            host=args.host,
-            port=args.port,
-            reload=reload,
-            log_level=args.log_level,
-            timeout_keep_alive=300,  # 5 minutes - for long-running workflows
-            timeout_graceful_shutdown=60,  # 60 seconds for graceful shutdown
-        )
+        run_kwargs = {
+            "app": "src.server.app:app",
+            "host": args.host,
+            "port": args.port,
+            "reload": reload,
+            "log_level": args.log_level,
+            "timeout_keep_alive": 300,
+            "timeout_graceful_shutdown": 60,
+        }
+        # Windows: uvicorn 默认用 ProactorEventLoop，与 psycopg 不兼容，传入 Selector 工厂（callable 避免模块导入问题）
+        if sys.platform == "win32":
+            run_kwargs["loop"] = _selector_loop_factory
+        uvicorn.run(**run_kwargs)
     except Exception as e:
         logger.error(f"Failed to start server: {str(e)}")
         exit(1)
