@@ -4,6 +4,7 @@ import { ScrollArea } from '../../../components/ui/scroll-area';
 import { cn } from '../../../lib/utils';
 import AgentTabBar from './AgentTabBar';
 import SubagentCardContent from './SubagentCardContent';
+import '../components/FilePanel.css';
 
 /**
  * AgentPanel Component
@@ -18,15 +19,36 @@ import SubagentCardContent from './SubagentCardContent';
  * @param {Array} props.agents - Array of agent objects
  * @param {string} props.selectedAgentId - Currently selected agent ID
  * @param {Function} props.onSelectAgent - Callback when agent is selected (pass null to deselect)
+ * @param {Function} props.onClose - Callback to close the entire agent panel
+ * @param {Function} props.onRemoveAgent - Callback to remove an agent from the list
  */
-function AgentPanel({ agents, selectedAgentId, onSelectAgent }) {
+function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveAgent }) {
   // Find the selected agent
   const selectedAgent = agents.find(agent => agent.id === selectedAgentId);
 
-  // Don't render if no agents
+  // Render empty state with card container if no agents
   if (agents.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full" style={{ backgroundColor: '#0D0E12' }}>
+      <div
+        className="flex flex-col items-center justify-center relative"
+        style={{
+          background: '#1A1B23',
+          width: '100%',
+          height: '100%',
+          borderRadius: '16px',
+          padding: '16px',
+          boxSizing: 'border-box',
+        }}
+      >
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="file-panel-icon-btn absolute top-4 right-4"
+          title="Close"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
         <Bot className="h-12 w-12 mb-4" style={{ color: 'rgba(255, 255, 255, 0.3)' }} />
         <p className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
           No agents running
@@ -35,10 +57,29 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent }) {
     );
   }
 
-  // Don't render if no agent selected
+  // Render empty state with card container if no agent selected
   if (!selectedAgent) {
     return (
-      <div className="flex flex-col items-center justify-center h-full" style={{ backgroundColor: '#0D0E12' }}>
+      <div
+        className="flex flex-col items-center justify-center relative"
+        style={{
+          background: '#1A1B23',
+          width: '100%',
+          height: '100%',
+          borderRadius: '16px',
+          padding: '16px',
+          boxSizing: 'border-box',
+        }}
+      >
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="file-panel-icon-btn absolute top-4 right-4"
+          title="Close"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
         <Bot className="h-12 w-12 mb-4" style={{ color: 'rgba(255, 255, 255, 0.3)' }} />
         <p className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
           Select an agent to view details
@@ -58,7 +99,7 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent }) {
       return <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />;
     }
     if (selectedAgent.status === 'completed') {
-      return <CheckCircle2 className="h-4 w-4" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />;
+      return <CheckCircle2 className="h-4 w-4" style={{ color: '#0FEDBE' }} />;
     }
     return <Circle className="h-4 w-4" style={{ color: 'rgba(255, 255, 255, 0.3)' }} />;
   };
@@ -124,20 +165,24 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent }) {
               {/* Status Bar */}
               <div className="flex items-center gap-2 mt-1">
                 {getStatusIcon()}
-                <span className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+                <span
+                  className="text-xs"
+                  style={{
+                    color: selectedAgent.status === 'completed' ? '#0FEDBE' : 'rgba(255, 255, 255, 0.6)'
+                  }}
+                >
                   {getStatusText()}
                 </span>
               </div>
             </div>
 
-            {/* Close Button - Deselect current agent */}
+            {/* Close Button - Close entire agent panel */}
             <button
-              onClick={() => onSelectAgent(null)}
-              className="flex-shrink-0 p-2 rounded-lg transition-colors hover:bg-white/10"
-              style={{ color: 'rgba(255, 255, 255, 0.6)' }}
-              title="Close agent preview"
+              onClick={onClose}
+              className="file-panel-icon-btn"
+              title="Close"
             >
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
 
@@ -187,6 +232,7 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent }) {
             agents={agents}
             selectedAgentId={selectedAgentId}
             onSelectAgent={onSelectAgent}
+            onRemoveAgent={onRemoveAgent}
           />
         </div>
       )}

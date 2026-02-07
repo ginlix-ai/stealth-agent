@@ -1,6 +1,15 @@
 import { ChevronDown, ChevronUp, Loader2, Wrench } from 'lucide-react';
 import { useState } from 'react';
 
+// File-related tool names that support opening in the file panel
+const FILE_TOOLS = ['write_file', 'edit_file', 'read_file', 'save_file'];
+
+function getFilePathFromToolCall(toolCall) {
+  if (!toolCall?.args) return null;
+  const args = toolCall.args;
+  return args.file_path || args.path || args.filename || null;
+}
+
 /**
  * ToolCallMessageContent Component
  * 
@@ -9,8 +18,8 @@ import { useState } from 'react';
  * Features:
  * - Shows an icon indicating tool call status (loading when in progress, finished when complete)
  * - Displays tool name (e.g., "write_file")
- * - Clickable icon to toggle visibility of tool call details
- * - Tool call details are folded by default, can be expanded on click
+ * - For file tools: clicking opens the file in the right panel via onOpenFile callback
+ * - For non-file tools: clicking toggles visibility of tool call details
  * - Displays tool_calls and tool_call_result with different visual styles
  * 
  * @param {Object} props
@@ -21,6 +30,7 @@ import { useState } from 'react';
  * @param {boolean} props.isInProgress - Whether tool call is currently in progress
  * @param {boolean} props.isComplete - Whether tool call has completed
  * @param {boolean} props.isFailed - Whether tool call failed
+ * @param {Function} props.onOpenFile - Callback to open a file in the file panel
  */
 function ToolCallMessageContent({ 
   toolCallId, 
@@ -29,7 +39,8 @@ function ToolCallMessageContent({
   toolCallResult, 
   isInProgress, 
   isComplete,
-  isFailed = false
+  isFailed = false,
+  onOpenFile
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -38,12 +49,20 @@ function ToolCallMessageContent({
     return null;
   }
 
+  // Determine display name and file path
+  const displayName = toolName || toolCall?.name || 'Tool Call';
+  const isFileTool = FILE_TOOLS.includes(displayName);
+  const filePath = isFileTool ? getFilePathFromToolCall(toolCall) : null;
+
   const handleToggle = () => {
+    // For file tools with a valid path and onOpenFile callback, open in file panel
+    if (isFileTool && filePath && onOpenFile) {
+      onOpenFile(filePath);
+      return;
+    }
+    // Otherwise, toggle expand/collapse as before
     setIsExpanded(!isExpanded);
   };
-
-  // Determine display name
-  const displayName = toolName || toolCall?.name || 'Tool Call';
 
   return (
     <div className="mt-2">

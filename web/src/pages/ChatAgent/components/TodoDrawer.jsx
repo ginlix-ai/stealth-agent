@@ -14,7 +14,7 @@ import { CheckCircle2, ChevronDown, ChevronUp, Circle, Loader2 } from 'lucide-re
  * @param {Object} props.todoData - Todo data from floating cards { todos, total, completed, in_progress, pending }
  */
 function TodoDrawer({ todoData }) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   // Don't render if no todo data
   if (!todoData || !todoData.todos || todoData.todos.length === 0) {

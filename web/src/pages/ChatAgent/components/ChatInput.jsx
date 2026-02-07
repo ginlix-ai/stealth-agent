@@ -1,17 +1,16 @@
-import { ChevronDown, Globe, Plus, Send, Zap } from 'lucide-react';
+import { Plus, Send } from 'lucide-react';
 import { useState } from 'react';
 import { Input } from '../../../components/ui/input';
 
 const ChatInput = ({ onSend, disabled = false }) => {
   const [message, setMessage] = useState('');
-  const [planMode, setPlanMode] = useState(false);
 
   const handleSend = () => {
     if (!message.trim() || disabled) {
       return;
     }
 
-    onSend(message, planMode);
+    onSend(message, false); // Always use planMode = false
     setMessage(''); // Clear input after sending
   };
 
@@ -23,9 +22,9 @@ const ChatInput = ({ onSend, disabled = false }) => {
   };
 
   return (
-    <div 
+    <div
       className="flex items-center gap-2 p-3 rounded-lg"
-      style={{ 
+      style={{
         backgroundColor: 'var(--color-bg-card)',
         border: '1.5px solid hsl(var(--primary))',
       }}
@@ -50,43 +49,17 @@ const ChatInput = ({ onSend, disabled = false }) => {
         onKeyPress={handleKeyPress}
         disabled={disabled}
       />
-      <div className="flex items-center gap-1">
-        <button 
-          className="flex items-center gap-1.5 px-2 py-1.5 rounded-full transition-colors hover:bg-white/5"
-          style={{ color: '#BBBBBB' }}
-        >
-          <Globe className="h-4 w-4" />
-          <span className="text-sm font-medium">Agent</span>
-        </button>
-        <button 
-          className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full transition-colors ${
-            planMode ? 'bg-white/100' : 'hover:bg-white/5'
-          }`}
-          style={{ color: '#BBBBBB' }}
-          onClick={() => setPlanMode(!planMode)}
-        >
-          <Zap className="h-4 w-4" />
-          <span className="text-sm font-medium">Plan Mode</span>
-        </button>
-        <button 
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors hover:bg-white/5"
-          style={{ color: '#BBBBBB' }}
-        >
-          <span className="text-sm font-medium">Tool</span>
-          <ChevronDown className="h-4 w-4" />
-        </button>
-        <button 
-          className="w-8 h-9 rounded-md flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ 
-            backgroundColor: disabled ? 'rgba(97, 85, 245, 0.5)' : '#6155F5',
-            color: '#FFFFFF',
-          }}
-          onClick={handleSend}
-          disabled={disabled || !message.trim()}
-        >
-          <Send className="h-4 w-4" />
-        </button>
-      </div>
+      <button
+        className="w-8 h-9 rounded-md flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        style={{
+          backgroundColor: disabled ? 'rgba(97, 85, 245, 0.5)' : '#6155F5',
+          color: '#FFFFFF',
+        }}
+        onClick={handleSend}
+        disabled={disabled || !message.trim()}
+      >
+        <Send className="h-4 w-4" />
+      </button>
     </div>
   );
 };

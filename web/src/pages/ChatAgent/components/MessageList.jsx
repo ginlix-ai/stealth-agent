@@ -3,6 +3,7 @@ import ReasoningMessageContent from './ReasoningMessageContent';
 import SubagentTaskMessageContent from './SubagentTaskMessageContent';
 import TextMessageContent from './TextMessageContent';
 import ToolCallMessageContent from './ToolCallMessageContent';
+import TodoListMessageContent from './TodoListMessageContent';
 
 /**
  * MessageList Component
@@ -13,7 +14,7 @@ import ToolCallMessageContent from './ToolCallMessageContent';
  * - Streaming indicators
  * - Error state styling
  */
-function MessageList({ messages, onOpenSubagentTask }) {
+function MessageList({ messages, onOpenSubagentTask, onOpenFile }) {
   // Empty state - show when no messages exist
   if (messages.length === 0) {
     return (
@@ -30,7 +31,7 @@ function MessageList({ messages, onOpenSubagentTask }) {
   return (
     <div className="space-y-6">
       {messages.map((message) => (
-        <MessageBubble key={message.id} message={message} onOpenSubagentTask={onOpenSubagentTask} />
+        <MessageBubble key={message.id} message={message} onOpenSubagentTask={onOpenSubagentTask} onOpenFile={onOpenFile} />
       ))}
     </div>
   );
@@ -42,7 +43,7 @@ function MessageList({ messages, onOpenSubagentTask }) {
  * Renders a single message bubble with appropriate styling
  * based on role (user/assistant) and state (streaming/error)
  */
-function MessageBubble({ message, onOpenSubagentTask }) {
+function MessageBubble({ message, onOpenSubagentTask, onOpenFile }) {
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
 
@@ -81,10 +82,12 @@ function MessageBubble({ message, onOpenSubagentTask }) {
             segments={message.contentSegments}
             reasoningProcesses={message.reasoningProcesses || {}}
             toolCallProcesses={message.toolCallProcesses || {}}
+            todoListProcesses={message.todoListProcesses || {}}
             subagentTasks={message.subagentTasks || {}}
             isStreaming={message.isStreaming}
             hasError={message.error}
             onOpenSubagentTask={onOpenSubagentTask}
+            onOpenFile={onOpenFile}
           />
         ) : (
           // Fallback for messages without segments (backward compatibility)
@@ -142,7 +145,7 @@ function MessageBubble({ message, onOpenSubagentTask }) {
  * @param {boolean} props.isStreaming - Whether the message is currently streaming
  * @param {boolean} props.hasError - Whether the message has an error
  */
-function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, subagentTasks, isStreaming, hasError, onOpenSubagentTask }) {
+function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, todoListProcesses, subagentTasks, isStreaming, hasError, onOpenSubagentTask, onOpenFile }) {
   // Sort segments by order to ensure chronological rendering
   const sortedSegments = [...segments].sort((a, b) => a.order - b.order);
   console.log('[MessageContentSegments] Rendering segments:', {
@@ -183,9 +186,10 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
       // Add tool call segment
       groupedSegments.push(segment);
     } else if (segment.type === 'todo_list') {
-      // Skip todo_list segments - they are displayed in TodoDrawer instead
+      // Finalize current text group if exists (todo list breaks text continuity)
       currentTextGroup = null;
-      // Do not add to groupedSegments
+      // Add todo list segment
+      groupedSegments.push(segment);
     } else if (segment.type === 'subagent_task') {
       // Finalize current text group if exists (subagent task breaks text continuity)
       currentTextGroup = null;
@@ -239,6 +243,23 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
                 isInProgress={toolCallProcess.isInProgress || false}
                 isComplete={toolCallProcess.isComplete || false}
                 isFailed={toolCallProcess.isFailed || false}
+                onOpenFile={onOpenFile}
+              />
+            );
+          }
+          return null;
+        } else if (segment.type === 'todo_list') {
+          // Render todo list
+          const todoListProcess = todoListProcesses[segment.todoListId];
+          if (todoListProcess) {
+            return (
+              <TodoListMessageContent
+                key={`todo-list-${segment.todoListId}`}
+                todos={todoListProcess.todos || []}
+                total={todoListProcess.total || 0}
+                completed={todoListProcess.completed || 0}
+                in_progress={todoListProcess.in_progress || 0}
+                pending={todoListProcess.pending || 0}
               />
             );
           }

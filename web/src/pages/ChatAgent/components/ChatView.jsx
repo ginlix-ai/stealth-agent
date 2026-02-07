@@ -1,17 +1,18 @@
-import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { ArrowLeft, FolderOpen, Bot } from 'lucide-react';
 import { ScrollArea } from '../../../components/ui/scroll-area';
-import { cn } from '../../../lib/utils';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { useFloatingCards } from '../hooks/useFloatingCards';
-import AgentPanel from './AgentPanel';
+import FilePanel from './FilePanel';
+import './FilePanel.css';
 import ChatInput from './ChatInput';
 import FloatingCard from './FloatingCard';
 import FloatingCardIcon from './FloatingCardIcon';
 import MessageList from './MessageList';
-import TodoDrawer from './TodoDrawer';
 import TodoListCardContent from './TodoListCardContent';
+import AgentPanel from './AgentPanel';
+import TodoDrawer from './TodoDrawer';
 
 /**
  * ChatView Component
@@ -32,6 +33,13 @@ function ChatView({ workspaceId, threadId, onBack }) {
   const location = useLocation();
   const navigate = useNavigate();
   const initialMessageSentRef = useRef(false);
+  const [filePanelTargetFile, setFilePanelTargetFile] = useState(null);
+  const isDraggingRef = useRef(false);
+
+  // Right panel management - can show 'file', 'agent', or null (closed)
+  const [rightPanelType, setRightPanelType] = useState(null);
+  const [rightPanelWidth, setRightPanelWidth] = useState(420);
+  const [selectedAgentId, setSelectedAgentId] = useState(null);
 
   // Floating cards management - extracted to custom hook for better encapsulation
   // Must be called before useChatMessages since updateTodoListCard and updateSubagentCard are passed to it
@@ -61,59 +69,105 @@ function ChatView({ workspaceId, threadId, onBack }) {
     getSubagentHistory,
   } = useChatMessages(workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, minimizeInactiveSubagents);
 
-  // 新增：分屏相关状态
-  const [selectedAgentId, setSelectedAgentId] = useState(null);
-  const [isAgentPanelVisible, setIsAgentPanelVisible] = useState(true);
+  // Convert floatingCards to agents array for AgentPanel
+  const agents = Object.entries(floatingCards)
+    .filter(([cardId]) => cardId.startsWith('subagent-'))
+    .map(([cardId, card]) => ({
+      id: cardId.replace('subagent-', ''),
+      name: card.title || 'Agent',
+      taskId: card.subagentData?.taskId || '',
+      description: card.subagentData?.description || '',
+      type: card.subagentData?.type || 'general-purpose',
+      status: card.subagentData?.status || 'active',
+      toolCalls: card.subagentData?.toolCalls || 0,
+      currentTool: card.subagentData?.currentTool || '',
+      messages: card.subagentData?.messages || [],
+      isActive: card.subagentData?.isActive !== false,
+    }));
 
-  // 从 floatingCards 中提取 subagent agents
-  const subagentAgents = useMemo(() => {
-    const agents = Object.entries(floatingCards)
-      .filter(([cardId, card]) => {
-        // 只提取 subagent 类型的卡片
-        return cardId.startsWith('subagent-') && card.subagentData;
-      })
-      .map(([cardId, card], index) => {
-        const subagentData = card.subagentData || {};
-        return {
-          id: cardId,
-          taskId: subagentData.taskId || cardId,
-          name: card.title || `Agent ${index + 1}`,
-          number: String(index + 1).padStart(2, '0'),
-          type: subagentData.type || 'general',
-          status: subagentData.status || 'active',
-          description: subagentData.description || '',
-          toolCalls: subagentData.toolCalls || 0,
-          currentTool: subagentData.currentTool || '',
-          messages: subagentData.messages || [],
-        };
-      });
+  // Handle drag panel width
+  const handleDividerMouseDown = useCallback((e) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = rightPanelWidth;
 
-    console.log('[ChatView] Extracted subagent agents:', agents);
-    return agents;
-  }, [floatingCards]);
+    const onMouseMove = (moveEvent) => {
+      if (!isDraggingRef.current) return;
+      const delta = startX - moveEvent.clientX;
+      const newWidth = Math.max(280, Math.min(startWidth + delta, window.innerWidth * 0.6));
+      setRightPanelWidth(newWidth);
+    };
 
-  // 自动选中第一个 agent（如果还没选中的话）
-  useEffect(() => {
-    if (subagentAgents.length > 0 && !selectedAgentId) {
-      console.log('[ChatView] Auto-selecting first agent:', subagentAgents[0].id);
-      setSelectedAgentId(subagentAgents[0].id);
+    const onMouseUp = () => {
+      isDraggingRef.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [rightPanelWidth]);
+
+  // Open a file in the right panel from chat tool calls
+  const handleOpenFileFromChat = useCallback((filePath) => {
+    setRightPanelType('file');
+    setFilePanelTargetFile(filePath);
+  }, []);
+
+  // Toggle file panel
+  const handleToggleFilePanel = useCallback(() => {
+    if (rightPanelType === 'file') {
+      setRightPanelType(null);
+    } else {
+      setRightPanelType('file');
     }
-    // 如果选中的 agent 不存在了，重新选中第一个
-    if (selectedAgentId && !subagentAgents.find(a => a.id === selectedAgentId)) {
-      console.log('[ChatView] Selected agent no longer exists, selecting first');
-      setSelectedAgentId(subagentAgents.length > 0 ? subagentAgents[0].id : null);
-    }
-  }, [subagentAgents, selectedAgentId]);
+  }, [rightPanelType]);
 
-  // 当有新 agent 创建时，自动切换到它
-  useEffect(() => {
-    const latestAgent = subagentAgents[subagentAgents.length - 1];
-    if (latestAgent && latestAgent.id !== selectedAgentId) {
-      console.log('[ChatView] New agent detected, switching to:', latestAgent.id);
-      setSelectedAgentId(latestAgent.id);
-      setIsAgentPanelVisible(true); // 自动显示面板
+  // Toggle agent panel
+  const handleToggleAgentPanel = useCallback(() => {
+    if (rightPanelType === 'agent') {
+      setRightPanelType(null);
+      setSelectedAgentId(null);
+    } else {
+      setRightPanelType('agent');
+      // Auto-select first agent if available
+      if (agents.length > 0 && !selectedAgentId) {
+        setSelectedAgentId(agents[0].id);
+      }
     }
-  }, [subagentAgents.length]); // 只在数量变化时触发
+  }, [rightPanelType, agents, selectedAgentId]);
+
+  // Handle agent selection
+  const handleSelectAgent = useCallback((agentId) => {
+    setSelectedAgentId(agentId);
+    if (agentId !== null) {
+      setRightPanelType('agent');
+    }
+  }, []);
+
+  // Handle removing an agent
+  const handleRemoveAgent = useCallback((agentId) => {
+    // Remove the agent's floating card
+    const cardId = `subagent-${agentId}`;
+    handleCardMinimize(cardId); // This will remove it from view
+
+    // If the removed agent was selected, select another agent
+    if (selectedAgentId === agentId) {
+      const remainingAgents = agents.filter(a => a.id !== agentId);
+      if (remainingAgents.length > 0) {
+        // Select the first remaining agent
+        setSelectedAgentId(remainingAgents[0].id);
+      } else {
+        // No more agents, clear selection
+        setSelectedAgentId(null);
+      }
+    }
+  }, [selectedAgentId, agents, handleCardMinimize]);
 
   // Update URL when thread ID changes (e.g., when __default__ becomes actual thread ID)
   // This triggers a re-render with the new threadId, which will then load history
@@ -212,17 +266,10 @@ function ChatView({ workspaceId, threadId, onBack }) {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#0D0E12]">
-      {/* 左侧：聊天面板 */}
-      <div
-        className={cn(
-          "flex flex-col",
-          "bg-[#0D0E12] min-w-0 overflow-hidden",
-          // 如果右侧面板显示，左侧占 2 份；否则占满
-          isAgentPanelVisible ? "flex-[2]" : "flex-1"
-        )}
-      >
-        {/* 顶部栏 */}
-        <div className="flex items-center justify-between p-4 min-w-0 flex-shrink-0">
+      {/* Left Side: Topbar + Chat Window (Vertical) */}
+      <div className="flex flex-col flex-1 min-w-0">
+        {/* Top bar */}
+        <div className="flex items-center justify-between p-4 border-b border-white/10 min-w-0 flex-shrink-0">
           <div className="flex items-center gap-4 min-w-0 flex-shrink">
             <button
               onClick={onBack}
@@ -242,10 +289,26 @@ function ChatView({ workspaceId, threadId, onBack }) {
             )}
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Floating card icons for non-subagent cards */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleToggleFilePanel}
+              className={`p-2 rounded-md transition-colors ${rightPanelType === 'file' ? 'bg-white/15' : 'hover:bg-white/10'}`}
+              style={{ color: '#FFFFFF' }}
+              title="Workspace Files"
+            >
+              <FolderOpen className="h-5 w-5" />
+            </button>
+            <button
+              onClick={handleToggleAgentPanel}
+              className={`p-2 rounded-md transition-colors ${rightPanelType === 'agent' ? 'bg-white/15' : 'hover:bg-white/10'}`}
+              style={{ color: '#FFFFFF' }}
+              title="Agents"
+            >
+              <Bot className="h-5 w-5" />
+            </button>
+            {/* Floating card icons for non-agent and non-todolist cards */}
             {getAllCards()
-              .filter(([cardId]) => !cardId.startsWith('subagent-'))
+              .filter(([cardId]) => !cardId.startsWith('subagent-') && cardId !== 'todo-list-card')
               .map(([cardId, card]) => (
                 <FloatingCardIcon
                   key={cardId}
@@ -256,114 +319,116 @@ function ChatView({ workspaceId, threadId, onBack }) {
                   isActive={true}
                 />
               ))}
-
-            {/* 新增：收起/展开按钮 - 常驻 */}
-            <button
-              onClick={() => setIsAgentPanelVisible(!isAgentPanelVisible)}
-              className="p-2 rounded-lg hover:bg-white/10 transition-colors text-white/70 hover:text-white"
-              title={isAgentPanelVisible ? "Hide agent panel" : "Show agent panel"}
-            >
-              {isAgentPanelVisible ? (
-                <ChevronRight className="h-4 w-4" />
-              ) : (
-                <ChevronLeft className="h-4 w-4" />
-              )}
-            </button>
-
-            {messageError && (
-              <p className="text-xs" style={{ color: '#FF383C' }}>
-                {messageError}
-              </p>
-            )}
           </div>
         </div>
 
-        {/* 消息列表区域 */}
-        <div
-          className="flex-1 overflow-hidden"
-          style={{
-            minHeight: 0,
-            height: 0, // Force flex-1 to work properly
-          }}
-        >
-          <ScrollArea ref={scrollAreaRef} className="h-full w-full">
-            <div className="px-6 py-4">
-              <MessageList
-                messages={messages}
-                onOpenSubagentTask={(subagentInfo) => {
-                  console.log('[ChatView] onOpenSubagentTask called with:', subagentInfo);
-                  const { subagentId, description, type, status } = subagentInfo;
+        {/* Chat Window */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Messages Area - Fixed height, scrollable */}
+          <div
+            className="flex-1 overflow-hidden"
+            style={{
+              minHeight: 0,
+              height: 0, // Force flex-1 to work properly
+            }}
+          >
+            <ScrollArea ref={scrollAreaRef} className="h-full w-full">
+              <div className="px-6 py-4 flex justify-center">
+                <div className="w-full max-w-3xl">
+                  <MessageList
+                  messages={messages}
+                  onOpenFile={handleOpenFileFromChat}
+                  onOpenSubagentTask={(subagentInfo) => {
+                    console.log('[ChatView] onOpenSubagentTask called with:', subagentInfo);
+                    const { subagentId, description, type, status } = subagentInfo;
 
-                  if (!updateSubagentCard) {
-                    console.error('[ChatView] updateSubagentCard is not defined!');
-                    return;
-                  }
+                    if (!updateSubagentCard) {
+                      console.error('[ChatView] updateSubagentCard is not defined!');
+                      return;
+                    }
 
-                  // Try to load history for this subagent (if available)
-                  const history = getSubagentHistory
-                    ? getSubagentHistory(subagentId)
-                    : null;
+                    // Try to load history for this subagent (if available)
+                    const history = getSubagentHistory
+                      ? getSubagentHistory(subagentId)
+                      : null;
 
-                  const finalDescription = history?.description || description || '';
-                  const finalType = history?.type || type || 'general-purpose';
-                  const finalStatus = history?.status || status || 'unknown';
-                  const finalMessages = history?.messages || [];
+                    const finalDescription = history?.description || description || '';
+                    const finalType = history?.type || type || 'general-purpose';
+                    const finalStatus = history?.status || status || 'unknown';
+                    const finalMessages = history?.messages || [];
 
-                  console.log('[ChatView] Opening subagent card with history:', {
-                    subagentId,
-                    hasHistory: !!history,
-                    messagesCount: finalMessages.length,
-                  });
+                    console.log('[ChatView] Opening subagent in agent panel:', {
+                      subagentId,
+                      hasHistory: !!history,
+                      messagesCount: finalMessages.length,
+                    });
 
-                  updateSubagentCard(subagentId, {
-                    taskId: subagentId,
-                    description: finalDescription,
-                    type: finalType,
-                    status: finalStatus,
-                    toolCalls: 0,
-                    currentTool: '',
-                    messages: finalMessages,
-                    isHistory: !!history,
-                    isActive: !history, // Mark as inactive if loading from history to prevent duplicate card creation
-                  });
+                    // Update the floating card data (for data management)
+                    updateSubagentCard(subagentId, {
+                      taskId: subagentId,
+                      description: finalDescription,
+                      type: finalType,
+                      status: finalStatus,
+                      toolCalls: 0,
+                      currentTool: '',
+                      messages: finalMessages,
+                      isHistory: !!history,
+                      isActive: !history,
+                    });
 
-                  // 自动选中这个 agent 并显示面板
-                  const cardId = `subagent-${subagentId}`;
-                  setSelectedAgentId(cardId);
-                  setIsAgentPanelVisible(true);
-                }}
-              />
+                    // Open agent panel and select this agent
+                    setRightPanelType('agent');
+                    setSelectedAgentId(subagentId);
+                  }}
+                />
+                </div>
+              </div>
+            </ScrollArea>
+          </div>
+
+          {/* Input Area */}
+          <div className="flex-shrink-0 p-4 flex justify-center">
+            <div className="w-full max-w-3xl space-y-3">
+              <TodoDrawer todoData={floatingCards['todo-list-card']?.todoData} />
+              <ChatInput onSend={handleSendMessage} disabled={isLoading || isLoadingHistory || !workspaceId} />
             </div>
-          </ScrollArea>
-        </div>
-
-        {/* 输入框区域 */}
-        <div className="p-4 space-y-3">
-          {/* Todo Drawer - 放在 input 上方 */}
-          <TodoDrawer todoData={floatingCards['todo-list-card']?.todoData} />
-
-          {/* Chat Input */}
-          <ChatInput onSend={handleSendMessage} disabled={isLoading || isLoadingHistory || !workspaceId} />
+          </div>
         </div>
       </div>
 
-      {/* 右侧：Agent 面板（新增） - 可随时调出 */}
-      {isAgentPanelVisible && (
-        <div className="flex-[3] flex flex-col min-w-0 overflow-hidden">
-          {/* 外容器 - 添加内边距防止贴边 */}
-          <div className="p-4 h-full">
-            <AgentPanel
-              agents={subagentAgents}
-              selectedAgentId={selectedAgentId}
-              onSelectAgent={setSelectedAgentId}
-            />
+      {/* Right Side: Split Panel (File or Agent) */}
+      {rightPanelType && (
+        <>
+          <div
+            className="chat-split-divider"
+            onMouseDown={handleDividerMouseDown}
+          />
+          <div className="flex-shrink-0" style={{ width: rightPanelWidth }}>
+            {rightPanelType === 'file' ? (
+              <FilePanel
+                workspaceId={workspaceId}
+                onClose={() => setRightPanelType(null)}
+                targetFile={filePanelTargetFile}
+                onTargetFileHandled={() => setFilePanelTargetFile(null)}
+              />
+            ) : rightPanelType === 'agent' ? (
+              <div className="h-full p-4" style={{ backgroundColor: '#0D0E12' }}>
+                <AgentPanel
+                  agents={agents}
+                  selectedAgentId={selectedAgentId}
+                  onSelectAgent={handleSelectAgent}
+                  onClose={() => setRightPanelType(null)}
+                  onRemoveAgent={handleRemoveAgent}
+                />
+              </div>
+            ) : null}
           </div>
-        </div>
+        </>
       )}
 
-      {/* 保留非 subagent 的 FloatingCard（排除 todo-list，因为它现在用 TodoDrawer 显示） */}
+      {/* Floating Cards - Only for non-agent cards */}
       {Object.entries(floatingCards)
-        .filter(([cardId]) => !cardId.startsWith('subagent-') && cardId !== 'todo-list-card')
+        .filter(([cardId]) => !cardId.startsWith('subagent-'))
         .map(([cardId, card]) => (
           <FloatingCard
             key={cardId}
