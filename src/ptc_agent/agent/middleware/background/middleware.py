@@ -27,6 +27,10 @@ from ptc_agent.agent.middleware.background.tools import (
 # belongs to.
 current_background_task_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_background_task_id", default=None)
 
+# This ContextVar propagates the unified agent identity (e.g., "research:uuid4")
+# to subagent tool calls, for internal tool tracking.
+current_background_agent_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_background_agent_id", default=None)
+
 logger = structlog.get_logger(__name__)
 
 
@@ -166,6 +170,7 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
         )
 
         current_background_task_id.set(tool_call_id)
+        current_background_agent_id.set(task.agent_id)
 
         # Define the background execution coroutine
         async def execute_in_background() -> dict[str, Any]:
