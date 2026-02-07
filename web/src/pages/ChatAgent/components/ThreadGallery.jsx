@@ -252,7 +252,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
       navigate(`/chat/${workspaceId}/__default__`, {
         state: {
           initialMessage: message.trim(),
-          planMode: false, // Always false for simplified input
+          planMode: planMode,
         },
       });
     } catch (error) {
