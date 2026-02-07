@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, FolderOpen } from 'lucide-react';
 import { ScrollArea } from '../../../components/ui/scroll-area';
 import ChatInput from './ChatInput';
 import MessageList from './MessageList';
@@ -10,6 +10,8 @@ import TodoListCardContent from './TodoListCardContent';
 import SubagentCardContent from './SubagentCardContent';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { useFloatingCards } from '../hooks/useFloatingCards';
+import FilePanel from './FilePanel';
+import './FilePanel.css';
 
 /**
  * ChatView Component
@@ -30,6 +32,10 @@ function ChatView({ workspaceId, threadId, onBack }) {
   const location = useLocation();
   const navigate = useNavigate();
   const initialMessageSentRef = useRef(false);
+  const [filePanelOpen, setFilePanelOpen] = useState(false);
+  const [filePanelWidth, setFilePanelWidth] = useState(420);
+  const [filePanelTargetFile, setFilePanelTargetFile] = useState(null);
+  const isDraggingRef = useRef(false);
 
   // Floating cards management - extracted to custom hook for better encapsulation
   // Must be called before useChatMessages since updateTodoListCard and updateSubagentCard are passed to it
@@ -58,6 +64,40 @@ function ChatView({ workspaceId, threadId, onBack }) {
     threadId: currentThreadId,
     getSubagentHistory,
   } = useChatMessages(workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, minimizeInactiveSubagents);
+
+  // Handle drag panel width
+  const handleDividerMouseDown = useCallback((e) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = filePanelWidth;
+
+    const onMouseMove = (moveEvent) => {
+      if (!isDraggingRef.current) return;
+      const delta = startX - moveEvent.clientX;
+      const newWidth = Math.max(280, Math.min(startWidth + delta, window.innerWidth * 0.6));
+      setFilePanelWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      isDraggingRef.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [filePanelWidth]);
+
+  // Open a file in the right panel from chat tool calls
+  const handleOpenFileFromChat = useCallback((filePath) => {
+    setFilePanelOpen(true);
+    setFilePanelTargetFile(filePath);
+  }, []);
 
   // Update URL when thread ID changes (e.g., when __default__ becomes actual thread ID)
   // This triggers a re-render with the new threadId, which will then load history
@@ -180,6 +220,14 @@ function ChatView({ workspaceId, threadId, onBack }) {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setFilePanelOpen((prev) => !prev)}
+            className={`p-2 rounded-md transition-colors ${filePanelOpen ? 'bg-white/15' : 'hover:bg-white/10'}`}
+            style={{ color: '#FFFFFF' }}
+            title="Workspace Files"
+          >
+            <FolderOpen className="h-5 w-5" />
+          </button>
           {/* Floating card icons for all cards - always visible */}
           {getAllCards().map(([cardId, card]) => {
             // Check if this is a subagent card and get its isActive status
@@ -207,74 +255,99 @@ function ChatView({ workspaceId, threadId, onBack }) {
         </div>
       </div>
 
-      {/* Messages Area - Fixed height, scrollable */}
-      <div 
-        className="flex-1 overflow-hidden"
-        style={{ 
-          minHeight: 0,
-          height: 0, // Force flex-1 to work properly
-        }}
-      >
-        <ScrollArea ref={scrollAreaRef} className="h-full w-full">
-          <div className="px-6 py-4">
-            <MessageList 
-              messages={messages} 
-              onOpenSubagentTask={(subagentInfo) => {
-                console.log('[ChatView] onOpenSubagentTask called with:', subagentInfo);
-                const { subagentId, description, type, status } = subagentInfo;
+      {/* Split Container: Chat + File Panel */}
+      <div className="chat-split-container">
+        {/* Left: Chat */}
+        <div className="chat-split-left" style={{ flex: filePanelOpen ? undefined : 1, width: filePanelOpen ? `calc(100% - ${filePanelWidth}px - 4px)` : '100%' }}>
+          {/* Messages Area - Fixed height, scrollable */}
+          <div 
+            className="flex-1 overflow-hidden"
+            style={{ 
+              minHeight: 0,
+              height: 0, // Force flex-1 to work properly
+            }}
+          >
+            <ScrollArea ref={scrollAreaRef} className="h-full w-full">
+              <div className="px-6 py-4">
+                <MessageList 
+                  messages={messages}
+                  onOpenFile={handleOpenFileFromChat}
+                  onOpenSubagentTask={(subagentInfo) => {
+                    console.log('[ChatView] onOpenSubagentTask called with:', subagentInfo);
+                    const { subagentId, description, type, status } = subagentInfo;
 
-                if (!updateSubagentCard) {
-                  console.error('[ChatView] updateSubagentCard is not defined!');
-                  return;
-                }
+                    if (!updateSubagentCard) {
+                      console.error('[ChatView] updateSubagentCard is not defined!');
+                      return;
+                    }
 
-                // Check if card already exists and is minimized
-                const cardId = `subagent-${subagentId}`;
-                const existingCard = floatingCards[cardId];
-                const isMinimized = existingCard?.isMinimized || false;
+                    // Check if card already exists and is minimized
+                    const cardId = `subagent-${subagentId}`;
+                    const existingCard = floatingCards[cardId];
+                    const isMinimized = existingCard?.isMinimized || false;
 
-                // If card exists and is minimized, maximize it first
-                if (existingCard && isMinimized) {
-                  console.log('[ChatView] Card is minimized, maximizing it');
-                  handleCardMaximize(cardId);
-                }
+                    // If card exists and is minimized, maximize it first
+                    if (existingCard && isMinimized) {
+                      console.log('[ChatView] Card is minimized, maximizing it');
+                      handleCardMaximize(cardId);
+                    }
 
-                // Try to load history for this subagent (if available)
-                const history = getSubagentHistory
-                  ? getSubagentHistory(subagentId)
-                  : null;
+                    // Try to load history for this subagent (if available)
+                    const history = getSubagentHistory
+                      ? getSubagentHistory(subagentId)
+                      : null;
 
-                const finalDescription = history?.description || description || '';
-                const finalType = history?.type || type || 'general-purpose';
-                const finalStatus = history?.status || status || 'unknown';
-                const finalMessages = history?.messages || [];
+                    const finalDescription = history?.description || description || '';
+                    const finalType = history?.type || type || 'general-purpose';
+                    const finalStatus = history?.status || status || 'unknown';
+                    const finalMessages = history?.messages || [];
 
-                console.log('[ChatView] Opening subagent card with history:', {
-                  subagentId,
-                  hasHistory: !!history,
-                  messagesCount: finalMessages.length,
-                });
+                    console.log('[ChatView] Opening subagent card with history:', {
+                      subagentId,
+                      hasHistory: !!history,
+                      messagesCount: finalMessages.length,
+                    });
 
-                updateSubagentCard(subagentId, {
-                  taskId: subagentId,
-                  description: finalDescription,
-                  type: finalType,
-                  status: finalStatus,
-                  toolCalls: 0,
-                  currentTool: '',
-                  messages: finalMessages,
-                  isHistory: !!history,
-                  isActive: !history, // Mark as inactive if loading from history to prevent duplicate card creation
-                });
-              }}
-            />
+                    updateSubagentCard(subagentId, {
+                      taskId: subagentId,
+                      description: finalDescription,
+                      type: finalType,
+                      status: finalStatus,
+                      toolCalls: 0,
+                      currentTool: '',
+                      messages: finalMessages,
+                      isHistory: !!history,
+                      isActive: !history,
+                    });
+                  }}
+                />
+              </div>
+            </ScrollArea>
           </div>
-        </ScrollArea>
-      </div>
 
-      {/* Input Area */}
-      <div className="flex-shrink-0 p-4" style={{ borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
-        <ChatInput onSend={handleSendMessage} disabled={isLoading || isLoadingHistory || !workspaceId} />
+          {/* Input Area */}
+          <div className="flex-shrink-0 p-4" style={{ borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+            <ChatInput onSend={handleSendMessage} disabled={isLoading || isLoadingHistory || !workspaceId} />
+          </div>
+        </div>
+
+        {/* Divider + Right Panel */}
+        {filePanelOpen && (
+          <>
+            <div
+              className="chat-split-divider"
+              onMouseDown={handleDividerMouseDown}
+            />
+            <div className="chat-split-right" style={{ width: filePanelWidth }}>
+              <FilePanel
+                workspaceId={workspaceId}
+                onClose={() => setFilePanelOpen(false)}
+                targetFile={filePanelTargetFile}
+                onTargetFileHandled={() => setFilePanelTargetFile(null)}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Floating Cards */}

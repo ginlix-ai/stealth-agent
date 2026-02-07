@@ -1,0 +1,121 @@
+.file-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background-color: #1B1D25;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .file-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    flex-shrink: 0;
+  }
+  
+  .file-panel-icon-btn {
+    padding: 4px;
+    border-radius: 4px;
+    color: rgba(255, 255, 255, 0.65);
+    transition: all 0.15s;
+    cursor: pointer;
+    background: none;
+    border: none;
+  }
+  .file-panel-icon-btn:hover {
+    color: #FFFFFF;
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+  
+  .file-panel-content {
+    flex: 1;
+    min-height: 0;
+  }
+  
+  .file-panel-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background-color 0.15s;
+  }
+  .file-panel-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+  
+  .file-panel-code {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.85);
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+  }
+  
+  .file-panel-markdown {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .file-panel-markdown h1, .file-panel-markdown h2, .file-panel-markdown h3 {
+    color: #FFFFFF;
+    margin-top: 1.2em;
+    margin-bottom: 0.6em;
+  }
+  .file-panel-markdown code {
+    background-color: rgba(255, 255, 255, 0.08);
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  .file-panel-markdown pre {
+    background-color: rgba(0, 0, 0, 0.3);
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+  }
+  
+  /* ====== Resizable Split Layout ====== */
+  .chat-split-container {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  
+  .chat-split-left {
+    display: flex;
+    flex-direction: column;
+    min-width: 300px;
+    overflow: hidden;
+  }
+  
+  .chat-split-divider {
+    width: 4px;
+    cursor: col-resize;
+    background-color: transparent;
+    flex-shrink: 0;
+    transition: background-color 0.15s;
+    position: relative;
+  }
+  .chat-split-divider:hover,
+  .chat-split-divider.dragging {
+    background-color: rgba(99, 102, 241, 0.6);
+  }
+  .chat-split-divider::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -4px;
+    right: -4px;
+  }
+  
+  .chat-split-right {
+    min-width: 280px;
+    overflow: hidden;
+  }

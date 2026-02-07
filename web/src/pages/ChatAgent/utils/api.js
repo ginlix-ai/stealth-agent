@@ -185,3 +185,61 @@ export async function sendChatMessageStream(
     onEvent
   );
 }
+
+/**
+ * List files in a workspace sandbox
+ * @param {string} workspaceId
+ * @param {string} dirPath - e.g. "results"
+ */
+export async function listWorkspaceFiles(workspaceId, dirPath = 'results') {
+  const { data } = await api.get(`/api/v1/workspaces/${workspaceId}/files`, {
+    params: { path: dirPath, include_system: false },
+    headers: { 'X-User-Id': DEFAULT_USER_ID },
+  });
+  return data; // { workspace_id, path, files: [...] }
+}
+
+/**
+ * Read a text file from workspace sandbox
+ * @param {string} workspaceId
+ * @param {string} filePath - e.g. "results/report.md"
+ */
+export async function readWorkspaceFile(workspaceId, filePath) {
+  const { data } = await api.get(`/api/v1/workspaces/${workspaceId}/files/read`, {
+    params: { path: filePath },
+    headers: { 'X-User-Id': DEFAULT_USER_ID },
+  });
+  return data; // { workspace_id, path, content, mime, truncated }
+}
+
+/**
+ * Download a file from workspace sandbox (returns blob URL)
+ * @param {string} workspaceId
+ * @param {string} filePath
+ * @returns {Promise<string>} Blob URL for the file
+ */
+export async function downloadWorkspaceFile(workspaceId, filePath) {
+  const response = await api.get(`/api/v1/workspaces/${workspaceId}/files/download`, {
+    params: { path: filePath },
+    headers: { 'X-User-Id': DEFAULT_USER_ID },
+    responseType: 'blob',
+  });
+  return URL.createObjectURL(response.data);
+}
+
+/**
+ * Trigger file download in browser
+ * @param {string} workspaceId
+ * @param {string} filePath
+ */
+export async function triggerFileDownload(workspaceId, filePath) {
+  const blobUrl = await downloadWorkspaceFile(workspaceId, filePath);
+  const fileName = filePath.split('/').pop() || 'download';
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(blobUrl);
+}

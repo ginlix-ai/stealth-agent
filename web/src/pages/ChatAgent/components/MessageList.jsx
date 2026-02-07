@@ -15,7 +15,7 @@ import SubagentTaskMessageContent from './SubagentTaskMessageContent';
  * - Streaming indicators
  * - Error state styling
  */
-function MessageList({ messages, onOpenSubagentTask }) {
+function MessageList({ messages, onOpenSubagentTask, onOpenFile }) {
   // Empty state - show when no messages exist
   if (messages.length === 0) {
     return (
@@ -32,7 +32,7 @@ function MessageList({ messages, onOpenSubagentTask }) {
   return (
     <div className="space-y-6">
       {messages.map((message) => (
-        <MessageBubble key={message.id} message={message} onOpenSubagentTask={onOpenSubagentTask} />
+        <MessageBubble key={message.id} message={message} onOpenSubagentTask={onOpenSubagentTask} onOpenFile={onOpenFile} />
       ))}
     </div>
   );
@@ -44,7 +44,7 @@ function MessageList({ messages, onOpenSubagentTask }) {
  * Renders a single message bubble with appropriate styling
  * based on role (user/assistant) and state (streaming/error)
  */
-function MessageBubble({ message, onOpenSubagentTask }) {
+function MessageBubble({ message, onOpenSubagentTask, onOpenFile }) {
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
 
@@ -90,6 +90,7 @@ function MessageBubble({ message, onOpenSubagentTask }) {
             isStreaming={message.isStreaming}
             hasError={message.error}
             onOpenSubagentTask={onOpenSubagentTask}
+            onOpenFile={onOpenFile}
           />
         ) : (
           // Fallback for messages without segments (backward compatibility)
@@ -148,7 +149,7 @@ function MessageBubble({ message, onOpenSubagentTask }) {
  * @param {boolean} props.isStreaming - Whether the message is currently streaming
  * @param {boolean} props.hasError - Whether the message has an error
  */
-function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, todoListProcesses, subagentTasks, isStreaming, hasError, onOpenSubagentTask }) {
+function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, todoListProcesses, subagentTasks, isStreaming, hasError, onOpenSubagentTask, onOpenFile }) {
   // Sort segments by order to ensure chronological rendering
   const sortedSegments = [...segments].sort((a, b) => a.order - b.order);
   console.log('[MessageContentSegments] Rendering segments:', {
@@ -247,6 +248,7 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
                 isInProgress={toolCallProcess.isInProgress || false}
                 isComplete={toolCallProcess.isComplete || false}
                 isFailed={toolCallProcess.isFailed || false}
+                onOpenFile={onOpenFile}
               />
             );
           }
