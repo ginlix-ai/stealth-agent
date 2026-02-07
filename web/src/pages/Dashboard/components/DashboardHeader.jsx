@@ -100,7 +100,7 @@ const DashboardHeader = () => {
                   <Mail className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
                   <div className="min-w-0">
                     <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>Email</p>
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>support@ginlix.ai</p>
+                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>support@test.ai</p>
                   </div>
                 </div>
               </div>
