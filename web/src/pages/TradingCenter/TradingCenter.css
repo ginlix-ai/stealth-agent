@@ -1,23 +1,96 @@
 .trading-center-container {
   width: 100%;
-  height: 100%;
   min-height: calc(100vh - 48px);
+  max-height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .trading-content-wrapper {
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
-  overflow: hidden;
+  min-height: min-content;
 }
 
 .trading-left-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  min-height: min-content;
   background-color: #0f1422;
+  min-width: 0;
+}
+
+.trading-right-panel {
+  width: 400px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, hsl(var(--bg-main)) 0%, hsl(222 47% 6%) 50%, hsl(222 45% 5%) 100%);
+  border-left: 1px solid #1a1f35;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.trading-right-panel-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 16px;
+}
+
+/* 聊天框下方空白区：无记录时的占位与背景 */
+.trading-chat-empty {
+  flex: 1;
+  min-height: 200px;
+  border-radius: 12px;
+  background: 
+    radial-gradient(ellipse 80% 50% at 50% 20%, rgba(102, 126, 234, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%),
+    linear-gradient(180deg, rgba(26, 31, 53, 0.4) 0%, rgba(15, 20, 34, 0.2) 100%);
+  border: 1px solid rgba(42, 47, 69, 0.6);
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.trading-chat-empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.9);
+  margin: 0 0 8px 0;
+}
+
+.trading-chat-empty-hint {
+  font-size: 13px;
+  color: rgba(139, 143, 163, 0.9);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 280px;
+}
+
+/* Scrollbar styling consistent with Dashboard */
+.trading-center-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.trading-center-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.trading-center-container::-webkit-scrollbar-thumb {
+  background: #2a2f45;
+  border-radius: 4px;
+}
+
+.trading-center-container::-webkit-scrollbar-thumb:hover {
+  background: #3a3f55;
 }

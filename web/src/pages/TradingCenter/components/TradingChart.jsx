@@ -4,7 +4,7 @@ import html2canvas from 'html2canvas';
 import './TradingChart.css';
 import { fetchStockData } from '../utils/api';
 
-const TradingChart = forwardRef(({ symbol, onCapture }, ref) => {
+const TradingChart = forwardRef(({ symbol, onCapture, onStockMeta }, ref) => {
   const chartContainerRef = useRef();
   const rsiChartContainerRef = useRef();
   const chartRef = useRef();
@@ -137,8 +137,12 @@ const TradingChart = forwardRef(({ symbol, onCapture }, ref) => {
         chartRef.current.timeScale().fitContent();
         setLastUpdateTime(new Date());
         setError(null);
+        if (typeof onStockMeta === 'function' && result?.fiftyTwoWeekHigh != null && result?.fiftyTwoWeekLow != null) {
+          onStockMeta({ fiftyTwoWeekHigh: result.fiftyTwoWeekHigh, fiftyTwoWeekLow: result.fiftyTwoWeekLow });
+        }
       } else {
         setError('未找到股票数据');
+        if (typeof onStockMeta === 'function') onStockMeta(null);
       }
     } catch (err) {
       console.error('加载股票数据失败:', err);
@@ -175,6 +179,12 @@ const TradingChart = forwardRef(({ symbol, onCapture }, ref) => {
         borderColor: '#1a1f35',
         timeVisible: true,
         secondsVisible: false,
+        handleScroll: {
+          mouseWheel: true,
+          pressedMouseMove: true,
+          horzTouchDrag: true,
+          vertTouchDrag: false,
+        },
       },
     });
 
@@ -288,15 +298,15 @@ const TradingChart = forwardRef(({ symbol, onCapture }, ref) => {
         <div className="chart-indicators">
           <span className="indicator-item">
             <span className="indicator-color" style={{ backgroundColor: '#3b82f6' }}></span>
-            MA50: {ma50Value || 'N/A'}
+            MA50: {ma50Value ?? '—'}
           </span>
           <span className="indicator-item">
             <span className="indicator-color" style={{ backgroundColor: '#f59e0b' }}></span>
-            MA200: {ma200Value || 'N/A'}
+            MA200: {ma200Value ?? '—'}
           </span>
           <span className="indicator-item">
             <span className="indicator-color" style={{ backgroundColor: '#667eea' }}></span>
-            RSI (14): {rsiValue || 'N/A'}
+            RSI (14): {rsiValue ?? '—'}
           </span>
         </div>
       </div>
@@ -306,13 +316,18 @@ const TradingChart = forwardRef(({ symbol, onCapture }, ref) => {
         <button type="button" className="chart-tool-btn">✎</button>
         <button type="button" className="chart-tool-btn">T</button>
       </div>
-      <div className="charts-container">
+      <div
+        className="charts-container chart-wheel-capture"
+        onWheel={(e) => e.stopPropagation()}
+        role="region"
+        aria-label="K-line chart"
+      >
         <div
           ref={chartContainerRef}
           className="chart-wrapper"
         />
         <div className="rsi-container">
-          <div className="rsi-label">RSI (6,14,24) RSI 14: {rsiValue || 'N/A'}</div>
+          <div className="rsi-label">RSI (6,14,24) RSI 14: {rsiValue ?? '—'}</div>
           <div className="rsi-chart-wrapper" ref={rsiChartContainerRef}></div>
         </div>
       </div>

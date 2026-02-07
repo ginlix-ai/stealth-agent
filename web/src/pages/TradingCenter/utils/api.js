@@ -5,9 +5,34 @@
 import { api, headers, DEFAULT_USER_ID } from '@/api/client';
 
 /**
+ * Search for stocks by keyword (symbol or company name).
+ * Same API as Dashboard Add Watchlist: GET /api/v1/market-data/search/stocks
+ * @param {string} query - Search keyword (e.g., "AAPL", "Apple", "Micro")
+ * @param {number} limit - Maximum number of results (default: 50, max: 100)
+ * @returns {Promise<{query: string, results: Array, count: number}>}
+ */
+export async function searchStocks(query, limit = 50) {
+  if (!query || !query.trim()) {
+    return { query: '', results: [], count: 0 };
+  }
+  try {
+    const { data } = await api.get('/api/v1/market-data/search/stocks', {
+      params: {
+        query: query.trim(),
+        limit: Math.min(Math.max(1, limit), 100),
+      },
+    });
+    return data || { query: query.trim(), results: [], count: 0 };
+  } catch (e) {
+    console.error('Search stocks failed:', e?.response?.status, e?.response?.data, e?.message);
+    return { query: query.trim(), results: [], count: 0 };
+  }
+}
+
+/**
  * Fetch stock historical data for charting
  * Uses backend API endpoint: GET /api/v1/market-data/intraday/stocks/{symbol}
- * 
+ *
  * @param {string} symbol - Stock symbol (e.g., 'AAPL', 'MSFT')
  * @param {string} interval - Data interval (default: '1hour' for daily-like view, supports: 1min, 5min, 15min, 30min, 1hour, 4hour)
  * @returns {Promise<{data: Array, isReal: boolean, error?: string}>} Chart data in lightweight-charts format
@@ -18,13 +43,11 @@ export async function fetchStockData(symbol, interval = '1hour') {
   }
 
   const symbolUpper = symbol.trim().toUpperCase();
-  
+
   try {
-    // Use backend API endpoint for intraday data
-    // For daily-like view, we use 1hour interval and fetch recent data
     const { data } = await api.get(`/api/v1/market-data/intraday/stocks/${encodeURIComponent(symbolUpper)}`, {
       params: {
-        interval: interval === '1day' ? '1hour' : interval, // Map 1day to 1hour for backend
+        interval: interval === '1day' ? '1hour' : interval,
       },
     });
 
@@ -36,29 +59,39 @@ export async function fetchStockData(symbol, interval = '1hour') {
 
     // Convert backend format to lightweight-charts format
     // Backend returns: { date: "YYYY-MM-DD HH:MM:SS", open, high, low, close, volume }
-    // Chart needs: { time: unix_timestamp, open, high, low, close }
     const chartData = dataPoints.map((point) => {
       const date = new Date(point.date);
       return {
-        time: Math.floor(date.getTime() / 1000), // Convert to unix timestamp
+        time: Math.floor(date.getTime() / 1000),
         open: parseFloat(point.open) || 0,
         high: parseFloat(point.high) || 0,
         low: parseFloat(point.low) || 0,
         close: parseFloat(point.close) || 0,
       };
-    }).filter(item => 
-      !isNaN(item.open) && 
-      !isNaN(item.high) && 
-      !isNaN(item.low) && 
-      !isNaN(item.close) &&
-      item.time > 0
+    }).filter(item =>
+      !isNaN(item.open) && !isNaN(item.high) && !isNaN(item.low) && !isNaN(item.close) && item.time > 0
     ).sort((a, b) => a.time - b.time);
 
     if (chartData.length === 0) {
       return { data: [], isReal: false, error: 'Data conversion failed' };
     }
 
-    return { data: chartData, isReal: true };
+    // Derive 52-week high/low from series for header display
+    let fiftyTwoWeekHigh = null;
+    let fiftyTwoWeekLow = null;
+    if (chartData.length > 0) {
+      const highs = chartData.map((d) => d.high);
+      const lows = chartData.map((d) => d.low);
+      fiftyTwoWeekHigh = Math.max(...highs);
+      fiftyTwoWeekLow = Math.min(...lows);
+    }
+
+    return {
+      data: chartData,
+      isReal: true,
+      fiftyTwoWeekHigh,
+      fiftyTwoWeekLow,
+    };
   } catch (error) {
     console.error('Error fetching stock data from backend:', error);
     const errorMsg = error?.response?.data?.detail || error?.message || 'Failed to fetch stock data';
@@ -149,7 +182,6 @@ export async function fetchStockInfo(symbol) {
     const points = results[symbolUpper];
     
     if (!Array.isArray(points) || points.length === 0) {
-      // Return default structure
       return {
         Symbol: symbolUpper,
         Name: `${symbolUpper} Corp`,
@@ -158,37 +190,37 @@ export async function fetchStockInfo(symbol) {
         Open: 0,
         High: 0,
         Low: 0,
-        '52WeekHigh': 0,
-        '52WeekLow': 0,
-        AverageVolume: 0,
-        SharesOutstanding: 0,
-        MarketCapitalization: 0,
-        DividendYield: 0,
+        '52WeekHigh': null,
+        '52WeekLow': null,
+        AverageVolume: null,
+        SharesOutstanding: null,
+        MarketCapitalization: null,
+        DividendYield: null,
       };
     }
 
     const last = points[points.length - 1];
     const first = points[0];
-    
-    // Extract basic info (full profile would come from a dedicated endpoint)
+    const totalVolume = points.reduce((sum, p) => sum + (Number(p.volume) || 0), 0);
+    const avgVolume = points.length > 0 ? Math.round(totalVolume / points.length) : null;
+
     return {
       Symbol: symbolUpper,
-      Name: `${symbolUpper} Corp`, // Would come from profile endpoint
-      Exchange: 'NASDAQ', // Would come from profile endpoint
+      Name: `${symbolUpper} Corp`,
+      Exchange: 'NASDAQ',
       Price: parseFloat(last?.close || 0),
       Open: parseFloat(first?.open || 0),
-      High: parseFloat(last?.high || 0),
-      Low: parseFloat(last?.low || 0),
-      '52WeekHigh': 0, // Would come from profile endpoint
-      '52WeekLow': 0, // Would come from profile endpoint
-      AverageVolume: 0, // Would come from profile endpoint
-      SharesOutstanding: 0, // Would come from profile endpoint
-      MarketCapitalization: 0, // Would come from profile endpoint
-      DividendYield: 0, // Would come from profile endpoint
+      High: parseFloat(Math.max(...points.map((p) => Number(p.high) || 0)) || 0),
+      Low: parseFloat(Math.min(...points.map((p) => Number(p.low) || 0)) || 0),
+      '52WeekHigh': null,
+      '52WeekLow': null,
+      AverageVolume: avgVolume,
+      SharesOutstanding: null,
+      MarketCapitalization: null,
+      DividendYield: null,
     };
   } catch (error) {
     console.error('Error fetching stock info:', error);
-    // Return default structure on error
     return {
       Symbol: symbolUpper,
       Name: `${symbolUpper} Corp`,
@@ -197,12 +229,12 @@ export async function fetchStockInfo(symbol) {
       Open: 0,
       High: 0,
       Low: 0,
-      '52WeekHigh': 0,
-      '52WeekLow': 0,
-      AverageVolume: 0,
-      SharesOutstanding: 0,
-      MarketCapitalization: 0,
-      DividendYield: 0,
+      '52WeekHigh': null,
+      '52WeekLow': null,
+      AverageVolume: null,
+      SharesOutstanding: null,
+      MarketCapitalization: null,
+      DividendYield: null,
     };
   }
 }

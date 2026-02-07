@@ -3,14 +3,29 @@ import './TradingCenter.css';
 import TopBar from './components/TopBar';
 import StockHeader from './components/StockHeader';
 import TradingChart from './components/TradingChart';
-import TradingPanel from './components/TradingPanel';
+import TradingChatInput from './components/TradingChatInput';
 import { fetchRealTimePrice, fetchStockInfo } from './utils/api';
 
 function TradingCenter() {
   const [selectedStock, setSelectedStock] = useState('MSFT');
+  const [selectedStockDisplay, setSelectedStockDisplay] = useState(null);
   const [stockInfo, setStockInfo] = useState(null);
   const [realTimePrice, setRealTimePrice] = useState(null);
+  const [chartMeta, setChartMeta] = useState(null);
   const chartRef = useRef();
+
+  const handleStockSearch = (symbol, searchResult) => {
+    setSelectedStock(symbol);
+    setSelectedStockDisplay(
+      searchResult
+        ? {
+            name: searchResult.name || searchResult.symbol,
+            exchange: searchResult.exchangeShortName || searchResult.stockExchange || '',
+          }
+        : null
+    );
+    setChartMeta(null);
+  };
 
   // Fetch stock info and real-time price when selected stock changes
   useEffect(() => {
@@ -77,21 +92,32 @@ function TradingCenter() {
 
   return (
     <div className="trading-center-container">
-      <TopBar onStockSearch={setSelectedStock} />
+      <TopBar onStockSearch={handleStockSearch} />
       <div className="trading-content-wrapper">
         <div className="trading-left-panel">
           <StockHeader
             symbol={selectedStock}
             stockInfo={stockInfo}
             realTimePrice={realTimePrice}
+            chartMeta={chartMeta}
+            displayOverride={selectedStockDisplay}
           />
           <TradingChart
             ref={chartRef}
             symbol={selectedStock}
             onCapture={handleCaptureChart}
+            onStockMeta={setChartMeta}
           />
         </div>
-        <TradingPanel symbol={selectedStock} realTimePrice={realTimePrice} />
+        <div className="trading-right-panel">
+          <div className="trading-right-panel-inner">
+            <TradingChatInput />
+            <div className="trading-chat-empty">
+              <p className="trading-chat-empty-title">Stealth Agent</p>
+              <p className="trading-chat-empty-hint">Ask anything above to start a conversation. Your message will open in the Chat page.</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
