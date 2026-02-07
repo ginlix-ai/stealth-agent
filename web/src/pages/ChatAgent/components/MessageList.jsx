@@ -2,7 +2,6 @@ import { Bot, Loader2, User } from 'lucide-react';
 import ReasoningMessageContent from './ReasoningMessageContent';
 import SubagentTaskMessageContent from './SubagentTaskMessageContent';
 import TextMessageContent from './TextMessageContent';
-import TodoListMessageContent from './TodoListMessageContent';
 import ToolCallMessageContent from './ToolCallMessageContent';
 
 /**
@@ -78,11 +77,10 @@ function MessageBubble({ message, onOpenSubagentTask }) {
       >
         {/* Render content segments in chronological order */}
         {message.contentSegments && message.contentSegments.length > 0 ? (
-          <MessageContentSegments 
+          <MessageContentSegments
             segments={message.contentSegments}
             reasoningProcesses={message.reasoningProcesses || {}}
             toolCallProcesses={message.toolCallProcesses || {}}
-            todoListProcesses={message.todoListProcesses || {}}
             subagentTasks={message.subagentTasks || {}}
             isStreaming={message.isStreaming}
             hasError={message.error}
@@ -133,26 +131,24 @@ function MessageBubble({ message, onOpenSubagentTask }) {
 
 /**
  * MessageContentSegments Component
- * 
+ *
  * Renders content segments in chronological order.
- * Handles interleaving of text, reasoning, tool call, and todo list content based on when they occurred.
- * 
+ * Handles interleaving of text, reasoning, and tool call content based on when they occurred.
+ *
  * @param {Object} props
  * @param {Array} props.segments - Array of content segments sorted by order
  * @param {Object} props.reasoningProcesses - Object mapping reasoningId to reasoning process data
  * @param {Object} props.toolCallProcesses - Object mapping toolCallId to tool call process data
- * @param {Object} props.todoListProcesses - Object mapping todoListId to todo list process data
  * @param {boolean} props.isStreaming - Whether the message is currently streaming
  * @param {boolean} props.hasError - Whether the message has an error
  */
-function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, todoListProcesses, subagentTasks, isStreaming, hasError, onOpenSubagentTask }) {
+function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, subagentTasks, isStreaming, hasError, onOpenSubagentTask }) {
   // Sort segments by order to ensure chronological rendering
   const sortedSegments = [...segments].sort((a, b) => a.order - b.order);
   console.log('[MessageContentSegments] Rendering segments:', {
     totalSegments: sortedSegments.length,
     segmentTypes: sortedSegments.map(s => s.type),
     segmentOrders: sortedSegments.map(s => ({ type: s.type, order: s.order })),
-    todoListProcessesKeys: Object.keys(todoListProcesses || {}),
   });
   
   // Group consecutive text segments together for better rendering
@@ -187,10 +183,9 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
       // Add tool call segment
       groupedSegments.push(segment);
     } else if (segment.type === 'todo_list') {
-      // Finalize current text group if exists (todo list breaks text continuity)
+      // Skip todo_list segments - they are displayed in TodoDrawer instead
       currentTextGroup = null;
-      // Add todo list segment
-      groupedSegments.push(segment);
+      // Do not add to groupedSegments
     } else if (segment.type === 'subagent_task') {
       // Finalize current text group if exists (subagent task breaks text continuity)
       currentTextGroup = null;
@@ -247,25 +242,6 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
               />
             );
           }
-          return null;
-        } else if (segment.type === 'todo_list') {
-          // Render todo list
-          console.log('[MessageList] Rendering todo_list segment:', { todoListId: segment.todoListId, todoListProcesses });
-          const todoListProcess = todoListProcesses[segment.todoListId];
-          console.log('[MessageList] Found todoListProcess:', todoListProcess);
-          if (todoListProcess) {
-            return (
-              <TodoListMessageContent
-                key={`todo-list-${segment.todoListId}`}
-                todos={todoListProcess.todos || []}
-                total={todoListProcess.total || 0}
-                completed={todoListProcess.completed || 0}
-                in_progress={todoListProcess.in_progress || 0}
-                pending={todoListProcess.pending || 0}
-              />
-            );
-          }
-          console.warn('[MessageList] No todoListProcess found for todoListId:', segment.todoListId);
           return null;
         } else if (segment.type === 'subagent_task') {
           const task = subagentTasks[segment.subagentId];

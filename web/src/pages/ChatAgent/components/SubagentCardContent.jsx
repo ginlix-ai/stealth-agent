@@ -1,4 +1,4 @@
-import { Bot, CheckCircle2, Circle, Loader2 } from 'lucide-react';
+import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import React from 'react';
 import ReasoningMessageContent from './ReasoningMessageContent';
 import TextMessageContent from './TextMessageContent';

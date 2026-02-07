@@ -17,7 +17,7 @@ function AgentTabBar({ agents, selectedAgentId, onSelectAgent }) {
   }
 
   return (
-    <div className="flex gap-2 p-4 overflow-x-auto scrollbar-hide min-w-0 justify-center">
+    <div className="flex gap-2 p-0 overflow-x-auto scrollbar-hide min-w-0 justify-center">
       {agents.map((agent, index) => {
         const isSelected = selectedAgentId === agent.id;
 

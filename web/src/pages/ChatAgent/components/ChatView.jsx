@@ -350,11 +350,14 @@ function ChatView({ workspaceId, threadId, onBack }) {
       {/* 右侧：Agent 面板（新增） - 可随时调出 */}
       {isAgentPanelVisible && (
         <div className="flex-[3] flex flex-col min-w-0 overflow-hidden">
-          <AgentPanel
-            agents={subagentAgents}
-            selectedAgentId={selectedAgentId}
-            onSelectAgent={setSelectedAgentId}
-          />
+          {/* 外容器 - 添加内边距防止贴边 */}
+          <div className="p-4 h-full">
+            <AgentPanel
+              agents={subagentAgents}
+              selectedAgentId={selectedAgentId}
+              onSelectAgent={setSelectedAgentId}
+            />
+          </div>
         </div>
       )}
 
