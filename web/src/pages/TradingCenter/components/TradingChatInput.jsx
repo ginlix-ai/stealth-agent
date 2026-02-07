@@ -8,19 +8,20 @@ import './TradingChatInput.css';
  * Same layout as Dashboard: Plus, input "What would you like to know?", Agent, Plan Mode, Tool, Send.
  * 
  * @param {Object} props
- * @param {Function} props.onSend - Callback when message is sent
+ * @param {Function} props.onSend - Callback when message is sent (message, mode)
  * @param {boolean} props.isLoading - Whether a message is currently loading
  */
 function TradingChatInput({ onSend, isLoading = false }) {
   const [message, setMessage] = useState('');
   const [planMode, setPlanMode] = useState(false);
+  const [mode, setMode] = useState('fast'); // 'fast' or 'deep'
 
   const handleSend = () => {
     if (!message.trim() || isLoading) {
       return;
     }
     if (onSend) {
-      onSend(message.trim());
+      onSend(message.trim(), mode);
       setMessage(''); // Clear input after sending
     }
   };
@@ -30,6 +31,10 @@ function TradingChatInput({ onSend, isLoading = false }) {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  const handleModeToggle = () => {
+    setMode(prev => prev === 'fast' ? 'deep' : 'fast');
   };
 
   return (
@@ -52,9 +57,14 @@ function TradingChatInput({ onSend, isLoading = false }) {
             disabled={isLoading}
           />
           <div className="trading-chat-actions">
-            <button type="button" className="trading-chat-btn trading-chat-btn-pill">
+            <button 
+              type="button" 
+              className={`trading-chat-btn trading-chat-btn-pill ${mode === 'deep' ? 'active' : ''}`}
+              onClick={handleModeToggle}
+              title={mode === 'fast' ? 'Fast Mode - Click to switch to Deep Mode' : 'Deep Mode - Click to switch to Fast Mode'}
+            >
               <Globe className="trading-chat-icon-sm" />
-              <span>Agent</span>
+              <span>{mode === 'fast' ? 'Fast Mode' : 'Deep Mode'}</span>
             </button>
             <button
               type="button"

@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useToast } from '@/components/ui/use-toast';
 import './TradingCenter.css';
 import TopBar from './components/TopBar';
 import StockHeader from './components/StockHeader';
@@ -8,17 +10,23 @@ import TradingPanel from './components/TradingPanel';
 import { fetchRealTimePrice, fetchStockInfo } from './utils/api';
 import { useTradingChat } from './hooks/useTradingChat';
 import { deleteFlashWorkspaces } from './utils/api';
+import { findOrCreateDefaultWorkspace } from '../Dashboard/utils/workspace';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
+import { Loader2 } from 'lucide-react';
 
 function TradingCenter() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
   const [selectedStock, setSelectedStock] = useState('MSFT');
   const [selectedStockDisplay, setSelectedStockDisplay] = useState(null);
   const [stockInfo, setStockInfo] = useState(null);
   const [realTimePrice, setRealTimePrice] = useState(null);
   const [chartMeta, setChartMeta] = useState(null);
   const chartRef = useRef();
+  const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
 
   // Trading chat hook for flash mode conversations
-  const { messages, isLoading, error, handleSendMessage } = useTradingChat();
+  const { messages, isLoading, error, handleSendMessage: handleFastModeSend } = useTradingChat();
 
   // Cleanup: Delete flash workspaces when component unmounts (navigation away or refresh)
   useEffect(() => {
@@ -106,6 +114,43 @@ function TradingCenter() {
     }
   };
 
+  const handleSendMessage = async (message, mode) => {
+    if (mode === 'fast') {
+      // Fast mode: use current flash API behavior
+      handleFastModeSend(message);
+    } else {
+      // Deep mode: navigate to ChatAgent with initial message
+      try {
+        setIsCreatingWorkspace(true);
+        
+        // Find or create "Stealth Agent" workspace
+        const workspaceId = await findOrCreateDefaultWorkspace(
+          () => {}, // onCreating - already showing loading state
+          () => {}  // onCreated
+        );
+        
+        // Close dialog before navigation (component will unmount on navigation)
+        setIsCreatingWorkspace(false);
+        
+        // Navigate to ChatAgent with initial message
+        navigate(`/chat/${workspaceId}/__default__`, {
+          state: {
+            initialMessage: message,
+            planMode: false,
+          },
+        });
+      } catch (error) {
+        console.error('Error setting up deep mode:', error);
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'Failed to set up deep mode. Please try again.',
+        });
+        setIsCreatingWorkspace(false);
+      }
+    }
+  };
+
   return (
     <div className="trading-center-container">
       <TopBar onStockSearch={handleStockSearch} />
@@ -136,6 +181,23 @@ function TradingCenter() {
           </div>
         </div>
       </div>
+      {isCreatingWorkspace && (
+        <Dialog open={isCreatingWorkspace} onOpenChange={() => {}}>
+          <DialogContent className="sm:max-w-md text-white border" style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}>
+            <DialogHeader>
+              <DialogTitle className="dashboard-title-font" style={{ color: 'var(--color-text-primary)' }}>
+                Setting up Deep Mode
+              </DialogTitle>
+              <DialogDescription style={{ color: 'var(--color-text-secondary)' }}>
+                Please wait while we set up your workspace...
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin" style={{ color: 'var(--color-accent-primary)' }} />
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
