@@ -234,9 +234,9 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
             f"- Status: Running in background\n\n"
             f"You can:\n"
             f"- Continue with other work\n"
-            f"- Use `task_output(task_number={task_number})` to get progress or result\n"
-            f"- Use `wait(task_number={task_number})` to block until complete\n"
-            f"- Use `wait()` to wait for all background tasks"
+            f"- Use `TaskOutput(task_number={task_number})` to get progress or result\n"
+            f"- Use `Wait(task_number={task_number})` to block until complete\n"
+            f"- Use `Wait()` to wait for all background tasks"
         )
 
         return ToolMessage(

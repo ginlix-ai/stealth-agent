@@ -107,7 +107,7 @@ async def test_execute_task_hides_tools_message_chunks(session_state, monkeypatc
 
 @pytest.mark.asyncio
 async def test_execute_task_renders_background_task_panel(session_state, monkeypatch):
-    """Successful task/wait/task_output results are shown in a Panel."""
+    """Successful task/Wait/TaskOutput results are shown in a Panel."""
     mock_console = Mock()
     mock_status = Mock()
     mock_console.status.return_value = mock_status
@@ -159,8 +159,8 @@ async def test_execute_task_renders_background_task_panel(session_state, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_execute_task_renders_write_todos(session_state, monkeypatch):
-    """write_todos tool args trigger todo list rendering."""
+async def test_execute_task_renders_TodoWrite(session_state, monkeypatch):
+    """TodoWrite tool args trigger todo list rendering."""
     mock_console = Mock()
     mock_status = Mock()
     mock_console.status.return_value = mock_status
@@ -188,7 +188,7 @@ async def test_execute_task_renders_write_todos(session_state, monkeypatch):
                 {
                     "thread_id": "thread_1",
                     "agent": "ptc:main",
-                    "tool_calls": [{"id": "t1", "name": "write_todos", "args": {"todos": todos}}],
+                    "tool_calls": [{"id": "t1", "name": "TodoWrite", "args": {"todos": todos}}],
                 },
             ),
             ("done", {"thread_id": "thread_1"}),

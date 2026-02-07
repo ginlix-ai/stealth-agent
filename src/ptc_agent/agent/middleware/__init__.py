@@ -62,6 +62,11 @@ from ptc_agent.agent.middleware.dynamic_skill_loader import (
     DynamicSkillLoaderMiddleware,
 )
 
+# Large result eviction middleware
+from ptc_agent.agent.middleware.large_result_eviction import (
+    LargeResultEvictionMiddleware,
+)
+
 __all__ = [
     # Background subagent
     "BackgroundSubagentMiddleware",
@@ -92,4 +97,6 @@ __all__ = [
     "count_tokens_tiktoken",
     # Dynamic skill loader
     "DynamicSkillLoaderMiddleware",
+    # Large result eviction
+    "LargeResultEvictionMiddleware",
 ]

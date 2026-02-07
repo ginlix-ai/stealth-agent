@@ -236,28 +236,24 @@ async def _prompt_for_plan_approval(action_request: dict) -> tuple[dict, str | N
 
 # Tool display icons
 TOOL_ICONS = {
-    "read_file": "📖",
-    "write_file": "✏️",
-    "edit_file": "✂️",
     "ls": "📁",
-    "glob": "🔍",
-    "grep": "🔎",
     "shell": "⚡",
     "execute": "🔧",
-    "execute_code": "🔧",
     "Bash": "⚡",
     "Read": "📖",
     "Write": "✏️",
     "Edit": "✂️",
     "Glob": "🔍",
     "Grep": "🔎",
-    "web_search": "🌐",
+    "ExecuteCode": "🔧",
+    "WebSearch": "🌐",
+    "WebFetch": "🌍",
     "http_request": "🌍",
     "task": "🤖",
-    "wait": "⏳",
-    "task_output": "📤",
+    "Wait": "⏳",
+    "TaskOutput": "📤",
     "TodoWrite": "📋",
-    "submit_plan": "📋",
+    "SubmitPlan": "📋",
 }
 
 
@@ -322,46 +318,6 @@ async def execute_task(
 
     # Check if we're in flash mode
     flash_mode = getattr(session_state, "flash_mode", False)
-
-    # Expand @file mentions by fetching from the live sandbox via backend API.
-    # Skip in flash mode (no sandbox available).
-    if not flash_mode:
-        try:
-            from ptc_cli.input import parse_file_mentions
-
-            _text, mention_paths = parse_file_mentions(user_input)
-            if mention_paths:
-                max_total_bytes = 500_000
-                max_files = 10
-                included_blocks: list[str] = []
-                total_bytes = 0
-
-                for p in mention_paths[:max_files]:
-                    try:
-                        data = await client.read_workspace_file(path=p, offset=0, limit=20000)
-                        content = str(data.get("content") or "")
-                    except Exception:
-                        content = ""
-
-                    if not content:
-                        included_blocks.append(f"--- BEGIN FILE: {p} ---\n<could not read file>\n--- END FILE: {p} ---")
-                        continue
-
-                    encoded_len = len(content.encode("utf-8"))
-                    if total_bytes + encoded_len > max_total_bytes:
-                        included_blocks.append(
-                            f"--- BEGIN FILE: {p} ---\n<truncated: file mention budget exceeded>\n--- END FILE: {p} ---"
-                        )
-                        break
-
-                    included_blocks.append(f"--- BEGIN FILE: {p} ---\n{content}\n--- END FILE: {p} ---")
-                    total_bytes += encoded_len
-
-                if included_blocks:
-                    user_input = user_input + "\n\n" + "\n\n".join(included_blocks)
-        except Exception:
-            # Non-fatal: continue without expansion.
-            pass
 
     try:
         # Build optional kwargs for stream_chat
@@ -956,7 +912,7 @@ def _handle_tool_result(
         console.print()
         return
 
-    if tool_name in ("task", "wait", "task_output") and status == "success" and content:
+    if tool_name in ("task", "Wait", "TaskOutput") and status == "success" and content:
         state.flush_text(final=True)
         if state.spinner_active:
             state.stop_spinner()
@@ -964,8 +920,8 @@ def _handle_tool_result(
         icon = TOOL_ICONS.get(tool_name, "🔧")
         title = {
             "task": "Subagent result",
-            "wait": "Subagent results",
-            "task_output": "Task output",
+            "Wait": "Subagent results",
+            "TaskOutput": "Task output",
         }.get(tool_name, f"{tool_name} result")
 
         if tool_call_id:

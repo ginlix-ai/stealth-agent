@@ -14,7 +14,6 @@ from langchain.agents import create_agent
 
 from ptc_agent.agent.backends import DaytonaBackend
 from deepagents.middleware import (
-    FilesystemMiddleware,
     SkillsMiddleware,
     SubAgentMiddleware,
 )
@@ -40,6 +39,8 @@ from ptc_agent.agent.middleware import (
     DynamicSkillLoaderMiddleware,
     # Summarization middleware
     SummarizationMiddleware,
+    # Large result eviction middleware
+    LargeResultEvictionMiddleware,
 )
 from ptc_agent.agent.skills import SKILL_REGISTRY
 from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
@@ -282,8 +283,7 @@ class PTCAgent:
         # Start with base tools
         tools: list[Any] = [execute_code_tool, bash_tool, TodoWrite]
 
-        # Always create backend for FilesystemMiddleware
-        # (it handles ls, and provides fallback for other operations)
+        # Create backend for SkillsMiddleware and LargeResultEvictionMiddleware
         backend = DaytonaBackend(sandbox, operation_callback=operation_callback)
 
         # Create custom filesystem tools (override deepagents middleware tools)
@@ -301,7 +301,7 @@ class PTCAgent:
         tools.extend(filesystem_tools)
         logger.info(
             "Using custom filesystem tools",
-            tools=["read_file", "write_file", "edit_file", "glob", "grep"],
+            tools=["Read", "Write", "Edit", "Glob", "Grep"],
         )
 
         # Add web search tool (uses configured search engine from agent_config.yaml)
@@ -312,7 +312,7 @@ class PTCAgent:
         )
         tools.append(web_search_tool)
         tools.append(web_fetch_tool)
-        logger.info("Web tools enabled", tools=["web_search", "web_fetch"])
+        logger.info("Web tools enabled", tools=["WebSearch", "WebFetch"])
 
         # Add finance tools
         finance_tools = [
@@ -490,7 +490,7 @@ class PTCAgent:
             m
             for m in [
                 *skills_middleware,
-                FilesystemMiddleware(backend=backend),
+                LargeResultEvictionMiddleware(backend=backend),
                 *shared_middleware,
                 summarization,
                 AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
@@ -504,7 +504,7 @@ class PTCAgent:
             m
             for m in [
                 *skills_middleware,
-                FilesystemMiddleware(backend=backend),
+                LargeResultEvictionMiddleware(backend=backend),
                 SubAgentMiddleware(
                     default_model=model,
                     default_tools=tools,
