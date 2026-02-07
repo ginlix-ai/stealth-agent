@@ -1,14 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Loader2, Plus, Globe, Zap, ChevronDown, Send } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ArrowLeft, Loader2, Folder, FileText } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Input } from '../../../components/ui/input';
 import ThreadCard from './ThreadCard';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import RenameThreadModal from './RenameThreadModal';
-import { getWorkspaceThreads, getWorkspaces, deleteThread, updateThreadTitle } from '../utils/api';
+import ChatInput from './ChatInput';
+import FilePanel from './FilePanel';
+import { getWorkspaceThreads, getWorkspaces, deleteThread, updateThreadTitle, listWorkspaceFiles } from '../utils/api';
 import { DEFAULT_USER_ID } from '../utils/api';
-import { useThreadGalleryInput } from '../hooks/useThreadGalleryInput';
 import { removeStoredThreadId } from '../hooks/utils/threadStorage';
+import iconComputer from '../../../assets/img/icon-computer.svg';
+import '../../Dashboard/Dashboard.css';
 
 /**
  * ThreadGallery Component
@@ -35,20 +37,14 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
   const [renameModal, setRenameModal] = useState({ isOpen: false, thread: null });
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameError, setRenameError] = useState(null);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [showFilePanel, setShowFilePanel] = useState(false);
+  const [filePanelWidth, setFilePanelWidth] = useState(420);
+  const [files, setFiles] = useState([]);
+  const isDraggingRef = useRef(false);
   const navigate = useNavigate();
   const { threadId: currentThreadId } = useParams();
   const loadingRef = useRef(false);
-
-  // Chat input hook for creating new threads
-  const {
-    message,
-    setMessage,
-    planMode,
-    setPlanMode,
-    isLoading: isInputLoading,
-    handleSend,
-    handleKeyPress,
-  } = useThreadGalleryInput(workspaceId);
 
   // Load workspace name and threads on mount
   useEffect(() => {
@@ -72,21 +68,25 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
     try {
       setIsLoading(true);
       setError(null);
-      
-      // Load workspace name and threads in parallel
-      const [workspacesData, threadsData] = await Promise.all([
+
+      // Load workspace name, threads, and files in parallel
+      const [workspacesData, threadsData, filesData] = await Promise.all([
         getWorkspaces(DEFAULT_USER_ID).catch(() => ({ workspaces: [] })),
         getWorkspaceThreads(workspaceId, DEFAULT_USER_ID),
+        listWorkspaceFiles(workspaceId, 'results').catch(() => ({ files: [] })),
       ]);
-      
+
       // Find workspace name
       const workspace = workspacesData.workspaces?.find(
         (ws) => ws.workspace_id === workspaceId
       );
       setWorkspaceName(workspace?.name || 'Workspace');
-      
+
       // Set threads
       setThreads(threadsData.threads || []);
+
+      // Set files
+      setFiles(filesData.files || []);
     } catch (err) {
       console.error('Error loading threads:', err);
       setError('Failed to load threads. Please refresh the page.');
@@ -234,6 +234,71 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
     setRenameError(null);
   };
 
+  /**
+   * Handles sending a message from ChatInput
+   * Creates a new thread and navigates to it with the message
+   * @param {string} message - The message to send
+   * @param {boolean} planMode - Plan mode flag (not used, always false)
+   */
+  const handleSendMessage = async (message, planMode = false) => {
+    if (!message.trim() || isSendingMessage || !workspaceId) {
+      return;
+    }
+
+    setIsSendingMessage(true);
+    try {
+      // Navigate to ChatAgent page with workspace, new thread, and message in state
+      // Use '__default__' as threadId to create a new thread
+      navigate(`/chat/${workspaceId}/__default__`, {
+        state: {
+          initialMessage: message.trim(),
+          planMode: false, // Always false for simplified input
+        },
+      });
+    } catch (error) {
+      console.error('Error navigating to thread:', error);
+    } finally {
+      setIsSendingMessage(false);
+    }
+  };
+
+  /**
+   * Toggle file panel visibility
+   */
+  const handleToggleFilePanel = useCallback(() => {
+    setShowFilePanel(!showFilePanel);
+  }, [showFilePanel]);
+
+  /**
+   * Handle drag panel width
+   */
+  const handleDividerMouseDown = useCallback((e) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = filePanelWidth;
+
+    const onMouseMove = (moveEvent) => {
+      if (!isDraggingRef.current) return;
+      const delta = startX - moveEvent.clientX;
+      const newWidth = Math.max(280, Math.min(startWidth + delta, window.innerWidth * 0.6));
+      setFilePanelWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      isDraggingRef.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [filePanelWidth]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -270,13 +335,19 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
   }
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: '#1B1D25' }}>
-      {/* Header */}
-      <div
-        className="flex items-center justify-between px-6 py-4 flex-shrink-0"
-        style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}
-      >
-        <div className="flex items-center gap-4">
+    <div
+      className="h-full flex overflow-hidden"
+      style={{
+        backgroundColor: 'var(--color-bg-page)',
+        backgroundImage: 'radial-gradient(circle at center, var(--color-dot-grid) 0.75px, transparent 0.75px)',
+        backgroundSize: '18px 18px',
+        backgroundPosition: '0 0'
+      }}
+    >
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Back Button - Fixed at top left */}
+        <div className="flex-shrink-0 px-6 py-4">
           <button
             onClick={onBack}
             className="p-2 rounded-md transition-colors hover:bg-white/10"
@@ -285,111 +356,126 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <h1 className="text-lg font-semibold" style={{ color: '#FFFFFF' }}>
-            {workspaceName}
-          </h1>
         </div>
-      </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-6">
-        {threads.length === 0 ? (
-          // Empty state
-          <div className="flex flex-col items-center justify-center h-full py-12">
-            <p className="text-base font-medium mb-2" style={{ color: '#FFFFFF' }}>
-              No threads yet
-            </p>
-            <p className="text-sm mb-6 text-center max-w-md" style={{ color: '#FFFFFF', opacity: 0.65 }}>
-              Start a conversation to create your first thread
-            </p>
-          </div>
-        ) : (
-          // Thread grid
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {threads.map((thread) => (
-              <ThreadCard
-                key={thread.thread_id}
-                thread={thread}
-                onClick={() => handleThreadClick(thread)}
-                onDelete={handleDeleteClick}
-                onRename={handleRenameClick}
+        {/* Main Content - Centered with max width */}
+        <div className="flex-1 flex flex-col min-h-0 w-full px-4 overflow-auto">
+          <div className="w-full max-w-[768px] mx-auto flex flex-col gap-8">
+
+            {/* Workspace Header */}
+            <div className="w-full flex flex-col items-center mt-[8vh]">
+              <div className="flex items-center justify-center transition-colors cursor-pointer">
+                <img src={iconComputer} alt="Workspace" className="w-10 h-10" />
+              </div>
+              <h1
+                className="text-xl font-medium mt-3 text-center dashboard-title-font"
+                style={{ color: '#FFFFFF' }}
+              >
+                {workspaceName}
+              </h1>
+              <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: '#FFFFFF', opacity: 0.5 }}>
+                <span>Workspace</span>
+                <div className="size-[3px] rounded-full bg-current opacity-50"></div>
+                <span>{threads.length} {threads.length === 1 ? 'thread' : 'threads'}</span>
+              </div>
+            </div>
+
+            {/* Chat Input */}
+            <div className="w-full">
+              <ChatInput
+                onSend={handleSendMessage}
+                disabled={isSendingMessage || !workspaceId}
               />
-            ))}
-          </div>
-        )}
-      </div>
+            </div>
 
-      {/* Chat Input Bar */}
-      <div
-        className="flex-shrink-0 p-4"
-        style={{ borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}
-      >
-        <div
-          className="flex items-center gap-2 p-3 rounded-lg"
-          style={{
-            backgroundColor: 'rgba(10, 10, 10, 0.65)',
-            border: '1.5px solid hsl(var(--primary))',
-          }}
-        >
-          <button
-            className="w-9 h-9 flex items-center justify-center rounded-md transition-colors hover:bg-white/5"
-            style={{ color: '#BBBBBB' }}
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-          <Input
-            placeholder="What would you like to know?"
-            className="flex-1 h-9 rounded-md text-sm focus-visible:ring-0 focus-visible:ring-offset-0 focus:outline-none"
-            style={{
-              backgroundColor: 'transparent',
-              border: 'none',
-              color: '#BBBBBB',
-              fontSize: '14px',
-            }}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={isInputLoading || !workspaceId}
-          />
-          <div className="flex items-center gap-1">
-            <button
-              className="flex items-center gap-1.5 px-2 py-1.5 rounded-full transition-colors hover:bg-white/5"
-              style={{ color: '#BBBBBB' }}
-            >
-              <Globe className="h-4 w-4" />
-              <span className="text-sm font-medium">Agent</span>
-            </button>
-            <button
-              className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full transition-colors ${
-                planMode ? 'bg-white/100' : 'hover:bg-white/5'
-              }`}
-              style={{ color: '#BBBBBB' }}
-              onClick={() => setPlanMode(!planMode)}
-            >
-              <Zap className="h-4 w-4" />
-              <span className="text-sm font-medium">Plan Mode</span>
-            </button>
-            <button
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors hover:bg-white/5"
-              style={{ color: '#BBBBBB' }}
-            >
-              <span className="text-sm font-medium">Tool</span>
-              <ChevronDown className="h-4 w-4" />
-            </button>
-            <button
-              className="w-8 h-9 rounded-md flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                backgroundColor: (isInputLoading || !message.trim()) ? 'rgba(97, 85, 245, 0.5)' : '#6155F5',
-                color: '#FFFFFF',
-              }}
-              onClick={handleSend}
-              disabled={isInputLoading || !message.trim() || !workspaceId}
-            >
-              <Send className="h-4 w-4" />
-            </button>
+            {/* Files Card */}
+            <div className="w-full">
+              <div
+                className="flex-1 min-w-0 flex flex-col ps-[16px] pt-[12px] pb-[14px] pe-[20px] rounded-[12px] border cursor-pointer hover:bg-white/5 transition-colors"
+                style={{
+                  borderColor: 'rgba(255, 255, 255, 0.06)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.03)'
+                }}
+                onClick={handleToggleFilePanel}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <Folder className="h-4 w-4" style={{ color: '#6155F5' }} />
+                    <span className="text-sm font-medium" style={{ color: '#FFFFFF' }}>Files</span>
+                  </div>
+                  <div className="text-xs" style={{ color: '#FFFFFF', opacity: 0.5 }}>
+                    {showFilePanel ? 'Close' : 'View all'}
+                  </div>
+                </div>
+                {/* Show first two file names */}
+                {files.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    {files.slice(0, 2).map((filePath, index) => {
+                      const fileName = filePath.split('/').pop();
+                      return (
+                        <div key={index} className="flex items-center gap-2 text-[13px]" style={{ color: '#FFFFFF', opacity: 0.7 }}>
+                          <FileText className="h-3.5 w-3.5 flex-shrink-0" />
+                          <span className="truncate">{fileName}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Threads Section */}
+            <div className="w-full flex flex-col gap-4 pb-8">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-medium" style={{ color: '#FFFFFF' }}>
+                  Tasks
+                </h2>
+              </div>
+
+              {threads.length === 0 ? (
+                // Empty state
+                <div className="flex flex-col items-center justify-center py-12">
+                  <p className="text-sm mb-2" style={{ color: '#FFFFFF', opacity: 0.65 }}>
+                    No threads yet
+                  </p>
+                  <p className="text-xs text-center max-w-md" style={{ color: '#FFFFFF', opacity: 0.45 }}>
+                    Start a conversation to create your first thread
+                  </p>
+                </div>
+              ) : (
+                // Thread list
+                <div className="flex flex-col gap-2">
+                  {threads.map((thread) => (
+                    <ThreadCard
+                      key={thread.thread_id}
+                      thread={thread}
+                      onClick={() => handleThreadClick(thread)}
+                      onDelete={handleDeleteClick}
+                      onRename={handleRenameClick}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Right Side: File Panel */}
+      {showFilePanel && (
+        <>
+          <div
+            className="w-[4px] bg-transparent hover:bg-white/20 cursor-col-resize flex-shrink-0 transition-colors"
+            onMouseDown={handleDividerMouseDown}
+          />
+          <div className="flex-shrink-0" style={{ width: filePanelWidth }}>
+            <FilePanel
+              workspaceId={workspaceId}
+              onClose={() => setShowFilePanel(false)}
+            />
+          </div>
+        </>
+      )}
 
       {/* Delete Confirmation Modal */}
       <DeleteConfirmModal

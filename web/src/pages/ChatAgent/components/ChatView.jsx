@@ -13,6 +13,7 @@ import MessageList from './MessageList';
 import TodoListCardContent from './TodoListCardContent';
 import AgentPanel from './AgentPanel';
 import TodoDrawer from './TodoDrawer';
+import '../../Dashboard/Dashboard.css';
 
 /**
  * ChatView Component
@@ -160,14 +161,29 @@ function ChatView({ workspaceId, threadId, onBack }) {
     if (selectedAgentId === agentId) {
       const remainingAgents = agents.filter(a => a.id !== agentId);
       if (remainingAgents.length > 0) {
-        // Select the first remaining agent
+        // Select the first remaining agent and keep agent panel open
         setSelectedAgentId(remainingAgents[0].id);
+        setRightPanelType('agent');
       } else {
-        // No more agents, clear selection
+        // No more agents, clear selection but don't close panel immediately
         setSelectedAgentId(null);
       }
     }
   }, [selectedAgentId, agents, handleCardMinimize]);
+
+  // Auto-open agent panel when a new agent starts working
+  useEffect(() => {
+    if (agents.length > 0) {
+      // If there are agents but panel is not open, open it
+      if (rightPanelType !== 'agent') {
+        setRightPanelType('agent');
+      }
+      // If no agent is selected, select the first one
+      if (!selectedAgentId) {
+        setSelectedAgentId(agents[0].id);
+      }
+    }
+  }, [agents.length]); // Only trigger when the number of agents changes
 
   // Update URL when thread ID changes (e.g., when __default__ becomes actual thread ID)
   // This triggers a re-render with the new threadId, which will then load history
@@ -265,7 +281,12 @@ function ChatView({ workspaceId, threadId, onBack }) {
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#0D0E12]">
+    <div
+      className="flex h-screen w-full overflow-hidden"
+      style={{
+        backgroundColor: 'var(--color-bg-page)',
+      }}
+    >
       {/* Left Side: Topbar + Chat Window (Vertical) */}
       <div className="flex flex-col flex-1 min-w-0">
         {/* Top bar */}
@@ -279,7 +300,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <h1 className="text-lg font-semibold whitespace-nowrap" style={{ color: '#FFFFFF' }}>
+            <h1 className="text-lg font-semibold whitespace-nowrap dashboard-title-font" style={{ color: '#FFFFFF' }}>
               Chat Agent
             </h1>
             {isLoadingHistory && (
@@ -412,7 +433,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
                 onTargetFileHandled={() => setFilePanelTargetFile(null)}
               />
             ) : rightPanelType === 'agent' ? (
-              <div className="h-full p-4" style={{ backgroundColor: '#0D0E12' }}>
+              <div className="h-full p-4" style={{ backgroundColor: 'transparent', borderLeft: '1px solid rgba(255, 255, 255, 0.1)' }}>
                 <AgentPanel
                   agents={agents}
                   selectedAgentId={selectedAgentId}
@@ -428,7 +449,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
 
       {/* Floating Cards - Only for non-agent cards */}
       {Object.entries(floatingCards)
-        .filter(([cardId]) => !cardId.startsWith('subagent-'))
+        .filter(([cardId]) => !cardId.startsWith('subagent-') && cardId !== 'todo-list-card')
         .map(([cardId, card]) => (
           <FloatingCard
             key={cardId}

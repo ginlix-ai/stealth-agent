@@ -122,16 +122,16 @@ function TradingCenter() {
       // Deep mode: navigate to ChatAgent with initial message
       try {
         setIsCreatingWorkspace(true);
-        
+
         // Find or create "Stealth Agent" workspace
         const workspaceId = await findOrCreateDefaultWorkspace(
           () => {}, // onCreating - already showing loading state
           () => {}  // onCreated
         );
-        
+
         // Close dialog before navigation (component will unmount on navigation)
         setIsCreatingWorkspace(false);
-        
+
         // Navigate to ChatAgent with initial message
         navigate(`/chat/${workspaceId}/__default__`, {
           state: {

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Bot, X } from 'lucide-react';
 import { cn } from '../../../lib/utils';
+import iconRobo from '../../../assets/img/icon-robo.svg';
 
 /**
  * AgentTabBar Component
@@ -42,10 +43,14 @@ function AgentTabBar({ agents, selectedAgentId, onSelectAgent, onRemoveAgent }) 
                 "w-8 h-8 rounded-lg flex items-center justify-center",
                 isSelected ? "bg-[#6155F5]/20" : "bg-white/10"
               )}>
-                <Bot className={cn(
-                  "h-4 w-4",
-                  isSelected ? "text-[#6155F5]" : "text-white/50"
-                )} />
+                <img
+                  src={iconRobo}
+                  alt="Agent"
+                  className="h-4 w-4"
+                  style={{
+                    filter: isSelected ? 'brightness(0) saturate(100%) invert(44%) sepia(71%) saturate(3645%) hue-rotate(229deg) brightness(98%) contrast(92%)' : 'brightness(0) saturate(100%) invert(100%) opacity(50%)'
+                  }}
+                />
               </div>
 
               {/* 编号 + 类型 */}

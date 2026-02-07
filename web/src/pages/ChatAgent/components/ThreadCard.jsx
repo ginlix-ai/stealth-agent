@@ -32,76 +32,61 @@ function ThreadCard({ thread, onClick, onDelete, onRename }) {
   };
   return (
     <div
-      className="relative cursor-pointer transition-all hover:scale-105"
+      className="group relative cursor-pointer transition-colors rounded-lg px-4 py-3 flex items-center gap-3 hover:bg-white/5"
       onClick={onClick}
       style={{
-        backgroundColor: 'rgba(10, 10, 10, 0.65)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        borderRadius: '8px',
-        padding: '20px',
-        minHeight: '120px',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
       }}
     >
-      {/* Action icons */}
+      {/* Thread icon/indicator */}
+      <div
+        className="w-2 h-2 rounded-full flex-shrink-0"
+        style={{
+          backgroundColor: thread.current_status === 'completed'
+            ? '#0FEDBE'
+            : thread.current_status === 'running'
+            ? '#6155F5'
+            : 'rgba(255, 255, 255, 0.3)',
+        }}
+      />
+
+      {/* Thread title and info */}
+      <div className="flex-1 min-w-0">
+        <h3 className="text-sm font-normal truncate" style={{ color: '#FFFFFF' }}>
+          {thread.title || `Thread ${thread.thread_index !== undefined ? thread.thread_index + 1 : ''}`}
+        </h3>
+        {thread.updated_at && (
+          <p className="text-xs mt-0.5" style={{ color: '#FFFFFF', opacity: 0.4 }}>
+            {new Date(thread.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          </p>
+        )}
+      </div>
+
+      {/* Action icons - Show on hover */}
       {(onRename || onDelete) && (
-        <div className="absolute top-3 right-3 flex items-center gap-1">
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           {/* Edit/Rename icon */}
           {onRename && (
             <button
               onClick={handleRenameClick}
-              className="p-1.5 rounded-full transition-colors hover:bg-white/10"
-              style={{ color: '#6155F5' }}
+              className="p-1.5 rounded-md transition-colors hover:bg-white/10"
+              style={{ color: '#FFFFFF', opacity: 0.5 }}
               title="Rename thread"
             >
-              <Edit2 className="h-4 w-4" />
+              <Edit2 className="h-3.5 w-3.5" />
             </button>
           )}
           {/* Delete icon */}
           {onDelete && (
             <button
               onClick={handleDeleteClick}
-              className="p-1.5 rounded-full transition-colors hover:bg-red-500/20"
+              className="p-1.5 rounded-md transition-colors hover:bg-red-500/20"
               style={{ color: '#FF383C' }}
               title="Delete thread"
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="h-3.5 w-3.5" />
             </button>
           )}
-        </div>
-      )}
-
-      {/* Thread title or index */}
-      <h3 className={`text-lg font-semibold ${(onRename || onDelete) ? 'pr-20' : 'pr-4'}`} style={{ color: '#FFFFFF' }}>
-        {thread.title || `Thread ${thread.thread_index !== undefined ? thread.thread_index + 1 : ''}`}
-      </h3>
-
-      {/* Status badge */}
-      {thread.current_status && (
-        <div
-          className="mt-3 inline-block px-2 py-1 rounded text-xs font-medium"
-          style={{
-            backgroundColor: thread.current_status === 'completed' 
-              ? 'rgba(15, 237, 190, 0.2)' 
-              : thread.current_status === 'running'
-              ? 'rgba(97, 85, 245, 0.2)'
-              : 'rgba(255, 255, 255, 0.1)',
-            color: thread.current_status === 'completed' 
-              ? '#0FEDBE' 
-              : thread.current_status === 'running'
-              ? '#6155F5'
-              : '#999999',
-          }}
-        >
-          {thread.current_status}
-        </div>
-      )}
-
-      {/* Timestamp info */}
-      {thread.updated_at && (
-        <div className="mt-2">
-          <p className="text-xs" style={{ color: '#FFFFFF', opacity: 0.5 }}>
-            Updated: {new Date(thread.updated_at).toLocaleDateString()}
-          </p>
         </div>
       )}
     </div>

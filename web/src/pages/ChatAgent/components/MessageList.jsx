@@ -4,6 +4,7 @@ import SubagentTaskMessageContent from './SubagentTaskMessageContent';
 import TextMessageContent from './TextMessageContent';
 import ToolCallMessageContent from './ToolCallMessageContent';
 import TodoListMessageContent from './TodoListMessageContent';
+import logo from '../../../assets/img/logo.svg';
 
 /**
  * MessageList Component
@@ -53,18 +54,15 @@ function MessageBubble({ message, onOpenSubagentTask, onOpenFile }) {
     >
       {/* Assistant avatar - shown on the left */}
       {isAssistant && (
-        <div
-          className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
-          style={{ backgroundColor: 'rgba(97, 85, 245, 0.2)' }}
-        >
-          <Bot className="h-4 w-4" style={{ color: '#6155F5' }} />
+        <div className="flex-shrink-0 mt-2 w-8 h-8 flex items-center justify-center">
+          <img src={logo} alt="Assistant" className="w-8 h-8" />
         </div>
       )}
 
       {/* Message bubble */}
       <div
-        className={`${isUser ? 'max-w-[80%]' : 'w-full min-w-0'} rounded-lg px-4 ${
-          isUser ? 'py-3 rounded-tr-none' : 'pb-3 rounded-tl-none'
+        className={`${isUser ? 'max-w-[80%]' : 'w-full min-w-0'} rounded-lg ${
+          isUser ? 'px-4 py-3 rounded-tr-none' : 'pl-0 pr-0 pb-3 rounded-tl-none'
         } overflow-hidden`}
         style={{
           backgroundColor: isUser

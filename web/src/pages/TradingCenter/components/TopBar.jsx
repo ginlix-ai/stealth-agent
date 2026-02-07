@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search } from 'lucide-react';
 import { searchStocks } from '../utils/api';
 import './TopBar.css';
+import '../../Dashboard/Dashboard.css';
 
 const TopBar = ({ onStockSearch }) => {
   const [searchValue, setSearchValue] = useState('');
@@ -68,7 +69,7 @@ const TopBar = ({ onStockSearch }) => {
   return (
     <div className="trading-top-bar">
       <div className="trading-top-bar-left">
-        <h1 className="trading-top-bar-title">Trade</h1>
+        <h1 className="trading-top-bar-title dashboard-title-font">Trade</h1>
         <div className="trading-search-wrapper" ref={dropdownRef}>
           <form onSubmit={handleSubmit} className="trading-search-form">
             <Search className="trading-search-icon" size={18} />
