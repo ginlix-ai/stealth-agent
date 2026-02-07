@@ -67,6 +67,7 @@ let onboardingCheckedThisSession = false;
 // Module-level caches (survive navigation, clear on page refresh)
 let popularCache = null; // { items, hasMore, offset }
 let newsCache = null;    // { items }
+let researchCache = null; // { items }
 
 function formatRelativeTime(timestamp) {
   if (!timestamp) return '';
@@ -102,6 +103,9 @@ function Dashboard() {
   const [newsItems, setNewsItems] = useState(() => newsCache?.items || NEWS_ITEMS);
   const [newsLoading, setNewsLoading] = useState(!newsCache);
 
+  const [researchItems, setResearchItems] = useState(() => researchCache?.items || RESEARCH_ITEMS);
+  const [researchLoading, setResearchLoading] = useState(!researchCache);
+
   const fetchNews = useCallback(async () => {
     setNewsLoading(true);
     try {
@@ -122,6 +126,29 @@ function Dashboard() {
       setNewsItems(NEWS_ITEMS);
     } finally {
       setNewsLoading(false);
+    }
+  }, []);
+
+  const fetchResearch = useCallback(async () => {
+    setResearchLoading(true);
+    try {
+      const data = await getInfoFlowResults('industry', 50, 0);
+      if (data.results && data.results.length > 0) {
+        const mapped = data.results.map((r) => ({
+          indexNumber: r.indexNumber,
+          title: r.title,
+          time: formatRelativeTime(r.event_timestamp),
+          image: r.images?.[0]?.url || r.images?.[0] || null,
+        }));
+        setResearchItems(mapped);
+        researchCache = { items: mapped };
+      } else {
+        setResearchItems(RESEARCH_ITEMS);
+      }
+    } catch {
+      setResearchItems(RESEARCH_ITEMS);
+    } finally {
+      setResearchLoading(false);
     }
   }, []);
 
@@ -166,7 +193,8 @@ function Dashboard() {
   useEffect(() => {
     if (!popularCache) fetchPopular(0, false);
     if (!newsCache) fetchNews();
-  }, [fetchPopular, fetchNews]);
+    if (!researchCache) fetchResearch();
+  }, [fetchPopular, fetchNews, fetchResearch]);
 
   const fetchIndices = useCallback(async () => {
     setIndicesLoading(true);
@@ -658,7 +686,7 @@ function Dashboard() {
                 <PopularCard items={popularItems} loading={popularLoading} hasMore={popularHasMore} onLoadMore={loadMorePopular} />
                 <div className="w-full grid grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
                   <TopNewsCard items={newsItems} loading={newsLoading} />
-                  <TopResearchCard items={RESEARCH_ITEMS} />
+                  <TopResearchCard items={researchItems} loading={researchLoading} />
                 </div>
                 <ChatInputCard />
               </div>
