@@ -4,6 +4,15 @@
  */
 
 /**
+ * Helper to check if an event is from a subagent
+ * @param {Object} event - The history event
+ * @returns {boolean} True if event is from subagent
+ */
+export function isSubagentHistoryEvent(event) {
+  return event.agent && typeof event.agent === 'string' && event.agent.startsWith('tools:');
+}
+
+/**
  * Handles user_message events from history replay
  * @param {Object} params - Handler parameters
  * @param {Object} params.event - The history event
@@ -322,7 +331,9 @@ export function handleHistoryToolCalls({ assistantMessageId, toolCalls, pairStat
 
           const toolCallProcesses = { ...(msg.toolCallProcesses || {}) };
           const contentSegments = [...(msg.contentSegments || [])];
+          const subagentTasks = { ...(msg.subagentTasks || {}) };
 
+          // Standard tool_call segment/process
           if (!toolCallProcesses[toolCallId]) {
             contentSegments.push({
               type: 'tool_call',
@@ -346,10 +357,37 @@ export function handleHistoryToolCalls({ assistantMessageId, toolCalls, pairStat
             };
           }
 
+          // If this tool is the `task` tool, also create a subagent_task segment
+          if (toolCall.name === 'task') {
+            const subagentId = toolCallId;
+            // Only add the segment once per subagentId
+            const hasExistingSubagentSegment = contentSegments.some(
+              (s) => s.type === 'subagent_task' && s.subagentId === subagentId
+            );
+
+            if (!hasExistingSubagentSegment) {
+              contentSegments.push({
+                type: 'subagent_task',
+                subagentId,
+                order: currentOrder,
+              });
+            }
+
+            // Initialize or update subagent task metadata
+            subagentTasks[subagentId] = {
+              ...(subagentTasks[subagentId] || {}),
+              subagentId,
+              description: toolCall.args?.description || '',
+              type: toolCall.args?.subagent_type || 'general-purpose',
+              status: 'running',
+            };
+          }
+
           return {
             ...msg,
             contentSegments,
             toolCallProcesses,
+            subagentTasks,
           };
         })
       );
@@ -379,6 +417,12 @@ export function handleHistoryToolCallResult({ assistantMessageId, toolCallId, re
       if (msg.id !== assistantMessageId) return msg;
 
       const toolCallProcesses = { ...(msg.toolCallProcesses || {}) };
+      const subagentTasks = { ...(msg.subagentTasks || {}) };
+
+      // Detect if tool call failed by checking result content
+      const resultContent = result.content || '';
+      const isFailed = /failed|error|Error|ERROR|exception|Exception|failed:|error:/i.test(resultContent);
+
       if (toolCallProcesses[toolCallId]) {
         toolCallProcesses[toolCallId] = {
           ...toolCallProcesses[toolCallId],
@@ -389,6 +433,7 @@ export function handleHistoryToolCallResult({ assistantMessageId, toolCallId, re
           },
           isInProgress: false,
           isComplete: true,
+          isFailed: isFailed, // Track if tool call failed
         };
       } else {
         // Edge case: tool call process doesn't exist, create it
@@ -414,6 +459,7 @@ export function handleHistoryToolCallResult({ assistantMessageId, toolCallId, re
           },
           isInProgress: false,
           isComplete: true,
+          isFailed: isFailed, // Track if tool call failed
           order: currentOrder,
         };
 
@@ -421,12 +467,23 @@ export function handleHistoryToolCallResult({ assistantMessageId, toolCallId, re
           ...msg,
           contentSegments,
           toolCallProcesses,
+          subagentTasks,
+        };
+      }
+
+      // If this toolCallId is associated with a subagent task, mark it as completed
+      if (subagentTasks[toolCallId]) {
+        subagentTasks[toolCallId] = {
+          ...subagentTasks[toolCallId],
+          status: 'completed',
+          result: result.content,
         };
       }
 
       return {
         ...msg,
         toolCallProcesses,
+        subagentTasks,
       };
     })
   );
