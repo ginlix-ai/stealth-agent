@@ -6,6 +6,7 @@ import DeleteConfirmModal from './DeleteConfirmModal';
 import RenameThreadModal from './RenameThreadModal';
 import ChatInput from './ChatInput';
 import FilePanel from './FilePanel';
+import { getAuthUserId } from '@/api/client';
 import { getWorkspaceThreads, getWorkspaces, deleteThread, updateThreadTitle, listWorkspaceFiles } from '../utils/api';
 import { DEFAULT_USER_ID } from '../utils/api';
 import { removeStoredThreadId } from '../hooks/utils/threadStorage';
@@ -70,9 +71,10 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
       setError(null);
 
       // Load workspace name, threads, and files in parallel
+      const userId = getAuthUserId() || DEFAULT_USER_ID;
       const [workspacesData, threadsData, filesData] = await Promise.all([
-        getWorkspaces(DEFAULT_USER_ID).catch(() => ({ workspaces: [] })),
-        getWorkspaceThreads(workspaceId, DEFAULT_USER_ID),
+        getWorkspaces(userId).catch(() => ({ workspaces: [] })),
+        getWorkspaceThreads(workspaceId, userId),
         listWorkspaceFiles(workspaceId, 'results').catch(() => ({ files: [] })),
       ]);
 
@@ -133,7 +135,8 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
     setDeleteError(null);
 
     try {
-      await deleteThread(threadId);
+      const userId = getAuthUserId() || DEFAULT_USER_ID;
+      await deleteThread(threadId, userId);
 
       // Clean up localStorage: remove thread ID for deleted thread
       if (workspaceId) {
@@ -203,7 +206,8 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
     setRenameError(null);
 
     try {
-      const updatedThread = await updateThreadTitle(threadId, newTitle);
+      const userId = getAuthUserId() || DEFAULT_USER_ID;
+      const updatedThread = await updateThreadTitle(threadId, newTitle, userId);
 
       // Update thread in list
       setThreads((prev) =>

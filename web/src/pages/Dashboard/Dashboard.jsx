@@ -1,3 +1,4 @@
+import { getAuthUserId } from '@/api/client';
 import {
   DEFAULT_USER_ID,
   DEFAULT_WATCHLIST_NAMES,
@@ -265,7 +266,8 @@ function Dashboard() {
   useEffect(() => {
     const checkOnboarding = async () => {
       try {
-        const userData = await getCurrentUser(DEFAULT_USER_ID);
+        const userId = getAuthUserId() || DEFAULT_USER_ID;
+        const userData = await getCurrentUser(userId);
         const onboardingCompleted = userData?.user?.onboarding_completed;
         
         if (onboardingCompleted === true) {

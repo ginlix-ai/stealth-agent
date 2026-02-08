@@ -2,7 +2,7 @@
  * ChatAgent API utilities
  * All backend endpoints used by the ChatAgent page
  */
-import { api, headers, DEFAULT_USER_ID } from '@/api/client';
+import { api, headers, getAuthUserId, DEFAULT_USER_ID } from '@/api/client';
 
 export { DEFAULT_USER_ID };
 
@@ -194,7 +194,7 @@ export async function sendChatMessageStream(
 export async function listWorkspaceFiles(workspaceId, dirPath = 'results') {
   const { data } = await api.get(`/api/v1/workspaces/${workspaceId}/files`, {
     params: { path: dirPath, include_system: false },
-    headers: { 'X-User-Id': DEFAULT_USER_ID },
+    headers: headers(getAuthUserId() || DEFAULT_USER_ID),
   });
   return data; // { workspace_id, path, files: [...] }
 }
@@ -207,7 +207,7 @@ export async function listWorkspaceFiles(workspaceId, dirPath = 'results') {
 export async function readWorkspaceFile(workspaceId, filePath) {
   const { data } = await api.get(`/api/v1/workspaces/${workspaceId}/files/read`, {
     params: { path: filePath },
-    headers: { 'X-User-Id': DEFAULT_USER_ID },
+    headers: headers(getAuthUserId() || DEFAULT_USER_ID),
   });
   return data; // { workspace_id, path, content, mime, truncated }
 }
@@ -221,7 +221,7 @@ export async function readWorkspaceFile(workspaceId, filePath) {
 export async function downloadWorkspaceFile(workspaceId, filePath) {
   const response = await api.get(`/api/v1/workspaces/${workspaceId}/files/download`, {
     params: { path: filePath },
-    headers: { 'X-User-Id': DEFAULT_USER_ID },
+    headers: headers(getAuthUserId() || DEFAULT_USER_ID),
     responseType: 'blob',
   });
   return URL.createObjectURL(response.data);

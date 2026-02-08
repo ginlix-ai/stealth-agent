@@ -7,6 +7,8 @@ import StockHeader from './components/StockHeader';
 import TradingChart from './components/TradingChart';
 import TradingChatInput from './components/TradingChatInput';
 import TradingPanel from './components/TradingPanel';
+import { getAuthUserId } from '@/api/client';
+import { DEFAULT_USER_ID } from '@/api/client';
 import { fetchRealTimePrice, fetchStockInfo } from './utils/api';
 import { useTradingChat } from './hooks/useTradingChat';
 import { deleteFlashWorkspaces } from './utils/api';
@@ -26,8 +28,8 @@ function TradingCenter() {
   const chartRef = useRef();
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
 
-  // Trading chat hook for flash mode conversations
-  const { messages, isLoading, error, handleSendMessage: handleFastModeSend } = useTradingChat();
+  const userId = getAuthUserId() || DEFAULT_USER_ID;
+  const { messages, isLoading, error, handleSendMessage: handleFastModeSend } = useTradingChat(userId);
 
   // Handle URL parameter symbol (for navigation from Dashboard search)
   useEffect(() => {
@@ -47,12 +49,11 @@ function TradingCenter() {
   // Cleanup: Delete flash workspaces when component unmounts (navigation away or refresh)
   useEffect(() => {
     return () => {
-      // Delete all flash workspaces on unmount
-      deleteFlashWorkspaces('test_user_001').catch((err) => {
+      deleteFlashWorkspaces(userId).catch((err) => {
         console.warn('[TradingCenter] Error deleting flash workspaces on unmount:', err);
       });
     };
-  }, []);
+  }, [userId]);
 
   const handleStockSearch = (symbol, searchResult) => {
     setSelectedStock(symbol);

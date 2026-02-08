@@ -14,6 +14,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
+import { getAuthUserId } from '@/api/client';
 import { sendChatMessageStream, replayThreadHistory, DEFAULT_USER_ID } from '../utils/api';
 import { getStoredThreadId, setStoredThreadId } from './utils/threadStorage';
 export { removeStoredThreadId } from './utils/threadStorage';
@@ -1374,7 +1375,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             }
           }
         },
-        DEFAULT_USER_ID,
+        getAuthUserId() || DEFAULT_USER_ID,
         additionalContext
       );
 
