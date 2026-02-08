@@ -31,7 +31,6 @@ src/
 ├── pages/
 │   ├── Dashboard/        # Dashboard page
 │   ├── ChatAgent/        # Chat Agent page
-│   ├── PersonalHome/     # Personal Home page
 │   └── TradingCenter/    # Trading Center page
 ├── App.jsx               # Main app component
 └── main.jsx              # Application entry point
@@ -90,7 +89,6 @@ npm run preview
 - `/` - Redirects to `/dashboard`
 - `/dashboard` - Dashboard page
 - `/chat` - Chat Agent page
-- `/home` - Personal Home page
 - `/trading` - Trading Center page
 
 ## Navigation
