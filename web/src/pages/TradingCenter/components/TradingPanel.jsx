@@ -1,7 +1,6 @@
 import React, { useRef, useEffect } from 'react';
-import { Bot, User, Loader2 } from 'lucide-react';
-import TextMessageContent from '../../ChatAgent/components/TextMessageContent';
-import ReasoningMessageContent from '../../ChatAgent/components/ReasoningMessageContent';
+import { Bot, Loader2, User } from 'lucide-react';
+import MessageList from '../../ChatAgent/components/MessageList';
 import './TradingPanel.css';
 
 /**
@@ -56,31 +55,27 @@ const TradingPanel = ({ messages = [], isLoading = false, error = null }) => {
 
   return (
     <div className="trading-panel">
-      {/* Chat Messages Section */}
-      <div className="trading-chat-messages">
-        <div className="trading-chat-messages-header">
-          <h3>Chat</h3>
-        </div>
-        <div 
-          ref={messagesContainerRef}
-          className="trading-chat-messages-content"
-        >
-          {messages.length === 0 ? (
-            <div className="trading-chat-empty-state">
-              <Bot className="trading-chat-empty-icon" />
-              <p className="trading-chat-empty-text">Start a conversation by typing a message above</p>
-            </div>
-          ) : (
-            <div className="trading-chat-messages-list">
-              {messages.map((message) => (
-                <TradingMessageBubble key={message.id} message={message} />
-              ))}
-              {error && (
-                <div className="trading-chat-error">
-                  <span>Error: {error}</span>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
+      <div 
+        ref={messagesContainerRef}
+        style={{ 
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+        }}
+      >
+        <div style={{ padding: '16px 24px', maxWidth: '100%' }}>
+          <MessageList 
+            messages={messages.map(msg => ({
+              ...msg,
+              error: error && msg.id === messages[messages.length - 1]?.id ? error : msg.error
+            }))} 
+            onOpenSubagentTask={() => {}}
+            onOpenFile={() => {}}
+          />
+          {error && messages.length === 0 && (
+            <div style={{ color: '#ef4444', padding: '12px', fontSize: '14px' }}>
+              Error: {error}
             </div>
           )}
         </div>
@@ -88,125 +83,5 @@ const TradingPanel = ({ messages = [], isLoading = false, error = null }) => {
     </div>
   );
 };
-
-/**
- * TradingMessageBubble Component
- * Renders a single message bubble
- */
-function TradingMessageBubble({ message }) {
-  const isUser = message.role === 'user';
-  const isAssistant = message.role === 'assistant';
-
-  return (
-    <div className={`trading-message-bubble ${isUser ? 'trading-message-user' : 'trading-message-assistant'}`}>
-      {isAssistant && (
-        <div className="trading-message-avatar">
-          <Bot className="trading-message-avatar-icon" />
-        </div>
-      )}
-      <div className={`trading-message-content ${message.error ? 'trading-message-error' : ''}`}>
-        {message.error ? (
-          <div className="trading-message-error-text">
-            <strong>Error:</strong> {message.error}
-          </div>
-        ) : (
-          <>
-            {message.contentSegments && message.contentSegments.length > 0 ? (
-              <TradingMessageContentSegments
-                segments={message.contentSegments}
-                reasoningProcesses={message.reasoningProcesses || {}}
-                isStreaming={message.isStreaming}
-                hasError={message.error}
-              />
-            ) : (
-              <>
-                <TextMessageContent
-                  content={message.content || ''}
-                  isStreaming={message.isStreaming}
-                  hasError={message.error}
-                />
-                {message.isStreaming && (
-                  <Loader2 className="trading-message-streaming-icon" />
-                )}
-              </>
-            )}
-          </>
-        )}
-      </div>
-      {isUser && (
-        <div className="trading-message-avatar">
-          <User className="trading-message-avatar-icon" />
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * TradingMessageContentSegments Component
- * Renders content segments in chronological order
- */
-function TradingMessageContentSegments({ segments, reasoningProcesses, isStreaming, hasError }) {
-  const sortedSegments = [...segments].sort((a, b) => a.order - b.order);
-  
-  // Group consecutive text segments
-  const groupedSegments = [];
-  let currentTextGroup = null;
-  
-  for (const segment of sortedSegments) {
-    if (segment.type === 'text') {
-      if (currentTextGroup) {
-        currentTextGroup.content += segment.content;
-        currentTextGroup.lastOrder = segment.order;
-      } else {
-        currentTextGroup = {
-          type: 'text',
-          content: segment.content,
-          order: segment.order,
-          lastOrder: segment.order,
-        };
-        groupedSegments.push(currentTextGroup);
-      }
-    } else {
-      currentTextGroup = null;
-      groupedSegments.push(segment);
-    }
-  }
-  
-  return (
-    <div className="trading-message-segments">
-      {groupedSegments.map((segment, index) => {
-        if (segment.type === 'text') {
-          const isLastSegment = index === groupedSegments.length - 1;
-          return (
-            <div key={`text-${segment.order}-${index}`}>
-              <TextMessageContent
-                content={segment.content}
-                isStreaming={isStreaming && isLastSegment}
-                hasError={hasError}
-              />
-            </div>
-          );
-        } else if (segment.type === 'reasoning') {
-          const reasoningProcess = reasoningProcesses[segment.reasoningId];
-          if (reasoningProcess) {
-            return (
-              <ReasoningMessageContent
-                key={`reasoning-${segment.reasoningId}`}
-                reasoningContent={reasoningProcess.content || ''}
-                isReasoning={reasoningProcess.isReasoning || false}
-                reasoningComplete={reasoningProcess.reasoningComplete || false}
-              />
-            );
-          }
-        }
-        return null;
-      })}
-      {isStreaming && (
-        <Loader2 className="trading-message-streaming-icon" />
-      )}
-    </div>
-  );
-}
 
 export default TradingPanel;

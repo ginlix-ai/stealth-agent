@@ -73,12 +73,20 @@ function TodoListCardContent({ todos, total, completed, in_progress, pending }) 
   return (
     <div className="space-y-3">
       {/* Header with icon and summary */}
-      <div className="flex items-center gap-2 pb-2" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-        <ListTodo className="h-4 w-4" style={{ color: '#6155F5' }} />
-        <span className="text-sm font-semibold" style={{ color: '#FFFFFF' }}>
-          Todo List
-        </span>
-        <span className="text-xs ml-auto" style={{ color: '#FFFFFF', opacity: 0.6 }}>
+      <div 
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors" 
+        style={{ 
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <ListTodo className="h-4 w-4" style={{ color: '#6155F5' }} />
+          <span className="text-sm font-semibold" style={{ color: '#FFFFFF' }}>
+            Todo List
+          </span>
+        </div>
+        <span className="text-xs" style={{ color: '#FFFFFF', opacity: 0.6 }}>
           {completed}/{total} completed
         </span>
       </div>

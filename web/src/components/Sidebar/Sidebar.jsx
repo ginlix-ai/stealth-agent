@@ -1,6 +1,7 @@
-import { LayoutDashboard, MessageSquareText, ShoppingCart, User } from 'lucide-react';
+import { LayoutDashboard, MessageSquareText, ShoppingCart } from 'lucide-react';
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import logo from '../../assets/img/logo.svg';
 import './Sidebar.css';
 
 function Sidebar() {
@@ -19,11 +20,6 @@ function Sidebar() {
       label: 'Chat Agent',
     },
     {
-      key: '/home',
-      icon: User,
-      label: 'Personal Home',
-    },
-    {
       key: '/trading',
       icon: ShoppingCart,
       label: 'Trading Center',
@@ -36,9 +32,9 @@ function Sidebar() {
 
   return (
     <aside className="sidebar">
-      {/* Logo Placeholder */}
-      <div className="sidebar-logo">
-        <div className="sidebar-logo-gradient"></div>
+      {/* Logo */}
+      <div className="sidebar-logo" onClick={() => navigate('/dashboard')} style={{ cursor: 'pointer' }}>
+        <img src={logo} alt="Logo" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
       </div>
 
       {/* Navigation Items */}

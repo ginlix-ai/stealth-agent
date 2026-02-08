@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Wrench, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, Wrench } from 'lucide-react';
+import { useState } from 'react';
 
 // File-related tool names that support opening in the file panel
 const FILE_TOOLS = ['write_file', 'edit_file', 'read_file', 'save_file'];
@@ -69,31 +69,43 @@ function ToolCallMessageContent({
       {/* Tool call indicator button */}
       <button
         onClick={handleToggle}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors hover:bg-white/10"
+        className="transition-colors hover:bg-white/10"
         style={{
+          boxSizing: 'border-box',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          fontSize: '14px',
+          lineHeight: '20px',
+          color: isFailed ? '#FF383C' : 'var(--Labels-Secondary)',
+          padding: '4px 12px',
+          borderRadius: '6px',
           backgroundColor: isInProgress 
             ? 'rgba(97, 85, 245, 0.15)' 
-            : 'rgba(255, 255, 255, 0.05)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+            : 'transparent',
+          border: isInProgress 
+            ? '1px solid rgba(255, 255, 255, 0.1)' 
+            : 'none',
+          width: '100%',
         }}
         title={isInProgress ? 'Tool call in progress...' : 'View tool call details'}
       >
         {/* Icon: Wrench with loading spinner when active, static wrench when complete/failed */}
-        <div className="relative">
+        <div className="relative flex-shrink-0">
           <Wrench 
             className="h-4 w-4" 
-            style={{ color: isFailed ? '#FF383C' : '#6155F5' }} 
+            style={{ color: isFailed ? '#FF383C' : 'var(--Labels-Secondary)' }} 
           />
           {isInProgress && (
             <Loader2 
               className="h-3 w-3 absolute -top-0.5 -right-0.5 animate-spin" 
-              style={{ color: '#6155F5' }} 
+              style={{ color: 'var(--Labels-Secondary)' }} 
             />
           )}
         </div>
         
         {/* Tool name label */}
-        <span className="text-xs font-medium" style={{ color: '#FFFFFF', opacity: 0.9 }}>
+        <span style={{ color: 'inherit' }}>
           {displayName}
         </span>
         
@@ -102,8 +114,8 @@ function ToolCallMessageContent({
           <span 
             className="text-xs" 
             style={{ 
-              color: isFailed ? '#FF383C' : '#FFFFFF', 
-              opacity: isFailed ? 0.9 : 0.6 
+              color: 'inherit',
+              opacity: 0.8
             }}
           >
             {isFailed ? '(failed)' : '(complete)'}
@@ -111,11 +123,21 @@ function ToolCallMessageContent({
         )}
         
         {/* Expand/collapse icon */}
-        {isExpanded ? (
-          <ChevronUp className="h-3 w-3 ml-auto" style={{ color: '#FFFFFF', opacity: 0.6 }} />
-        ) : (
-          <ChevronDown className="h-3 w-3 ml-auto" style={{ color: '#FFFFFF', opacity: 0.6 }} />
-        )}
+        <div
+          style={{
+            flexShrink: 0,
+            color: 'var(--Labels-Quaternary)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+          }}
+        >
+          {isExpanded ? (
+            <ChevronUp className="h-4 w-4" />
+          ) : (
+            <ChevronDown className="h-4 w-4" />
+          )}
+        </div>
       </button>
 
       {/* Tool call details (shown when expanded) */}
@@ -132,7 +154,7 @@ function ToolCallMessageContent({
           {/* Tool Call (complete call data) */}
           {toolCall && (
             <div>
-              <p className="text-xs font-semibold mb-2" style={{ color: '#FFFFFF', opacity: 0.8 }}>
+              <p className="text-xs  mb-2" style={{ color: '#FFFFFF', opacity: 0.8 }}>
                 Tool Call:
               </p>
               <div
@@ -144,11 +166,11 @@ function ToolCallMessageContent({
                 }}
               >
                 <div className="mb-1">
-                  <span className="font-semibold">Name:</span> {toolCall.name}
+                  <span className="">Name:</span> {toolCall.name}
                 </div>
                 {toolCall.args && (
                   <div className="mt-2">
-                    <span className="font-semibold">Arguments:</span>
+                    <span className="">Arguments:</span>
                     <pre className="mt-1 font-mono text-xs whitespace-pre-wrap break-words">
                       {JSON.stringify(toolCall.args, null, 2)}
                     </pre>
@@ -156,7 +178,7 @@ function ToolCallMessageContent({
                 )}
                 {toolCall.id && (
                   <div className="mt-2 text-xs" style={{ opacity: 0.7 }}>
-                    <span className="font-semibold">ID:</span> {toolCall.id}
+                    <span className="">ID:</span> {toolCall.id}
                   </div>
                 )}
               </div>
@@ -166,7 +188,7 @@ function ToolCallMessageContent({
           {/* Tool Call Result */}
           {toolCallResult && (
             <div>
-              <p className="text-xs font-semibold mb-2" style={{ color: '#FFFFFF', opacity: 0.8 }}>
+              <p className="text-xs  mb-2" style={{ color: '#FFFFFF', opacity: 0.8 }}>
                 Result:
               </p>
               <div

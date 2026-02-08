@@ -1,10 +1,10 @@
-import React from 'react';
-import { Bot, User, Loader2 } from 'lucide-react';
-import TextMessageContent from './TextMessageContent';
+import { Bot, Loader2, User } from 'lucide-react';
+import logo from '../../../assets/img/logo.svg';
 import ReasoningMessageContent from './ReasoningMessageContent';
+import SubagentTaskMessageContent from './SubagentTaskMessageContent';
+import TextMessageContent from './TextMessageContent';
 import ToolCallMessageContent from './ToolCallMessageContent';
 import TodoListMessageContent from './TodoListMessageContent';
-import SubagentTaskMessageContent from './SubagentTaskMessageContent';
 
 /**
  * MessageList Component
@@ -54,34 +54,29 @@ function MessageBubble({ message, onOpenSubagentTask, onOpenFile }) {
     >
       {/* Assistant avatar - shown on the left */}
       {isAssistant && (
-        <div
-          className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
-          style={{ backgroundColor: 'rgba(97, 85, 245, 0.2)' }}
-        >
-          <Bot className="h-4 w-4" style={{ color: '#6155F5' }} />
+        <div className="flex-shrink-0 mt-2 w-8 h-8 flex items-center justify-center">
+          <img src={logo} alt="Assistant" className="w-8 h-8" />
         </div>
       )}
 
       {/* Message bubble */}
       <div
-        className={`max-w-[80%] rounded-lg px-4 py-3 ${
-          isUser ? 'rounded-tr-none' : 'rounded-tl-none'
-        }`}
+        className={`${isUser ? 'max-w-[80%]' : 'w-full min-w-0'} rounded-lg ${
+          isUser ? 'px-4 py-3 rounded-tr-none' : 'pl-0 pr-0 pb-3 rounded-tl-none'
+        } overflow-hidden`}
         style={{
           backgroundColor: isUser
-            ? '#6155F5'
+            ? 'var(--color-gray-292929)'
             : message.error
             ? 'rgba(255, 56, 60, 0.1)'
-            : 'rgba(255, 255, 255, 0.05)',
-          border: isAssistant
-            ? '1px solid rgba(255, 255, 255, 0.1)'
-            : 'none',
+            : 'transparent',
+          border: 'none',
           color: '#FFFFFF',
         }}
       >
         {/* Render content segments in chronological order */}
         {message.contentSegments && message.contentSegments.length > 0 ? (
-          <MessageContentSegments 
+          <MessageContentSegments
             segments={message.contentSegments}
             reasoningProcesses={message.reasoningProcesses || {}}
             toolCallProcesses={message.toolCallProcesses || {}}
@@ -137,15 +132,14 @@ function MessageBubble({ message, onOpenSubagentTask, onOpenFile }) {
 
 /**
  * MessageContentSegments Component
- * 
+ *
  * Renders content segments in chronological order.
- * Handles interleaving of text, reasoning, tool call, and todo list content based on when they occurred.
- * 
+ * Handles interleaving of text, reasoning, and tool call content based on when they occurred.
+ *
  * @param {Object} props
  * @param {Array} props.segments - Array of content segments sorted by order
  * @param {Object} props.reasoningProcesses - Object mapping reasoningId to reasoning process data
  * @param {Object} props.toolCallProcesses - Object mapping toolCallId to tool call process data
- * @param {Object} props.todoListProcesses - Object mapping todoListId to todo list process data
  * @param {boolean} props.isStreaming - Whether the message is currently streaming
  * @param {boolean} props.hasError - Whether the message has an error
  */
@@ -156,7 +150,6 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
     totalSegments: sortedSegments.length,
     segmentTypes: sortedSegments.map(s => s.type),
     segmentOrders: sortedSegments.map(s => ({ type: s.type, order: s.order })),
-    todoListProcessesKeys: Object.keys(todoListProcesses || {}),
   });
   
   // Group consecutive text segments together for better rendering
@@ -255,9 +248,7 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
           return null;
         } else if (segment.type === 'todo_list') {
           // Render todo list
-          console.log('[MessageList] Rendering todo_list segment:', { todoListId: segment.todoListId, todoListProcesses });
           const todoListProcess = todoListProcesses[segment.todoListId];
-          console.log('[MessageList] Found todoListProcess:', todoListProcess);
           if (todoListProcess) {
             return (
               <TodoListMessageContent
@@ -270,7 +261,6 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
               />
             );
           }
-          console.warn('[MessageList] No todoListProcess found for todoListId:', segment.todoListId);
           return null;
         } else if (segment.type === 'subagent_task') {
           const task = subagentTasks[segment.subagentId];

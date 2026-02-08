@@ -1,16 +1,25 @@
-import { Input } from '../../../components/ui/input';
-import { Search, Bell, HelpCircle, User, Mail } from 'lucide-react';
+import { Search, HelpCircle, User, Mail } from 'lucide-react';
 import UserConfigPanel from './UserConfigPanel';
 import React, { useState, useEffect, useRef } from 'react';
-import { getCurrentUser } from '../utils/api';
+import { getCurrentUser, searchStocks } from '../utils/api';
+import { useNavigate } from 'react-router-dom';
+import './DashboardHeader.css';
 
-const DashboardHeader = () => {
+const DashboardHeader = ({ title = 'Main Page', onStockSearch }) => {
+  const navigate = useNavigate();
   const [isUserPanelOpen, setIsUserPanelOpen] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [showHelpPopover, setShowHelpPopover] = useState(false);
   const helpRef = useRef(null);
 
-  // Close popover on outside click
+  // Search state
+  const [searchValue, setSearchValue] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Close help popover on outside click
   useEffect(() => {
     if (!showHelpPopover) return;
     const handleClickOutside = (e) => {
@@ -21,6 +30,44 @@ const DashboardHeader = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showHelpPopover]);
+
+  // Stock search with debounce (300ms)
+  useEffect(() => {
+    const query = searchValue.trim();
+    if (!query || query.length < 1) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      setShowDropdown(false);
+      return;
+    }
+
+    const timeoutId = setTimeout(async () => {
+      setSearchLoading(true);
+      setShowDropdown(true);
+      try {
+        const result = await searchStocks(query, 50);
+        setSearchResults(result.results || []);
+      } catch (error) {
+        console.error('Stock search failed:', error);
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchValue]);
+
+  // Close search dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -46,27 +93,96 @@ const DashboardHeader = () => {
     }).catch(() => {});
   };
 
+  // Handle stock selection from dropdown
+  const handleSelectStock = (stock) => {
+    if (stock?.symbol) {
+      const symbol = stock.symbol.trim().toUpperCase();
+      setSearchValue(symbol);
+      setShowDropdown(false);
+      // If onStockSearch callback is provided, use it; otherwise navigate
+      if (onStockSearch) {
+        onStockSearch(symbol, stock);
+      } else {
+        navigate(`/trading?symbol=${encodeURIComponent(symbol)}`);
+      }
+    }
+  };
+
+  // Handle search form submit
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const q = searchValue.trim();
+    if (q) {
+      const symbol = q.toUpperCase();
+      setSearchValue(symbol);
+      setShowDropdown(false);
+      // If onStockSearch callback is provided, use it; otherwise navigate
+      if (onStockSearch) {
+        onStockSearch(symbol, null);
+      } else {
+        navigate(`/trading?symbol=${encodeURIComponent(symbol)}`);
+      }
+    }
+  };
+
   return (
     <>
-      <div className="flex items-center justify-between px-5 py-2.5" style={{ backgroundColor: 'var(--color-bg-elevated)', borderBottom: '1px solid var(--color-border-muted)' }}>
-        <h1 className="dashboard-title-font text-base font-medium" style={{ color: 'var(--color-text-primary)', letterSpacing: '0.15px' }}>Main Page</h1>
+      <div className="flex items-center justify-between px-5 py-1.5" style={{ backgroundColor: 'var(--color-bg-elevated)', borderBottom: '1px solid var(--color-border-muted)' }}>
+        <h1 className="dashboard-title-font text-base font-medium" style={{ color: 'var(--color-text-primary)', letterSpacing: '0.15px' }}>{title}</h1>
         <div className="flex items-center gap-4 flex-1 max-w-md mx-8">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5" style={{ color: 'var(--color-icon-muted)' }} />
-            <Input 
-              placeholder="Search" 
-              className="pl-10 h-10 rounded-md text-sm"
-              style={{ 
-                backgroundColor: 'var(--color-bg-input)', 
-                border: '0.5px solid var(--color-border-input)',
-                color: 'var(--color-text-primary)',
-                fontSize: '14px'
+          <div className="dashboard-search-wrapper" ref={dropdownRef}>
+            <form 
+              onSubmit={handleSubmit} 
+              className="dashboard-search-form flex items-center gap-2 h-11 px-3 rounded-xl border transition-colors"
+              style={{
+                backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
               }}
-            />
+            >
+              <Search className="dashboard-search-icon" style={{ color: 'var(--color-icon-muted)' }} />
+              <input
+                type="text"
+                placeholder="Search by symbol or company name..."
+                value={searchValue}
+                onChange={(e) => setSearchValue(e.target.value)}
+                onFocus={() => searchValue.trim() && setShowDropdown(true)}
+                className="dashboard-search-input"
+                autoComplete="off"
+                style={{
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: 'var(--color-text-primary)',
+                }}
+              />
+            </form>
+            {showDropdown && searchValue.trim() && (
+              <div className="dashboard-search-dropdown">
+                {searchLoading ? (
+                  <div className="dashboard-search-dropdown-item dashboard-search-dropdown-loading">
+                    Searching...
+                  </div>
+                ) : searchResults.length === 0 ? (
+                  <div className="dashboard-search-dropdown-item dashboard-search-dropdown-empty">
+                    No results found
+                  </div>
+                ) : (
+                  searchResults.slice(0, 12).map((stock, index) => (
+                    <button
+                      key={`${stock.symbol}-${index}`}
+                      type="button"
+                      className="dashboard-search-dropdown-item"
+                      onClick={() => handleSelectStock(stock)}
+                    >
+                      <span className="dashboard-search-dropdown-symbol">{stock.symbol}</span>
+                      <span className="dashboard-search-dropdown-name">{stock.name || stock.symbol}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <Bell className="h-5 w-5 cursor-pointer transition-colors" style={{ color: 'var(--color-icon-muted)' }} />
           <div className="relative" ref={helpRef}>
             <HelpCircle
               className="h-5 w-5 cursor-pointer transition-colors"

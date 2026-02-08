@@ -1,0 +1,14 @@
+/* Agent Tab Bar Styles */
+
+@keyframes gentle-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.agent-tab-active-pulse {
+  animation: gentle-pulse 2s ease-in-out infinite;
+}

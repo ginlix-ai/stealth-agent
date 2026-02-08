@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import './TradingCenter.css';
-import TopBar from './components/TopBar';
+import DashboardHeader from '../Dashboard/components/DashboardHeader';
 import StockHeader from './components/StockHeader';
 import TradingChart from './components/TradingChart';
 import TradingChatInput from './components/TradingChatInput';
@@ -16,6 +16,7 @@ import { Loader2 } from 'lucide-react';
 
 function TradingCenter() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const [selectedStock, setSelectedStock] = useState('MSFT');
   const [selectedStockDisplay, setSelectedStockDisplay] = useState(null);
@@ -27,6 +28,21 @@ function TradingCenter() {
 
   // Trading chat hook for flash mode conversations
   const { messages, isLoading, error, handleSendMessage: handleFastModeSend } = useTradingChat();
+
+  // Handle URL parameter symbol (for navigation from Dashboard search)
+  useEffect(() => {
+    const symbolParam = searchParams.get('symbol');
+    if (symbolParam) {
+      const symbol = symbolParam.trim().toUpperCase();
+      if (symbol && symbol !== selectedStock) {
+        setSelectedStock(symbol);
+        setSelectedStockDisplay(null);
+        setChartMeta(null);
+      }
+      // Clear the URL parameter after applying it
+      setSearchParams({});
+    }
+  }, [searchParams, selectedStock, setSearchParams]);
 
   // Cleanup: Delete flash workspaces when component unmounts (navigation away or refresh)
   useEffect(() => {
@@ -122,16 +138,16 @@ function TradingCenter() {
       // Deep mode: navigate to ChatAgent with initial message
       try {
         setIsCreatingWorkspace(true);
-        
+
         // Find or create "Stealth Agent" workspace
         const workspaceId = await findOrCreateDefaultWorkspace(
           () => {}, // onCreating - already showing loading state
           () => {}  // onCreated
         );
-        
+
         // Close dialog before navigation (component will unmount on navigation)
         setIsCreatingWorkspace(false);
-        
+
         // Navigate to ChatAgent with initial message
         navigate(`/chat/${workspaceId}/__default__`, {
           state: {
@@ -153,7 +169,7 @@ function TradingCenter() {
 
   return (
     <div className="trading-center-container">
-      <TopBar onStockSearch={handleStockSearch} />
+      <DashboardHeader title="Trade" onStockSearch={handleStockSearch} />
       <div className="trading-content-wrapper">
         <div className="trading-left-panel">
           <StockHeader
