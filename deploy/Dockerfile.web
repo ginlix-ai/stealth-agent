@@ -9,4 +9,5 @@ RUN npm run build
 
 FROM alpine:3.20
 COPY --from=build /app/dist /dist
+RUN chmod -R 755 /dist
 CMD ["echo", "Frontend build complete. Use docker cp to extract /dist."]
