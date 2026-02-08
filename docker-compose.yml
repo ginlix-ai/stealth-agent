@@ -3,8 +3,9 @@ services:
     image: postgres:18
     restart: unless-stopped
     volumes:
-      - ptc-postgres-data:/var/lib/postgresql/data
+      - ptc-postgres-data:/var/lib/postgresql
     environment:
+      PGDATA: /var/lib/postgresql/data
       POSTGRES_USER: ${DB_USER:-ptc_agent_prod}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME:-ptc_agent_prod}
@@ -12,7 +13,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ptc_agent_prod} -d ${DB_NAME:-ptc_agent_prod}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
   redis:
     image: redis:7-alpine

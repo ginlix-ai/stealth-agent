@@ -5,6 +5,7 @@ ENV CHROME_PATH=/usr/bin/chromium
 
 # Install system dependencies: Chromium + shared libs for crawl4ai
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     chromium \
     chromium-driver \
     libatk-bridge2.0-0 \
@@ -31,7 +32,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 
 # Copy dependency files first for layer caching
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 COPY libs/ptc-cli/ libs/ptc-cli/
 
 # Install dependencies (frozen = use lockfile exactly)
