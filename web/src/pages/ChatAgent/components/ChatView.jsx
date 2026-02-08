@@ -405,7 +405,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
               <ArrowLeft className="h-5 w-5" />
             </button>
             <h1 className="text-base font-semibold whitespace-nowrap dashboard-title-font" style={{ color: '#FFFFFF' }}>
-              Chat Agent
+              Finix Agent
             </h1>
             {isLoadingHistory && (
               <span className="text-xs whitespace-nowrap" style={{ color: '#FFFFFF', opacity: 0.5 }}>

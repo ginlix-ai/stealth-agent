@@ -244,7 +244,7 @@ function AddPortfolioHoldingDialog({
                 {/* Average Cost Input */}
                 <div>
                   <label className="block text-xs mb-1" style={{ color: 'var(--color-text-secondary)' }}>
-                    Average Cost <span className="text-red-400">*</span>
+                    Average Cost Per Share <span className="text-red-400">*</span>
                   </label>
                   <Input
                     type="number"

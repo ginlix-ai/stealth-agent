@@ -64,7 +64,7 @@ function PortfolioCard({
               />
             </div>
             <div>
-              <label className="text-xs text-gray-400 block mb-1">Average Cost *</label>
+              <label className="text-xs text-gray-400 block mb-1">Average Cost Per Share *</label>
               <Input
                 type="number"
                 min="0"
