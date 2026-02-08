@@ -1,10 +1,10 @@
 import { Bot, Loader2, User } from 'lucide-react';
+import logo from '../../../assets/img/logo.svg';
 import ReasoningMessageContent from './ReasoningMessageContent';
 import SubagentTaskMessageContent from './SubagentTaskMessageContent';
 import TextMessageContent from './TextMessageContent';
 import ToolCallMessageContent from './ToolCallMessageContent';
 import TodoListMessageContent from './TodoListMessageContent';
-import logo from '../../../assets/img/logo.svg';
 
 /**
  * MessageList Component

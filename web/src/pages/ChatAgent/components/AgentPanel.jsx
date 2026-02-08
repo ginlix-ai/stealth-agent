@@ -5,7 +5,6 @@ import { cn } from '../../../lib/utils';
 import AgentTabBar from './AgentTabBar';
 import SubagentCardContent from './SubagentCardContent';
 import iconFile from '../../../assets/img/icon-file.svg';
-import iconRobo from '../../../assets/img/icon-robo.svg';
 import '../components/FilePanel.css';
 
 /**
@@ -25,9 +24,6 @@ import '../components/FilePanel.css';
  * @param {Function} props.onRemoveAgent - Callback to remove an agent from the list
  */
 function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveAgent }) {
-  // Find the selected agent
-  const selectedAgent = agents.find(agent => agent.id === selectedAgentId);
-
   // Render empty state with card container if no agents
   if (agents.length === 0) {
     return (
@@ -59,7 +55,10 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveA
     );
   }
 
-  // Render empty state with card container if no agent selected
+  // Find the selected agent (default to first agent if not found)
+  const selectedAgent = agents.find(agent => agent.id === selectedAgentId) || agents[0];
+
+  // Render empty state with card container if no agent selected (shouldn't happen now)
   if (!selectedAgent) {
     return (
       <div
@@ -89,6 +88,9 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveA
       </div>
     );
   }
+
+  // Check if selected agent is main agent
+  const isMainAgent = selectedAgent.isMainAgent || selectedAgent.id === 'main';
 
   /**
    * Get status icon based on agent status
@@ -136,13 +138,13 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveA
         width: '100%',
         height: '100%',
         borderRadius: '16px',
-        padding: '0 16px 16px',
+        padding: '0px 16px 8px',
         boxSizing: 'border-box',
       }}
     >
       {/* Header - Computer Style */}
-      <div className="flex-shrink-0 pt-4">
-        <div className="pb-4">
+      <div className="flex-shrink-0 pt-3">
+        <div className="pb-3">
           {/* File Icon + Title + Close Button */}
           <div className="flex items-center gap-3">
             {/* File Icon */}
@@ -153,8 +155,8 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveA
             />
 
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium" style={{ color: '#FFFFFF' }}>
-                {selectedAgent.name}
+              <div className="text-xs font-medium" style={{ color: '#FFFFFF' }}>
+                {isMainAgent ? (selectedAgent.displayName || selectedAgent.name) : 'Subagent'}
               </div>
 
               {/* Status Bar */}
@@ -204,25 +206,35 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveA
 
       {/* Content Area - Scrollable */}
       <div className="flex-1 overflow-hidden" style={{ minHeight: 0 }}>
-        <ScrollArea className="h-full w-full">
-          <div className="pt-4">
-            <SubagentCardContent
-              taskId={selectedAgent.taskId}
-              description={selectedAgent.description}
-              type={selectedAgent.type}
-              toolCalls={selectedAgent.toolCalls}
-              currentTool={selectedAgent.currentTool}
-              status={selectedAgent.status}
-              messages={selectedAgent.messages}
-              isHistory={false}
-            />
-          </div>
-        </ScrollArea>
+        {isMainAgent ? (
+          <ScrollArea className="h-full w-full">
+            <div className="pt-4 flex items-center justify-center h-full">
+              <p className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                Director content (coming soon)
+              </p>
+            </div>
+          </ScrollArea>
+        ) : (
+          <ScrollArea className="h-full w-full">
+            <div className="pt-4">
+              <SubagentCardContent
+                taskId={selectedAgent.taskId}
+                description={selectedAgent.description}
+                type={selectedAgent.type}
+                toolCalls={selectedAgent.toolCalls}
+                currentTool={selectedAgent.currentTool}
+                status={selectedAgent.status}
+                messages={selectedAgent.messages}
+                isHistory={false}
+              />
+            </div>
+          </ScrollArea>
+        )}
       </div>
 
-      {/* Bottom Tab Bar */}
-      {agents.length > 1 && (
-        <div className="flex-shrink-0">
+      {/* Bottom Tab Bar - Always show if there are agents */}
+      {agents.length > 0 && (
+        <div className="flex-shrink-0 pt-2">
           <AgentTabBar
             agents={agents}
             selectedAgentId={selectedAgentId}

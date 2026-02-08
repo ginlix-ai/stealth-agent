@@ -52,7 +52,7 @@ function SubagentTaskMessageContent({
       {/* Subagent indicator button - 点击直接打开面板 */}
       <button
         onClick={handleOpen}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors hover:bg-white/10 w-full text-left"
+        className="flex items-start gap-3 px-3 py-2.5 rounded-md transition-colors hover:bg-white/10 w-full text-left"
         style={{
           backgroundColor: isRunning
             ? 'rgba(97, 85, 245, 0.15)'
@@ -62,25 +62,33 @@ function SubagentTaskMessageContent({
         title={isRunning ? 'Click to view running subagent' : 'Click to view subagent details'}
       >
         {/* Icon: Bot with loading spinner when running */}
-        <div className="relative">
-          <Bot className="h-4 w-4" style={{ color: '#6155F5' }} />
+        <div className="relative flex-shrink-0 mt-0.5">
+          <Bot className="h-5 w-5" style={{ color: '#6155F5' }} />
           {isRunning && (
             <Loader2
-              className="h-3 w-3 absolute -top-0.5 -right-0.5 animate-spin"
+              className="h-3.5 w-3.5 absolute -top-0.5 -right-0.5 animate-spin"
               style={{ color: '#6155F5' }}
             />
           )}
         </div>
 
         {/* Label */}
-        <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-          <span className="text-xs font-medium" style={{ color: '#FFFFFF', opacity: 0.9 }}>
+        <div className="flex flex-col gap-1 min-w-0 flex-1">
+          <span className="text-sm font-medium leading-relaxed" style={{ color: '#FFFFFF', opacity: 0.9 }}>
             Subagent Task ({type})
           </span>
           {description && (
             <span
-              className="text-xs truncate"
-              style={{ color: '#FFFFFF', opacity: 0.7 }}
+              className="text-sm leading-relaxed line-clamp-2 font-normal"
+              style={{ 
+                color: '#FFFFFF', 
+                opacity: 0.7,
+                fontWeight: 400,
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
             >
               {description}
             </span>
@@ -89,7 +97,7 @@ function SubagentTaskMessageContent({
 
         {/* Status */}
         {isCompleted && !isRunning && (
-          <span className="ml-2 text-xs flex-shrink-0" style={{ color: '#0FEDBE', opacity: 0.8 }}>
+          <span className="ml-3 text-sm flex-shrink-0" style={{ color: '#0FEDBE', opacity: 0.8 }}>
             completed
           </span>
         )}

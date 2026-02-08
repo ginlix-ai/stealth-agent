@@ -36,11 +36,15 @@ function ChatView({ workspaceId, threadId, onBack }) {
   const initialMessageSentRef = useRef(false);
   const [filePanelTargetFile, setFilePanelTargetFile] = useState(null);
   const isDraggingRef = useRef(false);
+  // Track previously seen subagent IDs to detect new ones
+  const seenSubagentIdsRef = useRef(new Set());
 
   // Right panel management - can show 'file', 'agent', or null (closed)
   const [rightPanelType, setRightPanelType] = useState(null);
   const [rightPanelWidth, setRightPanelWidth] = useState(420);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
+  // Track hidden agents (removed from tag bar, but not from state)
+  const [hiddenAgentIds, setHiddenAgentIds] = useState(new Set());
 
   // Floating cards management - extracted to custom hook for better encapsulation
   // Must be called before useChatMessages since updateTodoListCard and updateSubagentCard are passed to it
@@ -70,12 +74,34 @@ function ChatView({ workspaceId, threadId, onBack }) {
     getSubagentHistory,
   } = useChatMessages(workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, minimizeInactiveSubagents);
 
+  // Ensure new active agents are visible (remove from hidden list)
+  useEffect(() => {
+    Object.entries(floatingCards).forEach(([cardId, card]) => {
+      if (cardId.startsWith('subagent-')) {
+        const agentId = cardId.replace('subagent-', '');
+        const isNewActiveAgent = card.subagentData?.isActive !== false && !card.subagentData?.isHistory;
+        
+        // If this is a new active agent, remove it from hidden list
+        if (isNewActiveAgent && hiddenAgentIds.has(agentId)) {
+          setHiddenAgentIds((prev) => {
+            const newSet = new Set(prev);
+            newSet.delete(agentId);
+            return newSet;
+          });
+        }
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [floatingCards]);
+
   // Convert floatingCards to agents array for AgentPanel
-  const agents = Object.entries(floatingCards)
+  // Filter out hidden agents and add main agent
+  // Limit to 12 agents total (1 main + 11 subagents), hide older ones
+  const allSubagentAgents = Object.entries(floatingCards)
     .filter(([cardId]) => cardId.startsWith('subagent-'))
     .map(([cardId, card]) => ({
       id: cardId.replace('subagent-', ''),
-      name: card.title || 'Agent',
+      name: 'Agent', // 统一显示为 Agent
       taskId: card.subagentData?.taskId || '',
       description: card.subagentData?.description || '',
       type: card.subagentData?.type || 'general-purpose',
@@ -84,7 +110,50 @@ function ChatView({ workspaceId, threadId, onBack }) {
       currentTool: card.subagentData?.currentTool || '',
       messages: card.subagentData?.messages || [],
       isActive: card.subagentData?.isActive !== false,
-    }));
+      isMainAgent: false,
+      zIndex: card.zIndex || 0, // Use zIndex to determine creation order (newer = higher)
+    }))
+    .sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0)); // Newer first (higher zIndex)
+
+  // Filter out hidden agents
+  const visibleSubagentAgents = allSubagentAgents.filter(agent => !hiddenAgentIds.has(agent.id));
+
+  // Limit to 11 subagents (main agent makes 12 total)
+  const maxSubagents = 11;
+  const subagentAgents = visibleSubagentAgents.slice(0, maxSubagents);
+  const excessSubagents = visibleSubagentAgents.slice(maxSubagents);
+
+  // Auto-hide excess agents (beyond 11 subagents)
+  useEffect(() => {
+    if (excessSubagents.length > 0) {
+      setHiddenAgentIds((prev) => {
+        const newSet = new Set(prev);
+        excessSubagents.forEach(agent => {
+          newSet.add(agent.id);
+        });
+        return newSet;
+      });
+    }
+  }, [excessSubagents.length, excessSubagents.map(a => a.id).join(',')]);
+
+  // Main agent (always first) - Director
+  const mainAgent = {
+    id: 'main',
+    name: 'Director', // Tab显示的名字
+    displayName: 'Director', // 详情页显示的名字
+    taskId: '',
+    description: '',
+    type: 'main',
+    status: 'active',
+    toolCalls: 0,
+    currentTool: '',
+    messages: [],
+    isActive: true,
+    isMainAgent: true,
+  };
+
+  // Combine: main agent first, then visible subagents (limited to 11)
+  const agents = [mainAgent, ...subagentAgents];
 
   // Handle drag panel width
   const handleDividerMouseDown = useCallback((e) => {
@@ -151,39 +220,71 @@ function ChatView({ workspaceId, threadId, onBack }) {
     }
   }, []);
 
-  // Handle removing an agent
+  // Handle removing an agent from tag bar (just hide from display, don't affect state)
   const handleRemoveAgent = useCallback((agentId) => {
-    // Remove the agent's floating card
-    const cardId = `subagent-${agentId}`;
-    handleCardMinimize(cardId); // This will remove it from view
+    // Add to hidden set
+    setHiddenAgentIds((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(agentId);
+      return newSet;
+    });
 
     // If the removed agent was selected, select another agent
     if (selectedAgentId === agentId) {
+      // Select first available agent (could be Director or another agent)
       const remainingAgents = agents.filter(a => a.id !== agentId);
       if (remainingAgents.length > 0) {
-        // Select the first remaining agent and keep agent panel open
         setSelectedAgentId(remainingAgents[0].id);
         setRightPanelType('agent');
       } else {
-        // No more agents, clear selection but don't close panel immediately
+        // If no agents left, close the panel
+        setRightPanelType(null);
         setSelectedAgentId(null);
       }
     }
-  }, [selectedAgentId, agents, handleCardMinimize]);
+  }, [selectedAgentId, agents]);
 
-  // Auto-open agent panel when a new agent starts working
+  // Auto-open agent panel only when a new subagent appears (not main agent)
   useEffect(() => {
-    if (agents.length > 0) {
-      // If there are agents but panel is not open, open it
-      if (rightPanelType !== 'agent') {
+    // Get current subagent IDs (excluding main agent)
+    const currentSubagentIds = new Set(
+      subagentAgents.map(agent => agent.id)
+    );
+    
+    // Check if there are any new subagents
+    const hasNewSubagent = Array.from(currentSubagentIds).some(
+      id => !seenSubagentIdsRef.current.has(id)
+    );
+    
+    if (hasNewSubagent) {
+      // Update seen subagents
+      currentSubagentIds.forEach(id => seenSubagentIdsRef.current.add(id));
+      
+      // Auto-open agent panel only if it's currently closed
+      if (rightPanelType === null) {
         setRightPanelType('agent');
-      }
-      // If no agent is selected, select the first one
-      if (!selectedAgentId) {
-        setSelectedAgentId(agents[0].id);
+        // Select the newest subagent (first in the sorted list, excluding main agent)
+        if (subagentAgents.length > 0) {
+          setSelectedAgentId(subagentAgents[0].id);
+        } else {
+          // Fallback to main agent if no subagents yet
+          setSelectedAgentId('main');
+        }
+      } else if (rightPanelType === 'agent' && !selectedAgentId) {
+        // If panel is already open but no agent selected, select newest subagent
+        if (subagentAgents.length > 0) {
+          setSelectedAgentId(subagentAgents[0].id);
+        } else {
+          setSelectedAgentId('main');
+        }
       }
     }
-  }, [agents.length]); // Only trigger when the number of agents changes
+  }, [subagentAgents.map(a => a.id).join(','), rightPanelType, selectedAgentId]); // Trigger when subagents change
+
+  // Reset seen subagents when thread changes
+  useEffect(() => {
+    seenSubagentIdsRef.current.clear();
+  }, [threadId]);
 
   // Update URL when thread ID changes (e.g., when __default__ becomes actual thread ID)
   // This triggers a re-render with the new threadId, which will then load history
@@ -290,7 +391,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
       {/* Left Side: Topbar + Chat Window (Vertical) */}
       <div className="flex flex-col flex-1 min-w-0">
         {/* Top bar */}
-        <div className="flex items-center justify-between p-4 border-b border-white/10 min-w-0 flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-white/10 min-w-0 flex-shrink-0">
           <div className="flex items-center gap-4 min-w-0 flex-shrink">
             <button
               onClick={onBack}
@@ -300,7 +401,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <h1 className="text-lg font-semibold whitespace-nowrap dashboard-title-font" style={{ color: '#FFFFFF' }}>
+            <h1 className="text-base font-semibold whitespace-nowrap dashboard-title-font" style={{ color: '#FFFFFF' }}>
               Chat Agent
             </h1>
             {isLoadingHistory && (
