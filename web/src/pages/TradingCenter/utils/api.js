@@ -18,12 +18,11 @@ export async function searchStocks(query, limit = 50) {
     return { query: '', results: [], count: 0 };
   }
   try {
-    const { data } = await api.get('/api/v1/market-data/search/stocks', {
-      params: {
-        query: query.trim(),
-        limit: Math.min(Math.max(1, limit), 100),
-      },
-    });
+    const params = new URLSearchParams();
+    params.append('query', query.trim());
+    params.append('limit', String(Math.min(Math.max(1, limit), 100)));
+    ['NASDAQ', 'NYSE', 'OTC'].forEach((ex) => params.append('exchange', ex)); // US exchanges only
+    const { data } = await api.get('/api/v1/market-data/search/stocks', { params });
     return data || { query: query.trim(), results: [], count: 0 };
   } catch (e) {
     console.error('Search stocks failed:', e?.response?.status, e?.response?.data, e?.message);
