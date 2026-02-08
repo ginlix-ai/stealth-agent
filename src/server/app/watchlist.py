@@ -49,6 +49,7 @@ from src.server.models.user import (
     WatchlistUpdate,
     WatchlistWithItemsResponse,
 )
+from src.server.services.onboarding import maybe_complete_onboarding
 from src.server.utils.api import CurrentUserId, handle_api_exceptions, raise_not_found
 
 logger = logging.getLogger(__name__)
@@ -333,6 +334,8 @@ async def add_watchlist_item(
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=409, detail=str(e))
+
+    await maybe_complete_onboarding(user_id)
 
     logger.info(
         f"Added item {item['item_id']} to watchlist {resolved_id} for user {user_id}"

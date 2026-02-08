@@ -23,6 +23,7 @@ from src.server.database.portfolio import (
     get_user_portfolio as db_get_user_portfolio,
     update_portfolio_holding as db_update_portfolio_holding,
 )
+from src.server.services.onboarding import maybe_complete_onboarding
 from src.server.models.user import (
     PortfolioHoldingCreate,
     PortfolioHoldingResponse,
@@ -89,6 +90,8 @@ async def add_portfolio_holding(
         metadata=request.metadata,
         first_purchased_at=request.first_purchased_at,
     )
+
+    await maybe_complete_onboarding(user_id)
 
     logger.info(f"Added portfolio holding {holding['holding_id']} for user {user_id}")
     return PortfolioHoldingResponse.model_validate(holding)

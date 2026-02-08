@@ -25,6 +25,7 @@ from src.server.database.user import (
     update_user as db_update_user,
     upsert_user_preferences,
 )
+from src.server.services.onboarding import maybe_complete_onboarding
 from src.server.models.user import (
     UserBase,
     UserPreferencesResponse,
@@ -229,6 +230,8 @@ async def update_preferences(
         agent_preference=agent_pref,
         other_preference=other_pref,
     )
+
+    await maybe_complete_onboarding(user_id)
 
     logger.info(f"Updated preferences for user {user_id}")
     return UserPreferencesResponse.model_validate(preferences)

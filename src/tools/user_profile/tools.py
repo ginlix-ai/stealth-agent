@@ -21,6 +21,7 @@ from langchain_core.runnables import RunnableConfig
 from src.server.database import user as user_db
 from src.server.database import watchlist as watchlist_db
 from src.server.database import portfolio as portfolio_db
+from src.server.services.onboarding import maybe_complete_onboarding
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +252,7 @@ async def _update_risk_preference(config: RunnableConfig, data: dict[str, Any], 
     prefs = await user_db.upsert_user_preferences(
         user_id=user_id, risk_preference=risk_pref, replace=replace
     )
+    await maybe_complete_onboarding(user_id)
     return {"success": True, "risk_preference": prefs.get("risk_preference", {})}
 
 
@@ -376,6 +378,7 @@ async def _upsert_watchlist_item(config: RunnableConfig, data: dict[str, Any], r
             name=data.get("name"),
             notes=data.get("notes"),
         )
+        await maybe_complete_onboarding(user_id)
         return {"success": True, "watchlist_item": item}
     except ValueError as e:
         return {"error": str(e)}
@@ -417,6 +420,7 @@ async def _upsert_portfolio_holding(config: RunnableConfig, data: dict[str, Any]
             notes=data.get("notes"),
             first_purchased_at=purchase_date,
         )
+        await maybe_complete_onboarding(user_id)
         return {"success": True, "portfolio_holding": holding}
     except ValueError as e:
         return {"error": str(e)}
