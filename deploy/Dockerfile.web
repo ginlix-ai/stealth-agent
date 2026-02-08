@@ -1,0 +1,10 @@
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY web/package.json web/package-lock.json* ./
+RUN npm ci
+COPY web/ .
+RUN npm run build
+
+FROM alpine:3.20
+COPY --from=build /app/dist /dist
+CMD ["echo", "Frontend build complete. Use docker cp to extract /dist."]
