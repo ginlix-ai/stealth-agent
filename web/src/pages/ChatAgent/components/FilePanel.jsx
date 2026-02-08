@@ -31,7 +31,7 @@ function FilePanel({ workspaceId, onClose, targetFile, onTargetFileHandled }) {
     setLoading(true);
     setError(null);
     try {
-      const data = await listWorkspaceFiles(workspaceId, 'results');
+      const data = await listWorkspaceFiles(workspaceId, '.');
       setFiles(data.files || []);
     } catch (err) {
       console.error('[FilePanel] Failed to list files:', err);

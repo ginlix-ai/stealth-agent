@@ -1,10 +1,11 @@
-import React from 'react';
-import { Bot, CheckCircle2, Circle, Loader2, X } from 'lucide-react';
+import React, { useRef, useEffect } from 'react';
+import { CheckCircle2, Circle, Loader2, X } from 'lucide-react';
 import { ScrollArea } from '../../../components/ui/scroll-area';
-import { cn } from '../../../lib/utils';
 import AgentTabBar from './AgentTabBar';
 import SubagentCardContent from './SubagentCardContent';
+import { MessageContentSegments } from './MessageList';
 import iconFile from '../../../assets/img/icon-file.svg';
+import iconRobo from '../../../assets/img/icon-robo.svg';
 import '../components/FilePanel.css';
 
 /**
@@ -22,8 +23,11 @@ import '../components/FilePanel.css';
  * @param {Function} props.onSelectAgent - Callback when agent is selected (pass null to deselect)
  * @param {Function} props.onClose - Callback to close the entire agent panel
  * @param {Function} props.onRemoveAgent - Callback to remove an agent from the list
+ * @param {Array} props.messages - Main chat messages (for Director card content)
+ * @param {Function} props.onOpenSubagentTask - Callback when user opens a subagent task
+ * @param {Function} props.onOpenFile - Callback when user opens a file
  */
-function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveAgent }) {
+function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveAgent, messages = [], onOpenSubagentTask, onOpenFile }) {
   // Render empty state with card container if no agents
   if (agents.length === 0) {
     return (
@@ -89,8 +93,17 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveA
     );
   }
 
-  // Check if selected agent is main agent
   const isMainAgent = selectedAgent.isMainAgent || selectedAgent.id === 'main';
+  const directorScrollEndRef = useRef(null);
+  const subagentScrollEndRef = useRef(null);
+
+  useEffect(() => {
+    directorScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages]);
+
+  useEffect(() => {
+    subagentScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [selectedAgent.messages]);
 
   /**
    * Get status icon based on agent status
@@ -125,9 +138,9 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveA
       if (selectedAgent.messages.length > 0) {
         return 'Running';
       }
-      return 'Initializing';
+      return isMainAgent ? 'Running' : 'Initializing';
     }
-    return 'Initializing';
+    return isMainAgent ? 'Running' : 'Initializing';
   };
 
   return (
@@ -165,7 +178,7 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveA
                 <span
                   className="text-xs"
                   style={{
-                    color: selectedAgent.status === 'completed' ? '#0FEDBE' : 'rgba(255, 255, 255, 0.6)'
+                    color: selectedAgent.status === 'completed' ? '#0FEDBE' : (isMainAgent ? '#0FEDBE' : 'rgba(255, 255, 255, 0.6)')
                   }}
                 >
                   {getStatusText()}
@@ -208,10 +221,35 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveA
       <div className="flex-1 overflow-hidden" style={{ minHeight: 0 }}>
         {isMainAgent ? (
           <ScrollArea className="h-full w-full">
-            <div className="pt-4 flex items-center justify-center h-full">
-              <p className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
-                Director content (coming soon)
-              </p>
+            <div className="pt-4 space-y-4">
+              {messages.map((msg) => (
+                <div key={msg.id} className="space-y-2">
+                  {msg.role === 'user' ? (
+                    <div className="text-sm rounded-lg px-3 py-2" style={{ backgroundColor: 'rgba(97, 85, 245, 0.15)', color: '#FFFFFF' }}>
+                      {msg.content || ''}
+                    </div>
+                  ) : (
+                    <MessageContentSegments
+                      segments={msg.contentSegments || []}
+                      reasoningProcesses={msg.reasoningProcesses || {}}
+                      toolCallProcesses={msg.toolCallProcesses || {}}
+                      todoListProcesses={msg.todoListProcesses || {}}
+                      subagentTasks={msg.subagentTasks || {}}
+                      isStreaming={msg.isStreaming}
+                      hasError={msg.error}
+                      onOpenSubagentTask={onOpenSubagentTask}
+                      onOpenFile={onOpenFile}
+                      textOnly={false}
+                    />
+                  )}
+                </div>
+              ))}
+              {messages.length === 0 && (
+                <p className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                  No Director content yet
+                </p>
+              )}
+              <div ref={directorScrollEndRef} />
             </div>
           </ScrollArea>
         ) : (
@@ -226,7 +264,9 @@ function AgentPanel({ agents, selectedAgentId, onSelectAgent, onClose, onRemoveA
                 status={selectedAgent.status}
                 messages={selectedAgent.messages}
                 isHistory={false}
+                onOpenFile={onOpenFile}
               />
+              <div ref={subagentScrollEndRef} />
             </div>
           </ScrollArea>
         )}

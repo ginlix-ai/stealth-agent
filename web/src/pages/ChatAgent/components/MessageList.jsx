@@ -86,29 +86,17 @@ function MessageBubble({ message, onOpenSubagentTask, onOpenFile }) {
             hasError={message.error}
             onOpenSubagentTask={onOpenSubagentTask}
             onOpenFile={onOpenFile}
+            textOnly={true}
           />
         ) : (
-          // Fallback for messages without segments (backward compatibility)
-          <>
-            {message.contentType === 'text' || !message.contentType ? (
-              <TextMessageContent
-                content={message.content}
-                isStreaming={message.isStreaming}
-                hasError={message.error}
-              />
-            ) : (
-              <p className="text-sm whitespace-pre-wrap break-words">
-                {message.content || (message.isStreaming ? '...' : '')}
-              </p>
-            )}
-            {(message.reasoningContent || message.isReasoning) && (
-              <ReasoningMessageContent
-                reasoningContent={message.reasoningContent || ''}
-                isReasoning={message.isReasoning || false}
-                reasoningComplete={message.reasoningComplete || false}
-              />
-            )}
-          </>
+          // Fallback for messages without segments (backward compatibility) - main chat shows text only
+          (message.contentType === 'text' || !message.contentType) && (
+            <TextMessageContent
+              content={message.content}
+              isStreaming={message.isStreaming}
+              hasError={message.error}
+            />
+          )
         )}
 
         {/* Streaming indicator */}
@@ -140,23 +128,19 @@ function MessageBubble({ message, onOpenSubagentTask, onOpenFile }) {
  * @param {Array} props.segments - Array of content segments sorted by order
  * @param {Object} props.reasoningProcesses - Object mapping reasoningId to reasoning process data
  * @param {Object} props.toolCallProcesses - Object mapping toolCallId to tool call process data
+ * @param {Object} props.todoListProcesses - Object mapping todoListId to todo list data
+ * @param {Object} props.subagentTasks - Object mapping subagentId to subagent task data
  * @param {boolean} props.isStreaming - Whether the message is currently streaming
  * @param {boolean} props.hasError - Whether the message has an error
+ * @param {boolean} props.textOnly - If true, only render text segments (for main chat view)
  */
-function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, todoListProcesses, subagentTasks, isStreaming, hasError, onOpenSubagentTask, onOpenFile }) {
-  // Sort segments by order to ensure chronological rendering
+function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, todoListProcesses, subagentTasks, isStreaming, hasError, onOpenSubagentTask, onOpenFile, textOnly = false }) {
   const sortedSegments = [...segments].sort((a, b) => a.order - b.order);
-  console.log('[MessageContentSegments] Rendering segments:', {
-    totalSegments: sortedSegments.length,
-    segmentTypes: sortedSegments.map(s => s.type),
-    segmentOrders: sortedSegments.map(s => ({ type: s.type, order: s.order })),
-  });
-  
+
   // Group consecutive text segments together for better rendering
-  // Text segments are grouped only if they appear consecutively (no reasoning in between)
   const groupedSegments = [];
   let currentTextGroup = null;
-  
+
   for (const segment of sortedSegments) {
     if (segment.type === 'text') {
       if (currentTextGroup) {
@@ -195,14 +179,18 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
       groupedSegments.push(segment);
     }
   }
-  
+
+  // When textOnly, filter to only text segments for main chat view
+  const segmentsToRender = textOnly
+    ? groupedSegments.filter((s) => s.type === 'text')
+    : groupedSegments;
+
   return (
     <div className="space-y-2">
-      {groupedSegments.map((segment, index) => {
+      {segmentsToRender.map((segment, index) => {
         if (segment.type === 'text') {
           // Render text content
-          // Only show streaming indicator on the last text segment if it's the last segment overall
-          const isLastSegment = index === groupedSegments.length - 1;
+          const isLastSegment = index === segmentsToRender.length - 1;
           
           return (
             <div key={`text-${segment.order}-${index}`}>
@@ -285,3 +273,4 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
 }
 
 export default MessageList;
+export { MessageContentSegments };

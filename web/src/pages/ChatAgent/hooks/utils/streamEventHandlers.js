@@ -487,146 +487,177 @@ export function handleTodoUpdate({ assistantMessageId, artifactType, artifactId,
 }
 
 /**
- * Handles subagent_status events during streaming
- * Creates or updates subagent floating cards based on task status
+ * Handles subagent_status events during streaming.
+ * Supports both preferred format (active_tasks/completed_tasks) and fallback format (active_subagents/completed_subagents).
+ * 
+ * Preferred format: active_tasks = array of { id, agent_id, description, type, tool_calls, current_tool }
+ *   - id: display_id (e.g., "Task-1")
+ *   - agent_id: stable UUID identity (e.g., "research:550e8400-...") - used as card key
+ * completed_tasks: array of display_id strings ("Task-1", "Task-2")
+ * 
+ * Fallback format: active_subagents/completed_subagents = arrays of agent_id strings
+ * 
  * @param {Object} params - Handler parameters
- * @param {Object} params.subagentStatus - Subagent status data with active_tasks and completed_tasks
- * @param {Function} params.updateSubagentCard - Callback to update subagent card
+ * @param {Object} params.subagentStatus - Subagent status data
+ * @param {Function} params.updateSubagentCard - Callback(agentId, data) to update subagent card
+ * @param {Map} [params.displayIdToAgentIdMap] - Optional ref to persist display_id -> agent_id mapping for completed_tasks
  * @returns {boolean} True if event was handled
  */
-export function handleSubagentStatus({ subagentStatus, updateSubagentCard }) {
+export function handleSubagentStatus({ subagentStatus, updateSubagentCard, displayIdToAgentIdMap }) {
   if (!subagentStatus || !updateSubagentCard) {
     return false;
   }
 
-  // Validate that subagentStatus has the expected structure
   if (typeof subagentStatus !== 'object') {
     console.warn('[handleSubagentStatus] Invalid subagentStatus format:', subagentStatus);
     return false;
   }
 
-  const { active_tasks = [], completed_tasks = [] } = subagentStatus;
-  
-  // Ensure active_tasks and completed_tasks are arrays
-  if (!Array.isArray(active_tasks) || !Array.isArray(completed_tasks)) {
-    console.warn('[handleSubagentStatus] active_tasks or completed_tasks is not an array:', { active_tasks, completed_tasks });
+  const displayToAgentMap = displayIdToAgentIdMap || new Map();
+
+  // --- Preferred format: active_tasks (array of objects) ---
+  const activeTasks = subagentStatus.active_tasks;
+  if (Array.isArray(activeTasks) && activeTasks.length > 0) {
+    // completed_tasks in preferred format: array of display_id strings ("Task-1", "Task-2")
+    const completedTasks = Array.isArray(subagentStatus.completed_tasks) ? subagentStatus.completed_tasks : [];
+    const completedAgentIds = new Set();
+    const completedTaskMap = new Map(); // agent_id -> task object if available
+
+    // Store display_id -> agent_id from active_tasks first (for resolving completed_tasks)
+    activeTasks.forEach((task) => {
+      if (task?.id && (task.agent_id || task.agent)) {
+        const aid = task.agent_id || task.agent;
+        displayToAgentMap.set(task.id, aid);
+      }
+    });
+
+    completedTasks.forEach((item) => {
+      let agentId = null;
+      let taskObj = null;
+      if (typeof item === 'string') {
+        agentId = displayToAgentMap.get(item) || item;
+      } else if (item && typeof item === 'object') {
+        const aid = item.agent_id || item.agent;
+        const did = item.id;
+        if (aid) {
+          agentId = aid;
+          taskObj = item;
+          if (did) displayToAgentMap.set(did, aid);
+        } else if (did) {
+          agentId = displayToAgentMap.get(did) || did;
+          taskObj = item;
+        }
+      }
+      if (agentId) {
+        completedAgentIds.add(agentId);
+        if (taskObj) completedTaskMap.set(agentId, taskObj);
+      }
+    });
+
+    // Process completed first
+    completedAgentIds.forEach((agentId) => {
+      const taskObj = completedTaskMap.get(agentId);
+      updateSubagentCard(agentId, {
+        agentId,
+        displayId: taskObj?.id || '',
+        taskId: agentId,
+        description: taskObj?.description || '',
+        type: taskObj?.type || 'general-purpose',
+        toolCalls: taskObj?.tool_calls ?? taskObj?.toolCalls ?? 0,
+        currentTool: '',
+        status: 'completed',
+        isActive: false,
+      });
+    });
+
+    // Process active tasks - use agent_id as card key
+    activeTasks.forEach((task) => {
+      if (!task) return;
+      const agentId = task.agent_id || task.agent;
+      const displayId = task.id;
+      if (!agentId) {
+        console.warn('[handleSubagentStatus] Skipping task without agent_id:', task);
+        return;
+      }
+      if (completedAgentIds.has(agentId)) return;
+
+      const updateData = {
+        agentId,
+        displayId: displayId || '',
+        taskId: agentId,
+        description: task.description || '',
+        type: task.type || 'general-purpose',
+        toolCalls: task.tool_calls ?? task.toolCalls ?? 0,
+        status: 'active',
+        isActive: true,
+      };
+      if (task.current_tool && String(task.current_tool).trim() !== '') {
+        updateData.currentTool = task.current_tool;
+      }
+      updateSubagentCard(agentId, updateData);
+    });
+    return true;
+  }
+
+  // --- Fallback format: active_subagents / completed_subagents (arrays of agent_id strings) ---
+  const activeSubagents = subagentStatus.active_subagents;
+  const completedSubagents = subagentStatus.completed_subagents;
+  if (!Array.isArray(activeSubagents) && !Array.isArray(completedSubagents)) {
     return false;
   }
 
-  // Handle both formats: completed_tasks can be an array of task objects OR an array of task ID strings
-  // Extract task IDs and create a map for quick lookup
-  const completedTaskIds = new Set();
-  const completedTaskMap = new Map(); // Map<taskId, taskObject> for tasks with full data
-  
-  completed_tasks.forEach((task) => {
-    let taskId = null;
-    let taskObj = null;
-    
-    // Handle both formats: task can be a string (task ID) or an object with an id property
-    if (typeof task === 'string') {
-      // Task is just a string ID
-      taskId = task;
-      taskObj = null; // No additional data available
-    } else if (task && typeof task === 'object' && task.id) {
-      // Task is an object with an id property
-      taskId = task.id;
-      taskObj = task;
-    } else {
-      // Invalid format
-      console.warn('[handleSubagentStatus] Invalid completed task format:', task);
-      return;
-    }
-    
-    if (taskId) {
-      completedTaskIds.add(taskId);
-      if (taskObj) {
-        completedTaskMap.set(taskId, taskObj);
-      }
-    }
-  });
+  const fallbackActive = Array.isArray(activeSubagents) ? activeSubagents : [];
+  const fallbackCompleted = Array.isArray(completedSubagents) ? completedSubagents : [];
+  const completedSet = new Set(fallbackCompleted);
 
-  // IMPORTANT: Process completed_tasks FIRST to ensure completed status takes precedence
-  // This prevents active_tasks from overwriting completed status
-  completedTaskIds.forEach((taskId) => {
-    const taskObj = completedTaskMap.get(taskId);
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[handleSubagentStatus] Marking task as completed:', {
-        taskId,
-        hasTaskObject: !!taskObj,
-        description: taskObj?.description,
-        toolCalls: taskObj?.tool_calls,
+  fallbackCompleted.forEach((agentId) => {
+    if (agentId) {
+      updateSubagentCard(agentId, {
+        agentId,
+        displayId: '',
+        taskId: agentId,
+        description: '',
+        type: 'general-purpose',
+        toolCalls: 0,
+        currentTool: '',
+        status: 'completed',
+        isActive: false,
       });
     }
-    
-    // Update card with completed status and mark as inactive
-    // If we have task object data, use it; otherwise use defaults and preserve existing data
-    updateSubagentCard(taskId, {
-      taskId,
-      description: taskObj?.description || '', // Use task object data if available
-      type: taskObj?.type || 'general-purpose',
-      toolCalls: taskObj?.tool_calls || 0,
-      currentTool: '', // Clear currentTool when task is completed
-      status: 'completed', // Explicitly set status to 'completed'
-      isActive: false, // Mark as inactive when completed
-      // Don't set messages - preserve existing messages from previous updates
+  });
+
+  fallbackActive.forEach((agentId) => {
+    if (!agentId || completedSet.has(agentId)) return;
+    updateSubagentCard(agentId, {
+      agentId,
+      displayId: '',
+      taskId: agentId,
+      description: '',
+      type: 'general-purpose',
+      toolCalls: 0,
+      status: 'active',
+      isActive: true,
     });
   });
-
-  // Update cards for all active tasks
-  // Note: Skip tasks that are in completed_tasks (shouldn't happen, but safety check)
-  // Note: We don't set messages here - they will be preserved from previous updates
-  // This ensures messages aren't lost when status updates
-  active_tasks.forEach((task) => {
-    // Only process tasks that have a valid ID
-    // Skip tasks without IDs to prevent creating unexpected cards
-    if (!task || !task.id) {
-      console.warn('[handleSubagentStatus] Skipping task without ID:', task);
-      return;
-    }
-    
-    const taskId = task.id;
-    
-    // Skip if this task is also in completed_tasks (shouldn't happen, but safety check)
-    if (completedTaskIds.has(taskId)) {
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('[handleSubagentStatus] Task is in both active_tasks and completed_tasks, skipping active update:', taskId);
-      }
-      return;
-    }
-    
-    // Build update object - only include currentTool if it's explicitly provided and non-empty
-    // This prevents overwriting a valid currentTool with an empty string from status updates
-    const updateData = {
-      taskId,
-      description: task.description || '',
-      type: task.type || 'general-purpose',
-      toolCalls: task.tool_calls || 0,
-      status: 'active',
-      isActive: true, // Mark as active when task is in active_tasks
-      // Don't set messages - preserve existing messages from previous updates
-    };
-    
-    // Only update currentTool if the status explicitly provides a non-empty value
-    // This preserves the currentTool set by handleSubagentToolCalls/handleSubagentToolCallResult
-    if (task.current_tool && task.current_tool.trim() !== '') {
-      updateData.currentTool = task.current_tool;
-    }
-    // If current_tool is empty, don't include it in the update - this preserves existing currentTool
-    
-    updateSubagentCard(taskId, updateData);
-  });
-
   return true;
 }
 
 /**
- * Checks if an event is from a subagent (agent starts with "tools:")
+ * Checks if an event is from a subagent.
+ * Backend convention:
+ * - Main agent: agent.startsWith("model:")
+ * - Tool node: agent === "tools"
+ * - Subagent: agent contains ":" but does NOT start with "model:" and is NOT "tools"
+ * Subagent format: agent_id = "{subagent_type}:{uuid4}" (e.g., "research:550e8400-...")
  * @param {Object} event - Event object
  * @returns {boolean} True if event is from subagent
  */
 export function isSubagentEvent(event) {
-  return event.agent && typeof event.agent === 'string' && event.agent.startsWith('tools:');
+  const agent = event?.agent;
+  if (!agent || typeof agent !== 'string' || !agent.includes(':')) {
+    return false;
+  }
+  return !agent.startsWith('model:') && agent !== 'tools';
 }
 
 /**

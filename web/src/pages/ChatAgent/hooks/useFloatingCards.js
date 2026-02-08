@@ -244,11 +244,11 @@ export function useFloatingCards(initialCards = {}) {
   /**
    * Update or create subagent floating card
    * Called when subagent status is detected/updated during live streaming
-   * @param {string} taskId - Task ID (e.g., "Task-1")
-   * @param {Object} subagentDataUpdate - Partial subagent data to merge { taskId, description, type, toolCalls, currentTool, status, messages }
+   * @param {string} agentId - Stable agent identity (format: "type:uuid", e.g., "research:550e8400-...")
+   * @param {Object} subagentDataUpdate - Partial subagent data to merge { agentId, displayId, taskId, description, type, toolCalls, currentTool, status, messages }
    */
-  const updateSubagentCard = (taskId, subagentDataUpdate) => {
-    const cardId = `subagent-${taskId}`;
+  const updateSubagentCard = (agentId, subagentDataUpdate) => {
+    const cardId = `subagent-${agentId}`;
     
     setFloatingCards((prev) => {
       // Calculate default position closer to the center of the window
@@ -285,7 +285,7 @@ export function useFloatingCards(initialCards = {}) {
         if (isCurrentlyInactive && !isBeingReactivated) {
           if (process.env.NODE_ENV === 'development') {
             console.log('[updateSubagentCard] Skipping update to inactive card:', {
-              taskId,
+              agentId,
               cardId,
               reason: 'Card is inactive and not being reactivated',
             });
@@ -323,7 +323,7 @@ export function useFloatingCards(initialCards = {}) {
                   // Explicit status update (e.g., 'completed' from subagent_status)
                   if (process.env.NODE_ENV === 'development') {
                     console.log('[updateSubagentCard] Status update:', {
-                      taskId,
+                      agentId,
                       newStatus,
                       previousStatus: existingStatus,
                       willUpdate: newStatus !== existingStatus,
@@ -337,7 +337,7 @@ export function useFloatingCards(initialCards = {}) {
                 const preservedStatus = existingStatus || 'active';
                 if (process.env.NODE_ENV === 'development' && existingStatus === 'completed') {
                   console.log('[updateSubagentCard] Preserving completed status:', {
-                    taskId,
+                    agentId,
                     preservedStatus,
                   });
                 }
@@ -386,7 +386,7 @@ export function useFloatingCards(initialCards = {}) {
           // If no card exists, it means this task is from history and hasn't been opened yet
           if (process.env.NODE_ENV === 'development') {
             console.log('[updateSubagentCard] Skipping creation of new card for completed task from live streaming:', {
-              taskId,
+              agentId,
               cardId,
               reason: 'Completed tasks from live streaming should only update existing cards, not create new ones',
               isActive: subagentDataUpdate.isActive,
@@ -411,7 +411,8 @@ export function useFloatingCards(initialCards = {}) {
             minimizeOrder: null,
             hasUnreadUpdate: false,
             subagentData: {
-              taskId: taskId,
+              agentId: agentId,
+              taskId: agentId,
               description: '',
               type: 'general-purpose',
               toolCalls: 0,

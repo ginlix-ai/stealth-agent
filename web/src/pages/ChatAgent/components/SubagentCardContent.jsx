@@ -5,6 +5,24 @@ import TextMessageContent from './TextMessageContent';
 import ToolCallMessageContent from './ToolCallMessageContent';
 
 /**
+ * Normalize text content from backend for proper display in subagent cards.
+ * - Unescape literal \n (backslash-n) if backend sends escaped strings
+ * - Collapse single newlines (e.g. from chunk boundaries) to spaces to avoid unexpected line breaks
+ * - Preserve double newlines (paragraph breaks)
+ */
+function normalizeSubagentText(content) {
+  if (!content || typeof content !== 'string') return '';
+  const s = content
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+  return s
+    .split(/\n{2,}/)
+    .map((part) => part.replace(/\n/g, ' ').trim())
+    .join('\n\n');
+}
+
+/**
  * SubagentCardContent Component
  * 
  * Renders subagent work content for the floating card.
@@ -19,6 +37,7 @@ import ToolCallMessageContent from './ToolCallMessageContent';
  * @param {string} props.status - Task status ('active', 'completed', etc.)
  * @param {Object} props.messages - Subagent messages state (similar to main chat messages)
  * @param {boolean} props.isHistory - Whether this card is shown from history replay (hides status/header)
+ * @param {Function} props.onOpenFile - Callback when user opens a file from a tool call
  */
 function SubagentCardContent({ 
   taskId, 
@@ -29,6 +48,7 @@ function SubagentCardContent({
   status = 'active',
   messages = [],
   isHistory = false,
+  onOpenFile,
 }) {
   // Debug: Log status changes
   React.useEffect(() => {
@@ -93,10 +113,10 @@ function SubagentCardContent({
             color: 'rgba(255, 255, 255, 0.8)',
             wordBreak: 'break-word',
             overflowWrap: 'break-word',
-            whiteSpace: 'normal'
+            whiteSpace: 'normal',
           }}
         >
-          {description}
+          {normalizeSubagentText(description)}
         </div>
       )}
 
@@ -112,66 +132,72 @@ function SubagentCardContent({
       {messages.length > 0 && (
         <div className="space-y-2 overflow-y-auto" style={{ borderTop: '0.5px solid rgba(255, 255, 255, 0.04)', paddingTop: '8px' }}>
           {messages.map((msg) => {
-            // Render message based on type
             if (msg.role === 'assistant') {
-              // Render content segments in order
-              const segments = msg.contentSegments || [];
+              const segments = (msg.contentSegments || []).sort((a, b) => (a.order || 0) - (b.order || 0));
+              // Merge consecutive text segments to avoid unexpected line breaks from chunk boundaries
+              const mergedSegments = [];
+              let textAccumulator = null;
+              for (const segment of segments) {
+                if (segment.type === 'text') {
+                  const text = segment.content || '';
+                  if (textAccumulator === null) {
+                    textAccumulator = { type: 'text', content: text, order: segment.order };
+                  } else {
+                    textAccumulator.content += text;
+                  }
+                } else {
+                  if (textAccumulator !== null) {
+                    mergedSegments.push(textAccumulator);
+                    textAccumulator = null;
+                  }
+                  mergedSegments.push(segment);
+                }
+              }
+              if (textAccumulator !== null) {
+                mergedSegments.push(textAccumulator);
+              }
               return (
                 <div key={msg.id} className="space-y-1">
-                  {segments
-                    .sort((a, b) => (a.order || 0) - (b.order || 0))
-                    .map((segment, idx) => {
-                      if (segment.type === 'reasoning') {
-                        const reasoning = msg.reasoningProcesses?.[segment.reasoningId];
-                        if (reasoning) {
-                          // Debug: Log reasoning content to help identify issues
-                          if (process.env.NODE_ENV === 'development' && !reasoning.content) {
-                            console.warn('[SubagentCardContent] Reasoning process exists but content is empty:', {
-                              reasoningId: segment.reasoningId,
-                              reasoning,
-                              messageId: msg.id,
-                            });
-                          }
-                          return (
-                            <ReasoningMessageContent
-                              key={`${msg.id}-reasoning-${idx}`}
-                              reasoningContent={reasoning.content || ''}
-                              isReasoning={reasoning.isReasoning || false}
-                              reasoningComplete={reasoning.reasoningComplete || false}
-                            />
-                          );
-                        } else if (process.env.NODE_ENV === 'development') {
-                          console.warn('[SubagentCardContent] Reasoning segment found but no reasoning process:', {
-                            reasoningId: segment.reasoningId,
-                            availableReasoningIds: Object.keys(msg.reasoningProcesses || {}),
-                            messageId: msg.id,
-                          });
-                        }
-                      } else if (segment.type === 'tool_call') {
-                        const toolCall = msg.toolCallProcesses?.[segment.toolCallId];
-                        if (toolCall) {
-                          return (
-                            <ToolCallMessageContent
-                              key={`${msg.id}-tool-${idx}`}
-                              toolName={toolCall.toolName || 'Unknown Tool'}
-                              toolCall={toolCall.toolCall}
-                              toolCallResult={toolCall.toolCallResult}
-                              isInProgress={toolCall.isInProgress || false}
-                              isComplete={toolCall.isComplete || false}
-                              isFailed={toolCall.isFailed || false}
-                            />
-                          );
-                        }
-                      } else if (segment.type === 'text') {
+                  {mergedSegments.map((segment, idx) => {
+                    if (segment.type === 'reasoning') {
+                      const reasoning = msg.reasoningProcesses?.[segment.reasoningId];
+                      if (reasoning) {
+                        const normalizedReasoning = normalizeSubagentText(reasoning.content || '');
                         return (
-                          <TextMessageContent
-                            key={`${msg.id}-text-${idx}`}
-                            content={segment.content || ''}
+                          <ReasoningMessageContent
+                            key={`${msg.id}-reasoning-${idx}`}
+                            reasoningContent={normalizedReasoning}
+                            isReasoning={reasoning.isReasoning || false}
+                            reasoningComplete={reasoning.reasoningComplete || false}
                           />
                         );
                       }
-                      return null;
-                    })}
+                    } else if (segment.type === 'tool_call') {
+                      const toolCall = msg.toolCallProcesses?.[segment.toolCallId];
+                      if (toolCall) {
+                        return (
+                          <ToolCallMessageContent
+                            key={`${msg.id}-tool-${idx}`}
+                            toolName={toolCall.toolName || 'Unknown Tool'}
+                            toolCall={toolCall.toolCall}
+                            toolCallResult={toolCall.toolCallResult}
+                            isInProgress={toolCall.isInProgress || false}
+                            isComplete={toolCall.isComplete || false}
+                            isFailed={toolCall.isFailed || false}
+                            onOpenFile={onOpenFile}
+                          />
+                        );
+                      }
+                    } else if (segment.type === 'text' && segment.content !== undefined) {
+                      return (
+                        <TextMessageContent
+                          key={`${msg.id}-text-${idx}`}
+                          content={normalizeSubagentText(segment.content)}
+                        />
+                      );
+                    }
+                    return null;
+                  })}
                 </div>
               );
             }
