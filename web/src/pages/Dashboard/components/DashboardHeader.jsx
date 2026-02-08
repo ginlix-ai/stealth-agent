@@ -210,17 +210,31 @@ const DashboardHeader = ({ title = 'Finix AI', onStockSearch }) => {
                   If you have any questions or suggestions, please contact us through the following methods
                 </p>
                 <div
-                  className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors hover:opacity-80"
+                  className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors hover:opacity-80 mb-2"
                   style={{ backgroundColor: 'var(--color-bg-input)' }}
                   onClick={() => {
-                    window.location.href = 'mailto:support@ginlix.ai';
+                    window.location.href = 'mailto:zzxxi.chen@gmail.com';
                     setShowHelpPopover(false);
                   }}
                 >
                   <Mail className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
                   <div className="min-w-0">
                     <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>Email</p>
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>support@test.ai</p>
+                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>zzxxi.chen@gmail.com</p>
+                  </div>
+                </div>
+                <div
+                  className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors hover:opacity-80"
+                  style={{ backgroundColor: 'var(--color-bg-input)' }}
+                  onClick={() => {
+                    window.location.href = 'mailto:zhizhu0730@gmail.com';
+                    setShowHelpPopover(false);
+                  }}
+                >
+                  <Mail className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
+                  <div className="min-w-0">
+                    <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>Email</p>
+                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>zhizhu0730@gmail.com</p>
                   </div>
                 </div>
               </div>
