@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { Brain, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 /**
  * ReasoningMessageContent Component
@@ -15,8 +17,9 @@ import { Brain, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
  * @param {string} props.reasoningContent - The accumulated reasoning content
  * @param {boolean} props.isReasoning - Whether reasoning is currently in progress
  * @param {boolean} props.reasoningComplete - Whether reasoning process has completed
+ * @param {string|null} [props.reasoningTitle] - Optional title extracted from **...** in content (live streaming only; history does not pass this)
  */
-function ReasoningMessageContent({ reasoningContent, isReasoning, reasoningComplete }) {
+function ReasoningMessageContent({ reasoningContent, isReasoning, reasoningComplete, reasoningTitle }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Don't render if there's no reasoning content, reasoning hasn't started, and reasoning isn't complete
@@ -65,9 +68,15 @@ function ReasoningMessageContent({ reasoningContent, isReasoning, reasoningCompl
           )}
         </div>
         
-        {/* Label */}
-        <span style={{ color: 'inherit' }}>
-          {isReasoning ? 'Reasoning...' : 'Reasoning'}
+        {/* Label: when complete show "Reasoning"; when streaming and title present show "Reasoning: Title"; else "Reasoning..." or "Reasoning" */}
+        <span style={{ color: 'inherit' }} className="truncate min-w-0">
+          {reasoningComplete
+            ? 'Reasoning'
+            : reasoningTitle
+              ? `Reasoning: ${reasoningTitle}`
+              : isReasoning
+                ? 'Reasoning...'
+                : 'Reasoning'}
         </span>
         
         {/* Expand/collapse icon */}
@@ -88,18 +97,53 @@ function ReasoningMessageContent({ reasoningContent, isReasoning, reasoningCompl
         </div>
       </button>
 
-      {/* Reasoning content (shown when expanded) */}
+      {/* Reasoning content (shown when expanded) - vertical line on left, no box */}
       {isExpanded && reasoningContent && (
         <div
-          className="mt-2 px-3 py-2 rounded-md text-xs"
+          className="mt-2 pl-3 pr-0 py-1 text-xs reasoning-markdown"
           style={{
-            backgroundColor: 'rgba(97, 85, 245, 0.1)',
-            border: '1px solid rgba(97, 85, 245, 0.2)',
+            borderLeft: '3px solid rgba(97, 85, 245, 0.5)',
             color: '#FFFFFF',
             opacity: 0.9,
           }}
         >
-          <p className="whitespace-pre-wrap break-words">{reasoningContent}</p>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              p: ({ node, ...props }) => (
+                <p className="my-[1px] py-[3px] whitespace-pre-wrap break-words first:mt-0 last:mb-0" style={{ color: '#FFFFFF' }} {...props} />
+              ),
+              strong: ({ node, ...props }) => (
+                <strong className="font-[600]" style={{ color: '#FFFFFF' }} {...props} />
+              ),
+              em: ({ node, ...props }) => (
+                <em className="italic" style={{ color: '#FFFFFF' }} {...props} />
+              ),
+              code: ({ node, className, children, ...props }) => {
+                const isBlock = /language-/.test(className || '');
+                if (!isBlock) {
+                  return (
+                    <code className="font-mono" style={{ color: '#abb2bf', fontSize: 'inherit' }} {...props}>
+                      {children}
+                    </code>
+                  );
+                }
+                return (
+                  <code className="font-mono" style={{ color: '#abb2bf', fontSize: 'inherit' }} {...props}>
+                    {children}
+                  </code>
+                );
+              },
+              pre: ({ node, ...props }) => (
+                <pre className="rounded overflow-x-auto my-1 py-1 px-2" style={{ backgroundColor: 'rgba(0,0,0,0.2)', margin: 0 }} {...props} />
+              ),
+              ul: ({ node, ...props }) => <ul className="list-disc ml-4 my-1" style={{ color: '#FFFFFF' }} {...props} />,
+              ol: ({ node, ...props }) => <ol className="list-decimal ml-4 my-1" style={{ color: '#FFFFFF' }} {...props} />,
+              li: ({ node, ...props }) => <li className="break-words" style={{ color: '#FFFFFF' }} {...props} />,
+            }}
+          >
+            {reasoningContent}
+          </ReactMarkdown>
         </div>
       )}
     </div>
