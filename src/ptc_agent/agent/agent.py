@@ -423,6 +423,7 @@ class PTCAgent:
             max_researcher_iterations=DEFAULT_MAX_TASK_ITERATIONS,
             max_iterations=DEFAULT_MAX_GENERAL_ITERATIONS,
             filesystem_tools=filesystem_tools,  # Pass custom tools to subagents
+            additional_tools=finance_tools,  # Pass finance tools to general-purpose subagent
         )
 
         if additional_subagents:

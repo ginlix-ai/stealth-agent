@@ -8,6 +8,7 @@ call so the streaming handler can map LangGraph namespace UUIDs to our
 stable background task identities.
 """
 
+import time
 from collections.abc import Awaitable, Callable
 
 import structlog
@@ -94,7 +95,80 @@ class ToolCallCounterMiddleware(AgentMiddleware):
                     error=str(e),
                 )
 
-        return await handler(request)
+        response = await handler(request)
+
+        # Capture events for post-interrupt persistence
+        task_id = current_background_task_id.get()
+        if task_id and self.registry:
+            try:
+                ai_msg = response.result[0] if response.result else None
+                if ai_msg:
+                    from src.llms.content_utils import format_llm_content
+
+                    formatted = format_llm_content(ai_msg.content)
+                    tool_calls = getattr(ai_msg, "tool_calls", None) or []
+                    agent_id = self._get_agent_id(task_id)
+                    msg_id = getattr(ai_msg, "id", f"msg-{task_id}")
+
+                    # Emit reasoning chunk if present
+                    if formatted.get("reasoning"):
+                        await self.registry.append_captured_event(task_id, {
+                            "event": "message_chunk",
+                            "data": {
+                                "agent": agent_id,
+                                "id": msg_id,
+                                "role": "assistant",
+                                "content": formatted["reasoning"],
+                                "content_type": "reasoning",
+                                "finish_reason": None,
+                            },
+                            "ts": time.time(),
+                        })
+
+                    # Emit text chunk if present
+                    if formatted.get("text"):
+                        await self.registry.append_captured_event(task_id, {
+                            "event": "message_chunk",
+                            "data": {
+                                "agent": agent_id,
+                                "id": msg_id,
+                                "role": "assistant",
+                                "content": formatted["text"],
+                                "content_type": "text",
+                                "finish_reason": "tool_calls" if tool_calls else "stop",
+                            },
+                            "ts": time.time(),
+                        })
+
+                    if tool_calls:
+                        await self.registry.append_captured_event(task_id, {
+                            "event": "tool_calls",
+                            "data": {
+                                "agent": agent_id,
+                                "id": msg_id,
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "name": tc["name"],
+                                        "args": tc.get("args", {}),
+                                        "id": tc["id"],
+                                        "type": "tool_call",
+                                    }
+                                    for tc in tool_calls
+                                ],
+                                "finish_reason": "tool_calls",
+                            },
+                            "ts": time.time(),
+                        })
+            except Exception:
+                pass  # Never break the agent for capture failures
+
+        return response
+
+    def _get_agent_id(self, task_id: str) -> str:
+        """Resolve agent_id from registry task."""
+        task = self.registry._tasks.get(task_id)
+        return task.agent_id if task else f"subagent:{task_id}"
 
     def wrap_tool_call(
         self,
@@ -135,4 +209,45 @@ class ToolCallCounterMiddleware(AgentMiddleware):
             )
 
         # Execute the tool call
-        return await handler(request)
+        result = await handler(request)
+
+        # Capture tool_call_result for post-interrupt persistence
+        task_id = current_background_task_id.get()
+        if task_id and self.registry:
+            try:
+                agent_id = self._get_agent_id(task_id)
+                if isinstance(result, ToolMessage):
+                    content = result.content if isinstance(result.content, str) else str(result.content)
+                    await self.registry.append_captured_event(task_id, {
+                        "event": "tool_call_result",
+                        "data": {
+                            "agent": agent_id,
+                            "id": getattr(result, "id", ""),
+                            "role": "assistant",
+                            "tool_call_id": result.tool_call_id,
+                            "content": content[:4096],
+                            "content_type": "text",
+                        },
+                        "ts": time.time(),
+                    })
+                elif isinstance(result, Command):
+                    msgs = (result.update or {}).get("messages", [])
+                    for msg in msgs:
+                        if isinstance(msg, ToolMessage):
+                            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                            await self.registry.append_captured_event(task_id, {
+                                "event": "tool_call_result",
+                                "data": {
+                                    "agent": agent_id,
+                                    "id": getattr(msg, "id", ""),
+                                    "role": "assistant",
+                                    "tool_call_id": msg.tool_call_id,
+                                    "content": content[:4096],
+                                    "content_type": "text",
+                                },
+                                "ts": time.time(),
+                            })
+            except Exception:
+                pass  # Never break the agent for capture failures
+
+        return result

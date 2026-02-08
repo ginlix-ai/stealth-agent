@@ -970,6 +970,66 @@ async def create_response(
         raise
 
 
+async def update_streaming_chunks(
+    response_id: str,
+    streaming_chunks: List[Dict[str, Any]],
+    conn=None,
+) -> bool:
+    """
+    Update streaming_chunks for an existing response.
+
+    Used by post-interrupt subagent result collector to replace incomplete
+    subagent events with the full set captured by middleware.
+
+    Args:
+        response_id: The response ID to update
+        streaming_chunks: Updated streaming chunks list
+        conn: Optional database connection to reuse
+
+    Returns:
+        True if the row was updated, False if not found
+    """
+    try:
+        if conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    UPDATE conversation_response
+                    SET streaming_chunks = %s
+                    WHERE response_id = %s
+                    """,
+                    (Json(streaming_chunks), response_id),
+                )
+                updated = cur.rowcount > 0
+        else:
+            async with get_db_connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """
+                        UPDATE conversation_response
+                        SET streaming_chunks = %s
+                        WHERE response_id = %s
+                        """,
+                        (Json(streaming_chunks), response_id),
+                    )
+                    updated = cur.rowcount > 0
+
+        if updated:
+            logger.info(
+                f"[conversation_db] update_streaming_chunks response_id={response_id} "
+                f"chunks={len(streaming_chunks)}"
+            )
+        else:
+            logger.warning(
+                f"[conversation_db] update_streaming_chunks: no row found for response_id={response_id}"
+            )
+        return updated
+
+    except Exception as e:
+        logger.error(f"Error updating streaming_chunks: {e}")
+        raise
+
+
 async def get_responses_for_thread(
     thread_id: str,
     limit: Optional[int] = None,
