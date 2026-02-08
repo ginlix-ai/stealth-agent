@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, Globe, Plus, Send, Zap, Loader2 } from 'lucide-react';
+import { Globe, Send, Zap, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import './TradingChatInput.css';
 
@@ -41,13 +41,6 @@ function TradingChatInput({ onSend, isLoading = false }) {
     <>
       <div className="trading-chat-card">
         <div className="trading-chat-row">
-          <button
-            type="button"
-            className="trading-chat-btn trading-chat-btn-icon"
-            aria-label="Add"
-          >
-            <Plus className="trading-chat-icon" />
-          </button>
           <Input
             className="trading-chat-input"
             placeholder="What would you like to know?"
@@ -73,10 +66,6 @@ function TradingChatInput({ onSend, isLoading = false }) {
             >
               <Zap className="trading-chat-icon-sm" />
               <span>Plan Mode</span>
-            </button>
-            <button type="button" className="trading-chat-btn trading-chat-btn-pill trading-chat-btn-tool">
-              <span>Tool</span>
-              <ChevronDown className="trading-chat-icon-sm" />
             </button>
             <button
               type="button"

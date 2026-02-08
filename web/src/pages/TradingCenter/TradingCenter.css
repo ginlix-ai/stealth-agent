@@ -30,8 +30,8 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, hsl(var(--bg-main)) 0%, hsl(222 47% 6%) 50%, hsl(222 45% 5%) 100%);
-  border-left: 1px solid #1a1f35;
+  background-color: var(--color-bg-page);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
   padding: 12px;
   box-sizing: border-box;
   overflow: hidden;

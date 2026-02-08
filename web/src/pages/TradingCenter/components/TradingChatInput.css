@@ -12,6 +12,7 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .trading-chat-btn-icon {
@@ -46,6 +47,7 @@
   color: #e2e8f0;
   outline: none;
   transition: background 0.2s, box-shadow 0.2s;
+  order: 1;
 }
 .trading-chat-input::placeholder {
   color: #6b7280;
@@ -64,6 +66,8 @@
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  order: 2;
+  margin-left: auto;
 }
 
 .trading-chat-btn-pill {

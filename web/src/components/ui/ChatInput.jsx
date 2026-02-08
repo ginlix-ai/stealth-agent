@@ -1,4 +1,4 @@
-import { Plus, Send, Zap } from 'lucide-react';
+import { Send, Zap } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Input } from './input';
 
@@ -109,12 +109,6 @@ const ChatInput = ({
       className={`flex items-center ${variant === 'dashboard' ? 'gap-1' : 'gap-2 p-3 rounded-lg'}`}
       style={containerStyles}
     >
-      <button 
-        className={`w-9 h-9 flex items-center justify-center rounded-md transition-colors hover:bg-white/5`}
-        style={{ color: buttonColor }}
-      >
-        <Plus className="h-4 w-4" />
-      </button>
       <Input 
         placeholder={placeholder}
         className="flex-1 h-9 rounded-md text-sm focus-visible:ring-0 focus-visible:ring-offset-0 focus:outline-none"
