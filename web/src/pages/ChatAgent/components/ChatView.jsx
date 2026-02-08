@@ -72,6 +72,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
     handleSendMessage,
     threadId: currentThreadId,
     getSubagentHistory,
+    resolveSubagentIdToAgentId,
   } = useChatMessages(workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, minimizeInactiveSubagents);
 
   // Ensure new active agents are visible (remove from hidden list)
@@ -101,8 +102,8 @@ function ChatView({ workspaceId, threadId, onBack }) {
     .filter(([cardId]) => cardId.startsWith('subagent-'))
     .map(([cardId, card]) => ({
       id: cardId.replace('subagent-', ''),
-      name: 'Agent', // 统一显示为 Agent
-      taskId: card.subagentData?.taskId || '',
+      name: card.subagentData?.displayId || 'Agent',
+      taskId: card.subagentData?.taskId || card.subagentData?.agentId || '',
       description: card.subagentData?.description || '',
       type: card.subagentData?.type || 'general-purpose',
       status: card.subagentData?.status || 'active',
@@ -244,42 +245,19 @@ function ChatView({ workspaceId, threadId, onBack }) {
     }
   }, [selectedAgentId, agents]);
 
-  // Auto-open agent panel only when a new subagent appears (not main agent)
+  // Auto-open agent panel and switch to newest subagent when a new subagent card is created
   useEffect(() => {
-    // Get current subagent IDs (excluding main agent)
-    const currentSubagentIds = new Set(
-      subagentAgents.map(agent => agent.id)
-    );
-    
-    // Check if there are any new subagents
+    const currentSubagentIds = new Set(subagentAgents.map(agent => agent.id));
     const hasNewSubagent = Array.from(currentSubagentIds).some(
       id => !seenSubagentIdsRef.current.has(id)
     );
-    
-    if (hasNewSubagent) {
-      // Update seen subagents
+    if (hasNewSubagent && subagentAgents.length > 0) {
       currentSubagentIds.forEach(id => seenSubagentIdsRef.current.add(id));
-      
-      // Auto-open agent panel only if it's currently closed
-      if (rightPanelType === null) {
-        setRightPanelType('agent');
-        // Select the newest subagent (first in the sorted list, excluding main agent)
-        if (subagentAgents.length > 0) {
-          setSelectedAgentId(subagentAgents[0].id);
-        } else {
-          // Fallback to main agent if no subagents yet
-          setSelectedAgentId('main');
-        }
-      } else if (rightPanelType === 'agent' && !selectedAgentId) {
-        // If panel is already open but no agent selected, select newest subagent
-        if (subagentAgents.length > 0) {
-          setSelectedAgentId(subagentAgents[0].id);
-        } else {
-          setSelectedAgentId('main');
-        }
-      }
+      const newestSubagentId = subagentAgents[0].id;
+      setRightPanelType('agent');
+      setSelectedAgentId(newestSubagentId);
     }
-  }, [subagentAgents.map(a => a.id).join(','), rightPanelType, selectedAgentId]); // Trigger when subagents change
+  }, [subagentAgents.map(a => a.id).join(','), subagentAgents]);
 
   // Reset seen subagents when thread changes
   useEffect(() => {
@@ -461,33 +439,26 @@ function ChatView({ workspaceId, threadId, onBack }) {
                   messages={messages}
                   onOpenFile={handleOpenFileFromChat}
                   onOpenSubagentTask={(subagentInfo) => {
-                    console.log('[ChatView] onOpenSubagentTask called with:', subagentInfo);
                     const { subagentId, description, type, status } = subagentInfo;
+                    // Resolve subagentId (may be toolCallId from segment) to stable agent_id for card operations
+                    const agentId = resolveSubagentIdToAgentId
+                      ? resolveSubagentIdToAgentId(subagentId)
+                      : subagentId;
 
                     if (!updateSubagentCard) {
                       console.error('[ChatView] updateSubagentCard is not defined!');
                       return;
                     }
 
-                    // Try to load history for this subagent (if available)
-                    const history = getSubagentHistory
-                      ? getSubagentHistory(subagentId)
-                      : null;
-
+                    const history = getSubagentHistory ? getSubagentHistory(subagentId) : null;
                     const finalDescription = history?.description || description || '';
                     const finalType = history?.type || type || 'general-purpose';
                     const finalStatus = history?.status || status || 'unknown';
                     const finalMessages = history?.messages || [];
 
-                    console.log('[ChatView] Opening subagent in agent panel:', {
-                      subagentId,
-                      hasHistory: !!history,
-                      messagesCount: finalMessages.length,
-                    });
-
-                    // Update the floating card data (for data management)
-                    updateSubagentCard(subagentId, {
-                      taskId: subagentId,
+                    updateSubagentCard(agentId, {
+                      agentId,
+                      taskId: agentId,
                       description: finalDescription,
                       type: finalType,
                       status: finalStatus,
@@ -498,9 +469,8 @@ function ChatView({ workspaceId, threadId, onBack }) {
                       isActive: !history,
                     });
 
-                    // Open agent panel and select this agent
                     setRightPanelType('agent');
-                    setSelectedAgentId(subagentId);
+                    setSelectedAgentId(agentId);
                   }}
                 />
                 </div>
@@ -541,6 +511,28 @@ function ChatView({ workspaceId, threadId, onBack }) {
                   onSelectAgent={handleSelectAgent}
                   onClose={() => setRightPanelType(null)}
                   onRemoveAgent={handleRemoveAgent}
+                  messages={messages}
+                  onOpenSubagentTask={(subagentInfo) => {
+                    const { subagentId, description, type, status } = subagentInfo;
+                    const agentId = resolveSubagentIdToAgentId ? resolveSubagentIdToAgentId(subagentId) : subagentId;
+                    if (!updateSubagentCard) return;
+                    const history = getSubagentHistory ? getSubagentHistory(subagentId) : null;
+                    updateSubagentCard(agentId, {
+                      agentId,
+                      taskId: agentId,
+                      description: history?.description || description || '',
+                      type: history?.type || type || 'general-purpose',
+                      status: history?.status || status || 'unknown',
+                      toolCalls: 0,
+                      currentTool: '',
+                      messages: history?.messages || [],
+                      isHistory: !!history,
+                      isActive: !history,
+                    });
+                    setRightPanelType('agent');
+                    setSelectedAgentId(agentId);
+                  }}
+                  onOpenFile={handleOpenFileFromChat}
                 />
               </div>
             ) : null}

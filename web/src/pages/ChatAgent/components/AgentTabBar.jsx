@@ -206,7 +206,7 @@ function AgentTabBar({ agents, selectedAgentId, onSelectAgent, onRemoveAgent }) 
                         isActive && "agent-tab-active-pulse"
                       )}
                       style={{
-                        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                        backgroundColor: isActive ? 'rgba(15, 237, 190, 0.25)' : 'rgba(255, 255, 255, 0.1)',
                       }}
                     >
                       <img

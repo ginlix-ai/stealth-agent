@@ -4,12 +4,21 @@
  */
 
 /**
- * Helper to check if an event is from a subagent
+ * Helper to check if an event is from a subagent.
+ * Backend convention (aligned with isSubagentEvent in streamEventHandlers):
+ * - Main agent: agent.startsWith("model:")
+ * - Tool node: agent === "tools"
+ * - Subagent: agent contains ":" but does NOT start with "model:" and is NOT "tools"
+ * Subagent agent_id format: "{subagent_type}:{uuid4}" (e.g., "research:550e8400-...")
  * @param {Object} event - The history event
  * @returns {boolean} True if event is from subagent
  */
 export function isSubagentHistoryEvent(event) {
-  return event.agent && typeof event.agent === 'string' && event.agent.startsWith('tools:');
+  const agent = event?.agent;
+  if (!agent || typeof agent !== 'string' || !agent.includes(':')) {
+    return false;
+  }
+  return !agent.startsWith('model:') && agent !== 'tools';
 }
 
 /**
@@ -357,8 +366,9 @@ export function handleHistoryToolCalls({ assistantMessageId, toolCalls, pairStat
             };
           }
 
-          // If this tool is the `task` tool, also create a subagent_task segment
-          if (toolCall.name === 'task') {
+          // If this tool is the Task tool (subagent spawner), also create a subagent_task segment
+          // Backend uses PascalCase "Task"; accept both for compatibility
+          if ((toolCall.name === 'task' || toolCall.name === 'Task') && toolCallId) {
             const subagentId = toolCallId;
             // Only add the segment once per subagentId
             const hasExistingSubagentSegment = contentSegments.some(

@@ -1,13 +1,17 @@
 import { ChevronDown, ChevronUp, Loader2, Wrench } from 'lucide-react';
 import { useState } from 'react';
 
-// File-related tool names that support opening in the file panel
-const FILE_TOOLS = ['write_file', 'edit_file', 'read_file', 'save_file'];
+/**
+ * File-related tool names that support opening in the file panel.
+ * Backend uses PascalCase (LangChain SDK convention). Include both for backward compatibility
+ * with older history that may have snake_case tool names.
+ */
+const FILE_TOOLS = ['Write', 'Edit', 'Read', 'Save', 'write_file', 'edit_file', 'read_file', 'save_file'];
 
 function getFilePathFromToolCall(toolCall) {
   if (!toolCall?.args) return null;
   const args = toolCall.args;
-  return args.file_path || args.path || args.filename || null;
+  return args.file_path || args.filePath || args.path || args.filename || null;
 }
 
 /**
@@ -17,14 +21,14 @@ function getFilePathFromToolCall(toolCall) {
  * 
  * Features:
  * - Shows an icon indicating tool call status (loading when in progress, finished when complete)
- * - Displays tool name (e.g., "write_file")
+ * - Displays tool name (e.g., "Write", "Read")
  * - For file tools: clicking opens the file in the right panel via onOpenFile callback
  * - For non-file tools: clicking toggles visibility of tool call details
  * - Displays tool_calls and tool_call_result with different visual styles
  * 
  * @param {Object} props
  * @param {string} props.toolCallId - Unique identifier for this tool call
- * @param {string} props.toolName - Name of the tool (e.g., "write_file")
+ * @param {string} props.toolName - Name of the tool (e.g., "Write", "Read")
  * @param {Object} props.toolCall - Complete tool_calls event data
  * @param {Object} props.toolCallResult - tool_call_result event data
  * @param {boolean} props.isInProgress - Whether tool call is currently in progress
