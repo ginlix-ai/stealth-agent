@@ -26,7 +26,7 @@ class BackgroundTask:
     """Sequential task number (1, 2, 3...) for easy reference."""
 
     description: str
-    """Description of what the subagent is doing."""
+    """Short description/label of the task."""
 
     subagent_type: str
     """Type of subagent (e.g., 'research', 'general-purpose')."""

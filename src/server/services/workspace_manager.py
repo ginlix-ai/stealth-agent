@@ -400,9 +400,25 @@ class WorkspaceManager:
                 )
 
             elif status == "stopping":
-                # Wait for stop to complete
+                # Wait for stop to complete, then restart
+                logger.info(
+                    f"Workspace {workspace_id} is stopping, waiting for it to finish..."
+                )
+                for _ in range(20):  # Max ~10 seconds
+                    await asyncio.sleep(0.5)
+                    workspace = await db_get_workspace(workspace_id)
+                    status = workspace.get("status", "unknown")
+                    if status == "stopped":
+                        logger.info(
+                            f"Workspace {workspace_id} finished stopping, restarting"
+                        )
+                        return await self._restart_workspace(
+                            workspace,
+                            user_id=workspace_user_id,
+                            lazy_init=True,
+                        )
                 raise RuntimeError(
-                    f"Workspace {workspace_id} is being stopped. "
+                    f"Workspace {workspace_id} is still stopping after timeout. "
                     "Please wait and try again."
                 )
 

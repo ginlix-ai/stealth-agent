@@ -853,6 +853,15 @@ class BackgroundTaskManager:
                                 streaming_chunks=streaming_chunks
                             )
                             logger.info(f"[WorkflowPersistence] Workflow {thread_id} paused for human feedback")
+
+                            # Update Redis workflow tracker to interrupted
+                            # (prevents frontend from reconnecting to a paused workflow)
+                            from src.server.services.workflow_tracker import WorkflowTracker
+                            tracker = WorkflowTracker.get_instance()
+                            await tracker.mark_interrupted(
+                                thread_id=thread_id,
+                                metadata={"interrupt_reason": "plan_review_required"},
+                            )
                         except Exception as persist_error:
                             logger.error(
                                 f"[WorkflowPersistence] Failed to persist interrupt for thread_id={thread_id}: {persist_error}",

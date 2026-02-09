@@ -321,6 +321,9 @@ class WorkflowStreamHandler:
         # Current namespace tuple (for subagent tracking in _process_message_chunk)
         self._current_namespace: tuple = ()
 
+        # Track which completed task results have already been sent (avoid re-sending)
+        self._sent_result_task_ids: set[str] = set()
+
         # Cursor tracking for old subagent event emission (task_id → index)
         self._old_subagent_cursors: dict[str, int] = {}
         # Snapshot of task IDs from previous workflow (set at stream start)
@@ -882,14 +885,26 @@ class WorkflowStreamHandler:
                 {
                     "id": task.display_id,
                     "agent_id": task.agent_id,
-                    "description": task.description[:100] if task.description else "",
+                    "description": task.description or "",
                     "type": task.subagent_type,
                     "tool_calls": task.total_tool_calls,
                     "current_tool": task.current_tool,
                 }
                 for task in sorted(pending, key=lambda t: t.display_id)
             ]
-            completed_tasks = sorted([task.display_id for task in completed])
+            completed_tasks = []
+            for task in sorted(completed, key=lambda t: t.display_id):
+                entry: dict[str, Any] = {
+                    "id": task.display_id,
+                    "agent_id": task.agent_id,
+                }
+                # Include result text only the first time a task appears completed
+                if task.task_id not in self._sent_result_task_ids and task.result:
+                    from ptc_agent.agent.middleware.background.tools import extract_result_content
+                    _success, content = extract_result_content(task.result)
+                    entry["result"] = content
+                    self._sent_result_task_ids.add(task.task_id)
+                completed_tasks.append(entry)
 
             payload = {
                 "active_tasks": active_tasks,
