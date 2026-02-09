@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Loader2, Search, ArrowDownUp, MoreHorizontal } from 'lucide-react';
+import { Plus, Loader2, Search, ArrowDownUp, MoreHorizontal, Zap } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import CreateWorkspaceModal from './CreateWorkspaceModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
@@ -191,6 +191,11 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
       workspace.name.toLowerCase().includes(searchQuery.toLowerCase())
     )
     .sort((a, b) => {
+      // Pin flash workspace to top
+      const aFlash = a.status === 'flash' ? 1 : 0;
+      const bFlash = b.status === 'flash' ? 1 : 0;
+      if (aFlash !== bFlash) return bFlash - aFlash;
+
       if (sortBy === 'activity') {
         // Sort by updated_at (most recent first)
         return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
@@ -344,15 +349,22 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
                     onMouseEnter={() => prefetchThreads?.(workspace.workspace_id)}
                   >
                     <div
-                      onClick={() => onWorkspaceSelect(workspace.workspace_id, workspace.name)}
+                      onClick={() => onWorkspaceSelect(workspace.workspace_id, workspace.name, workspace.status)}
                       className="relative flex cursor-pointer flex-col overflow-hidden rounded-xl py-4 pl-5 pr-4 transition-all ease-in-out hover:shadow-sm active:scale-[0.98] h-full w-full"
                       style={{
-                        background: 'linear-gradient(to bottom, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01))',
-                        border: '0.5px solid rgba(255, 255, 255, 0.1)',
+                        background: workspace.status === 'flash'
+                          ? 'linear-gradient(to bottom, rgba(97, 85, 245, 0.08), rgba(97, 85, 245, 0.02))'
+                          : 'linear-gradient(to bottom, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01))',
+                        border: workspace.status === 'flash'
+                          ? '0.5px solid rgba(97, 85, 245, 0.3)'
+                          : '0.5px solid rgba(255, 255, 255, 0.1)',
                       }}
                     >
                       <div className="flex flex-col flex-grow gap-4">
-                        <div className="flex items-center pr-10 overflow-hidden">
+                        <div className="flex items-center pr-10 overflow-hidden gap-2">
+                          {workspace.status === 'flash' && (
+                            <Zap className="h-4 w-4 flex-shrink-0" style={{ color: '#6155F5' }} />
+                          )}
                           <div className="font-medium truncate" style={{ color: '#FFFFFF' }}>
                             {workspace.name}
                           </div>
@@ -368,7 +380,7 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
                       </div>
                     </div>
                     {/* Three dots menu */}
-                    {workspace.name !== DEFAULT_WORKSPACE_NAME && (
+                    {workspace.name !== DEFAULT_WORKSPACE_NAME && workspace.status !== 'flash' && (
                       <div className="absolute top-3 right-3 z-10 transition-opacity opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
                         <button
                           onClick={(e) => {

@@ -34,9 +34,12 @@ function ChatAgent() {
    * Handles workspace selection from gallery
    * Passes workspace name via route state to avoid refetching all workspaces
    */
-  const handleWorkspaceSelect = useCallback((selectedWorkspaceId, workspaceName) => {
+  const handleWorkspaceSelect = useCallback((selectedWorkspaceId, workspaceName, workspaceStatus) => {
     navigate(`/chat/${selectedWorkspaceId}`, {
-      state: { workspaceName: workspaceName || 'Workspace' },
+      state: {
+        workspaceName: workspaceName || 'Workspace',
+        workspaceStatus: workspaceStatus || null,
+      },
     });
   }, [navigate]);
 
@@ -46,19 +49,27 @@ function ChatAgent() {
 
   const handleBackToThreadGallery = useCallback(() => {
     if (workspaceId) {
-      // Preserve workspace name when navigating back from chat
+      // Preserve workspace name and status when navigating back from chat
       const cached = workspaceCacheRef.current[workspaceId];
       navigate(`/chat/${workspaceId}`, {
-        state: { workspaceName: cached?.workspaceName || location.state?.workspaceName },
+        state: {
+          workspaceName: cached?.workspaceName || location.state?.workspaceName,
+          workspaceStatus: location.state?.workspaceStatus || null,
+        },
       });
     } else {
       navigate('/chat');
     }
   }, [navigate, workspaceId, location.state]);
 
-  const handleThreadSelect = useCallback((selectedWorkspaceId, selectedThreadId) => {
-    navigate(`/chat/${selectedWorkspaceId}/${selectedThreadId}`);
-  }, [navigate]);
+  const handleThreadSelect = useCallback((selectedWorkspaceId, selectedThreadId, agentMode) => {
+    navigate(`/chat/${selectedWorkspaceId}/${selectedThreadId}`, {
+      state: {
+        ...(agentMode ? { agentMode } : {}),
+        workspaceStatus: location.state?.workspaceStatus || null,
+      },
+    });
+  }, [navigate, location.state]);
 
   /**
    * Prefetch thread data on workspace card hover (Fix 6)

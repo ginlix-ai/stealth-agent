@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Loader2, Folder, FileText } from 'lucide-react';
+import { ArrowLeft, Loader2, Folder, FileText, Zap } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import ThreadCard from './ThreadCard';
 import DeleteConfirmModal from './DeleteConfirmModal';
@@ -35,6 +35,10 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
   const [workspaceName, setWorkspaceName] = useState(
     location.state?.workspaceName || ''
   );
+  const [workspaceStatus, setWorkspaceStatus] = useState(
+    location.state?.workspaceStatus || null
+  );
+  const isFlash = workspaceStatus === 'flash';
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, thread: null });
@@ -51,13 +55,13 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
   const [files, setFiles] = useState(() => cache?.current?.[workspaceId]?.files || []);
   const isDraggingRef = useRef(false);
 
-  // Shared workspace files for the FilePanel
+  // Shared workspace files for the FilePanel (skip for flash workspaces — no sandbox)
   const {
     files: panelFiles,
     loading: panelFilesLoading,
     error: panelFilesError,
     refresh: refreshPanelFiles,
-  } = useWorkspaceFiles(workspaceId);
+  } = useWorkspaceFiles(isFlash ? null : workspaceId);
 
   const navigate = useNavigate();
   const { threadId: currentThreadId } = useParams();
@@ -154,6 +158,11 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
         setWorkspaceName(freshName);
       }
 
+      // Detect workspace status from API if not provided via navigation state
+      if (!workspaceStatus && workspaceData?.status) {
+        setWorkspaceStatus(workspaceData.status);
+      }
+
       // Update cache for stale-while-revalidate on return navigation
       // Spread existing entry to preserve cached files
       if (cache?.current) {
@@ -178,7 +187,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
    */
   const handleThreadClick = (thread) => {
     if (onThreadSelect) {
-      onThreadSelect(workspaceId, thread.thread_id);
+      onThreadSelect(workspaceId, thread.thread_id, isFlash ? 'flash' : null);
     }
   };
 
@@ -332,6 +341,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
         state: {
           initialMessage: message.trim(),
           planMode: planMode,
+          ...(isFlash ? { agentMode: 'flash' } : {}),
         },
       });
     } catch (error) {
@@ -444,7 +454,11 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
             {/* Workspace Header */}
             <div className="w-full flex flex-col items-center mt-[8vh]">
               <div className="flex items-center justify-center transition-colors cursor-pointer">
-                <img src={iconComputer} alt="Workspace" className="w-10 h-10" />
+                {isFlash ? (
+                  <Zap className="w-10 h-10" style={{ color: '#6155F5' }} />
+                ) : (
+                  <img src={iconComputer} alt="Workspace" className="w-10 h-10" />
+                )}
               </div>
               <h1
                 className="text-xl font-medium mt-3 text-center dashboard-title-font"
@@ -468,8 +482,8 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
               />
             </div>
 
-            {/* Files Card */}
-            <div className="w-full">
+            {/* Files Card — hidden for flash workspaces (no sandbox) */}
+            {!isFlash && <div className="w-full">
               <div
                 className="flex-1 min-w-0 flex flex-col ps-[16px] pt-[12px] pb-[14px] pe-[20px] rounded-[12px] border cursor-pointer hover:bg-white/5 transition-colors"
                 style={{
@@ -511,7 +525,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
                   </div>
                 )}
               </div>
-            </div>
+            </div>}
 
             {/* Threads Section */}
             <div className="w-full flex flex-col gap-4 pb-8">
@@ -550,8 +564,8 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
         </div>
       </div>
 
-      {/* Right Side: File Panel */}
-      {showFilePanel && (
+      {/* Right Side: File Panel — hidden for flash workspaces */}
+      {showFilePanel && !isFlash && (
         <>
           <div
             className="w-[4px] bg-transparent hover:bg-white/20 cursor-col-resize flex-shrink-0 transition-colors"

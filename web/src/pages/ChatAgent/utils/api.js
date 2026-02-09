@@ -38,6 +38,19 @@ export async function getWorkspace(workspaceId, userId = DEFAULT_USER_ID) {
   return data;
 }
 
+/**
+ * Ensure the shared flash workspace exists for the current user.
+ * Idempotent — safe to call on every app load.
+ * @param {string} userId
+ * @returns {Promise<Object>} Flash workspace record
+ */
+export async function getFlashWorkspace(userId = DEFAULT_USER_ID) {
+  const { data } = await api.post('/api/v1/workspaces/flash', null, {
+    headers: headers(userId),
+  });
+  return data;
+}
+
 // --- Conversations ---
 
 export async function getConversations(userId = DEFAULT_USER_ID, limit = 50, offset = 0) {

@@ -68,7 +68,7 @@ function isOnboardingRelatedToolSuccess(resultContent) {
   return !!(parsed.risk_preference || parsed.watchlist_item || parsed.portfolio_holding);
 }
 
-export function useChatMessages(workspaceId, initialThreadId = null, updateTodoListCard = null, updateSubagentCard = null, inactivateAllSubagents = null, minimizeInactiveSubagents = null, onOnboardingRelatedToolComplete = null, onFileArtifact = null) {
+export function useChatMessages(workspaceId, initialThreadId = null, updateTodoListCard = null, updateSubagentCard = null, inactivateAllSubagents = null, minimizeInactiveSubagents = null, onOnboardingRelatedToolComplete = null, onFileArtifact = null, agentMode = 'ptc') {
   // State
   const [messages, setMessages] = useState([]);
   const [threadId, setThreadId] = useState(() => {
@@ -1621,7 +1621,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         planMode,
         processEvent,
         getAuthUserId() || DEFAULT_USER_ID,
-        additionalContext
+        additionalContext,
+        agentMode
       );
 
       // Mark message as complete

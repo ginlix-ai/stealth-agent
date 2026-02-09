@@ -4,7 +4,7 @@ import { ArrowLeft, FolderOpen, Bot, StopCircle, Zap } from 'lucide-react';
 import { ScrollArea } from '../../../components/ui/scroll-area';
 import { useAuth } from '../../../contexts/AuthContext';
 import { updateCurrentUser } from '../../Dashboard/utils/api';
-import { DEFAULT_USER_ID, softInterruptWorkflow } from '../utils/api';
+import { DEFAULT_USER_ID, softInterruptWorkflow, getWorkspace } from '../utils/api';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { saveChatSession, getChatSession, clearChatSession } from '../hooks/utils/chatSessionRestore';
 import { useFloatingCards } from '../hooks/useFloatingCards';
@@ -44,6 +44,9 @@ function ChatView({ workspaceId, threadId, onBack }) {
   const navigate = useNavigate();
   const { userId: authUserId, refreshUser } = useAuth();
   const initialMessageSentRef = useRef(false);
+  // Determine agent mode: flash workspaces use flash mode, otherwise ptc
+  const [agentMode, setAgentMode] = useState(location.state?.agentMode || 'ptc');
+  const isFlashMode = agentMode === 'flash';
   const [filePanelTargetFile, setFilePanelTargetFile] = useState(null);
   const [filePanelTargetDir, setFilePanelTargetDir] = useState(null);
   const isDraggingRef = useRef(false);
@@ -125,6 +128,19 @@ function ChatView({ workspaceId, threadId, onBack }) {
     scrollPositionsRef.current = {}; // Clear saved positions for new thread
   }, [threadId]);
 
+  // Direct URL navigation fallback: detect flash workspace from API
+  useEffect(() => {
+    if (location.state?.agentMode || !workspaceId) return;
+    let cancelled = false;
+    const userId = authUserId || DEFAULT_USER_ID;
+    getWorkspace(workspaceId, userId).then((ws) => {
+      if (!cancelled && ws?.status === 'flash') {
+        setAgentMode('flash');
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [workspaceId, location.state?.agentMode, authUserId]);
+
   // Floating cards management - extracted to custom hook for better encapsulation
   // Must be called before useChatMessages since updateTodoListCard and updateSubagentCard are passed to it
   const {
@@ -155,12 +171,13 @@ function ChatView({ workspaceId, threadId, onBack }) {
 
   // Workspace files - shared between FilePanel and ChatInputWithMentions
   // Must be declared before useChatMessages so refreshFiles can be passed as onFileArtifact
+  // Skip for flash mode — no sandbox
   const {
     files: workspaceFiles,
     loading: filesLoading,
     error: filesError,
     refresh: refreshFiles,
-  } = useWorkspaceFiles(workspaceId);
+  } = useWorkspaceFiles(isFlashMode ? null : workspaceId);
 
   // Chat messages management - receives updateTodoListCard and updateSubagentCard from floating cards hook
   const {
@@ -177,7 +194,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
     threadId: currentThreadId,
     getSubagentHistory,
     resolveSubagentIdToAgentId,
-  } = useChatMessages(workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, minimizeInactiveSubagents, handleOnboardingRelatedToolComplete, refreshFiles);
+  } = useChatMessages(workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, minimizeInactiveSubagents, handleOnboardingRelatedToolComplete, refreshFiles, agentMode);
 
   // Ref to avoid stale closure in unmount cleanup
   const currentThreadIdRef = useRef(currentThreadId);
@@ -634,14 +651,16 @@ function ChatView({ workspaceId, threadId, onBack }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleToggleFilePanel}
-              className={`p-2 rounded-md transition-colors ${rightPanelType === 'file' ? 'bg-white/15' : 'hover:bg-white/10'}`}
-              style={{ color: '#FFFFFF' }}
-              title="Workspace Files"
-            >
-              <FolderOpen className="h-5 w-5" />
-            </button>
+            {!isFlashMode && (
+              <button
+                onClick={handleToggleFilePanel}
+                className={`p-2 rounded-md transition-colors ${rightPanelType === 'file' ? 'bg-white/15' : 'hover:bg-white/10'}`}
+                style={{ color: '#FFFFFF' }}
+                title="Workspace Files"
+              >
+                <FolderOpen className="h-5 w-5" />
+              </button>
+            )}
             <button
               onClick={handleToggleSidebar}
               className={`p-2 rounded-md transition-colors ${sidebarVisible ? 'bg-white/15' : 'hover:bg-white/10'}`}
