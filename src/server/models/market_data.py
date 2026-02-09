@@ -69,6 +69,38 @@ class IntradayResponse(BaseModel):
         }
 
 
+class DailyResponse(BaseModel):
+    """Response for single symbol daily historical data request."""
+    symbol: str = Field(..., description="Stock symbol")
+    data: List[IntradayDataPoint] = Field(default_factory=list, description="Daily OHLCV data points")
+    count: int = Field(0, description="Number of data points returned")
+    cache: CacheMetadata = Field(..., description="Cache metadata")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "symbol": "AAPL",
+                "data": [
+                    {
+                        "date": "2024-01-15",
+                        "open": 185.50,
+                        "high": 187.00,
+                        "low": 184.25,
+                        "close": 186.60,
+                        "volume": 55000000
+                    }
+                ],
+                "count": 1,
+                "cache": {
+                    "cached": True,
+                    "cache_key": "fmp:daily:stock:symbol=AAPL",
+                    "ttl_remaining": 3200,
+                    "refreshed_in_background": False
+                }
+            }
+        }
+
+
 class BatchIntradayRequest(BaseModel):
     """Request for batch intraday data."""
     symbols: List[str] = Field(

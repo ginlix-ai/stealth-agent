@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from src.server.models.market_data import (
     IntradayDataPoint,
     IntradayResponse,
+    DailyResponse,
     BatchIntradayRequest,
     BatchIntradayResponse,
     CacheMetadata,
@@ -24,6 +25,10 @@ from src.server.models.market_data import (
 from src.server.services.intraday_cache_service import (
     IntradayCacheService,
     IntradayCacheKeyBuilder,
+)
+from src.server.services.daily_cache_service import (
+    DailyCacheService,
+    DailyCacheKeyBuilder,
 )
 from src.data_client.fmp.fmp_client import FMPClient
 
@@ -107,6 +112,56 @@ async def get_stock_intraday(
         raise
     except Exception as e:
         logger.error(f"Error fetching stock intraday data for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Daily Stock Endpoints
+# =============================================================================
+
+
+@router.get(
+    "/daily/stocks/{symbol}",
+    response_model=DailyResponse,
+    summary="Get stock daily historical data",
+    description="Retrieve daily EOD OHLCV data for a single stock symbol (~500 days by default).",
+)
+async def get_stock_daily(
+    symbol: str,
+    from_date: Optional[str] = Query(None, alias="from", description="Start date (YYYY-MM-DD)"),
+    to_date: Optional[str] = Query(None, alias="to", description="End date (YYYY-MM-DD)"),
+) -> DailyResponse:
+    """Get daily historical data for a single stock."""
+    try:
+        service = DailyCacheService.get_instance()
+        result = await service.get_stock_daily(
+            symbol=symbol,
+            from_date=from_date,
+            to_date=to_date,
+        )
+
+        if result.error:
+            raise HTTPException(status_code=500, detail=result.error)
+
+        cache_key = DailyCacheKeyBuilder.stock_key(symbol, from_date, to_date)
+        data_points = _convert_data_points(result.data)
+
+        return DailyResponse(
+            symbol=result.symbol,
+            data=data_points,
+            count=len(data_points),
+            cache=CacheMetadata(
+                cached=result.cached,
+                cache_key=cache_key,
+                ttl_remaining=result.ttl_remaining,
+                refreshed_in_background=result.background_refresh_triggered,
+            ),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching daily stock data for {symbol}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

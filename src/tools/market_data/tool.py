@@ -5,24 +5,25 @@ This module provides @tool decorated functions that serve as the LangChain inter
 The actual business logic is implemented in implementations.py.
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from langchain_core.tools import tool
 
 from .implementations import (
-    fetch_stock_daily_prices,
     fetch_company_overview,
     fetch_market_indices,
     fetch_sector_performance,
+    fetch_stock_daily_prices,
 )
 
 
-@tool
+@tool(response_format="content_and_artifact")
 async def get_stock_daily_prices(
     symbol: str,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     limit: Optional[int] = None,
-) -> "List[Dict[str, Any]] | str":
+) -> Tuple[Union[List[Dict[str, Any]], str], Dict[str, Any]]:
     """
     Get stock daily OHLCV price data with smart normalization.
     Retrieves historical daily price data including open, high, low, close, volume.
@@ -67,11 +68,16 @@ async def get_stock_daily_prices(
         # Get Tencent 60 days (returns summary report with MAs and volatility)
         tencent = get_stock_daily_prices("0700.HK", limit=60)
     """
-    return await fetch_stock_daily_prices(symbol, start_date, end_date, limit)
+    content, artifact = await fetch_stock_daily_prices(
+        symbol, start_date, end_date, limit
+    )
+    return content, artifact
 
 
-@tool
-async def get_company_overview(symbol: str) -> str:
+@tool(response_format="content_and_artifact")
+async def get_company_overview(
+    symbol: str,
+) -> Tuple[str, Dict[str, Any]]:
     """
     Get comprehensive investment analysis overview for a company.
 
@@ -110,16 +116,17 @@ async def get_company_overview(symbol: str) -> str:
         # Get overview for Alibaba (HK)
         baba_overview = get_company_overview("9988.HK")
     """
-    return await fetch_company_overview(symbol)
+    content, artifact = await fetch_company_overview(symbol)
+    return content, artifact
 
 
-@tool
+@tool(response_format="content_and_artifact")
 async def get_market_indices(
     indices: Optional[List[str]] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     limit: int = 60,
-) -> "List[Dict[str, Any]] | str":
+) -> Tuple[Union[List[Dict[str, Any]], str], Dict[str, Any]]:
     """
     Get market indices data with smart normalization.
 
@@ -168,11 +175,14 @@ async def get_market_indices(
             end_date="2024-12-31"
         )
     """
-    return await fetch_market_indices(indices, start_date, end_date, limit)
+    content, artifact = await fetch_market_indices(indices, start_date, end_date, limit)
+    return content, artifact
 
 
-@tool
-async def get_sector_performance(date: Optional[str] = None) -> List[Dict[str, Any]]:
+@tool(response_format="content_and_artifact")
+async def get_sector_performance(
+    date: Optional[str] = None,
+) -> Tuple[Union[List[Dict[str, Any]], str], Dict[str, Any]]:
     """
     Get market sector performance.
 
@@ -210,4 +220,5 @@ async def get_sector_performance(date: Optional[str] = None) -> List[Dict[str, A
             best = max(sectors, key=lambda x: float(x.get('changesPercentage', '0%').rstrip('%')))
             print(f"Best sector: {best['sector']} at {best['changesPercentage']}")
     """
-    return await fetch_sector_performance(date)
+    content, artifact = await fetch_sector_performance(date)
+    return content, artifact
