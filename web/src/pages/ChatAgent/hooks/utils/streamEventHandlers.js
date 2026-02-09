@@ -232,10 +232,16 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
     return false;
   }
 
+  // Track creation times outside React state so handleToolCallResult can read them synchronously
+  if (!refs._toolCreatedAt) refs._toolCreatedAt = {};
+
   toolCalls.forEach((toolCall) => {
     const toolCallId = toolCall.id;
 
     if (toolCallId) {
+      if (!refs._toolCreatedAt[toolCallId]) {
+        refs._toolCreatedAt[toolCallId] = Date.now();
+      }
       setMessages((prev) =>
         prev.map((msg) => {
           if (msg.id !== assistantMessageId) return msg;
@@ -259,6 +265,7 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
               toolCallResult: null,
               isInProgress: true,
               isComplete: false,
+              _createdAt: Date.now(),
               order: currentOrder,
             };
           } else {
@@ -270,37 +277,45 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
             };
           }
 
+          // If this tool is the Task tool (subagent spawner), also create a subagent_task segment
+          // Mirrors historyEventHandlers.js logic for consistency
+          const subagentTasks = { ...(msg.subagentTasks || {}) };
+          if ((toolCall.name === 'task' || toolCall.name === 'Task') && toolCallId) {
+            const subagentId = toolCallId;
+            const hasExistingSubagentSegment = contentSegments.some(
+              (s) => s.type === 'subagent_task' && s.subagentId === subagentId
+            );
+
+            if (!hasExistingSubagentSegment) {
+              contentSegments.push({
+                type: 'subagent_task',
+                subagentId,
+                order: contentOrderCounterRef.current,
+              });
+            }
+
+            subagentTasks[subagentId] = {
+              ...(subagentTasks[subagentId] || {}),
+              subagentId,
+              description: toolCall.args?.description || toolCall.args?.prompt || '',
+              type: toolCall.args?.subagent_type || 'general-purpose',
+              status: 'running',
+            };
+          }
+
           return {
             ...msg,
             contentSegments,
             toolCallProcesses,
+            subagentTasks,
           };
         })
       );
     }
   });
 
-  // Mark all tool calls as waiting for results if finish_reason indicates tool calls are done
-  if (finishReason === 'tool_calls') {
-    setMessages((prev) =>
-      prev.map((msg) => {
-        if (msg.id !== assistantMessageId) return msg;
-
-        const toolCallProcesses = { ...(msg.toolCallProcesses || {}) };
-        Object.keys(toolCallProcesses).forEach((id) => {
-          toolCallProcesses[id] = {
-            ...toolCallProcesses[id],
-            isInProgress: false, // Tool call sent, waiting for result
-          };
-        });
-
-        return {
-          ...msg,
-          toolCallProcesses,
-        };
-      })
-    );
-  }
+  // Note: tool calls stay isInProgress: true until tool_call_result arrives
+  // (or until the minimum live exposure timer fires).
 
   return true;
 }
@@ -327,11 +342,14 @@ export function handleToolCallResult({ assistantMessageId, toolCallId, result, r
       if (msg.id !== assistantMessageId) return msg;
 
       const toolCallProcesses = { ...(msg.toolCallProcesses || {}) };
-      
+
       // Tool call failed only if content starts with "ERROR" (backend convention)
       const resultContent = result.content || '';
       const isFailed = typeof resultContent === 'string' && resultContent.trim().startsWith('ERROR');
-      
+
+      // Track subagent task status updates
+      const subagentTasks = { ...(msg.subagentTasks || {}) };
+
       if (toolCallProcesses[toolCallId]) {
         toolCallProcesses[toolCallId] = {
           ...toolCallProcesses[toolCallId],
@@ -339,10 +357,11 @@ export function handleToolCallResult({ assistantMessageId, toolCallId, result, r
             content: result.content,
             content_type: result.content_type,
             tool_call_id: result.tool_call_id,
+            artifact: result.artifact,
           },
           isInProgress: false,
           isComplete: true,
-          isFailed: isFailed, // Track if tool call failed
+          isFailed,
         };
       } else {
         // Edge case: tool call process doesn't exist, create it
@@ -351,17 +370,9 @@ export function handleToolCallResult({ assistantMessageId, toolCallId, result, r
 
         const newSegments = [
           ...(msg.contentSegments || []),
-          {
-            type: 'tool_call',
-            toolCallId,
-            order: currentOrder,
-          },
+          { type: 'tool_call', toolCallId, order: currentOrder },
         ];
 
-        // Tool call failed only if content starts with "ERROR"
-        const resultContentForFail = result.content || '';
-        const isFailedEdge = typeof resultContentForFail === 'string' && resultContentForFail.trim().startsWith('ERROR');
-        
         toolCallProcesses[toolCallId] = {
           toolName: 'Unknown Tool',
           toolCall: null,
@@ -369,24 +380,27 @@ export function handleToolCallResult({ assistantMessageId, toolCallId, result, r
             content: result.content,
             content_type: result.content_type,
             tool_call_id: result.tool_call_id,
+            artifact: result.artifact,
           },
           isInProgress: false,
           isComplete: true,
-          isFailed: isFailedEdge,
+          isFailed,
           order: currentOrder,
         };
 
-        return {
-          ...msg,
-          contentSegments: newSegments,
-          toolCallProcesses,
+        return { ...msg, contentSegments: newSegments, toolCallProcesses, subagentTasks };
+      }
+
+      // If this toolCallId is associated with a subagent task, mark it as completed
+      if (subagentTasks[toolCallId]) {
+        subagentTasks[toolCallId] = {
+          ...subagentTasks[toolCallId],
+          status: 'completed',
+          result: result.content,
         };
       }
 
-      return {
-        ...msg,
-        toolCallProcesses,
-      };
+      return { ...msg, toolCallProcesses, subagentTasks };
     })
   );
 
@@ -1131,6 +1145,7 @@ export function handleSubagentToolCallResult({ taskId, assistantMessageId, toolC
             content: result.content,
             content_type: result.content_type,
             tool_call_id: result.tool_call_id,
+            artifact: result.artifact,
           },
           isInProgress: false,
           isComplete: true,
@@ -1163,6 +1178,7 @@ export function handleSubagentToolCallResult({ taskId, assistantMessageId, toolC
           content: result.content,
           content_type: result.content_type,
           tool_call_id: result.tool_call_id,
+          artifact: result.artifact,
         },
         isInProgress: false,
         isComplete: true,
@@ -1172,14 +1188,14 @@ export function handleSubagentToolCallResult({ taskId, assistantMessageId, toolC
       // Edge case: message exists but tool call doesn't - add it
       contentOrderCounterRef.current++;
       const currentOrder = contentOrderCounterRef.current;
-      
+
       const contentSegments = [...(msg.contentSegments || [])];
       contentSegments.push({
         type: 'tool_call',
         toolCallId,
         order: currentOrder,
       });
-      
+
       toolCallProcesses[toolCallId] = {
         toolName: 'Unknown Tool',
         toolCall: null,
@@ -1187,13 +1203,14 @@ export function handleSubagentToolCallResult({ taskId, assistantMessageId, toolC
           content: result.content,
           content_type: result.content_type,
           tool_call_id: result.tool_call_id,
+          artifact: result.artifact,
         },
         isInProgress: false,
         isComplete: true,
         isFailed,
         order: currentOrder,
       };
-      
+
       msg.contentSegments = contentSegments;
     }
     
