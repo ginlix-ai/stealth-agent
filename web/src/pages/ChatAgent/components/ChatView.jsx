@@ -447,9 +447,8 @@ function ChatView({ workspaceId, threadId, onBack }) {
     const finalDescription = history?.description || description || '';
     const finalType = history?.type || type || 'general-purpose';
     const finalStatus = history?.status || status || 'unknown';
-    const finalMessages = history?.messages || [];
 
-    updateSubagentCard(agentId, {
+    const updateData = {
       agentId,
       taskId: agentId,
       description: finalDescription,
@@ -457,10 +456,17 @@ function ChatView({ workspaceId, threadId, onBack }) {
       status: finalStatus,
       toolCalls: 0,
       currentTool: '',
-      messages: finalMessages,
       isHistory: !!history,
       isActive: !history,
-    });
+    };
+    // Only set messages when history data is available. When history is null,
+    // the card already has live-streamed messages — omitting `messages` lets
+    // updateSubagentCard's preservation logic keep them intact.
+    if (history) {
+      updateData.messages = history.messages || [];
+    }
+
+    updateSubagentCard(agentId, updateData);
 
     switchAgent(agentId);
     setSidebarVisible(true);
