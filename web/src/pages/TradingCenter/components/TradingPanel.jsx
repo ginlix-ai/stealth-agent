@@ -84,4 +84,4 @@ const TradingPanel = ({ messages = [], isLoading = false, error = null }) => {
   );
 };
 
-export default TradingPanel;
+export default React.memo(TradingPanel);

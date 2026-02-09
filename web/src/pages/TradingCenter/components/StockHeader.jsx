@@ -108,4 +108,4 @@ const StockHeader = ({ symbol, stockInfo, realTimePrice, chartMeta, displayOverr
   );
 };
 
-export default StockHeader;
+export default React.memo(StockHeader);

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Globe, Send, Zap, Loader2 } from 'lucide-react';
+import { Camera, Globe, Send, Zap, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import './TradingChatInput.css';
 
@@ -11,7 +11,7 @@ import './TradingChatInput.css';
  * @param {Function} props.onSend - Callback when message is sent (message, mode)
  * @param {boolean} props.isLoading - Whether a message is currently loading
  */
-function TradingChatInput({ onSend, isLoading = false }) {
+function TradingChatInput({ onSend, isLoading = false, onCaptureChart, chartImage, onRemoveChartImage }) {
   const [message, setMessage] = useState('');
   const [planMode, setPlanMode] = useState(false);
   const [mode, setMode] = useState('fast'); // 'fast' or 'deep'
@@ -21,8 +21,8 @@ function TradingChatInput({ onSend, isLoading = false }) {
       return;
     }
     if (onSend) {
-      onSend(message.trim(), mode);
-      setMessage(''); // Clear input after sending
+      onSend(message.trim(), mode, chartImage || null);
+      setMessage('');
     }
   };
 
@@ -40,6 +40,12 @@ function TradingChatInput({ onSend, isLoading = false }) {
   return (
     <>
       <div className="trading-chat-card">
+        {chartImage && (
+          <div className="chart-attachment-preview">
+            <img src={chartImage} alt="Chart" className="chart-attachment-thumb" />
+            <button className="chart-attachment-remove" onClick={onRemoveChartImage}>&times;</button>
+          </div>
+        )}
         <div className="trading-chat-row">
           <Input
             className="trading-chat-input"
@@ -50,8 +56,16 @@ function TradingChatInput({ onSend, isLoading = false }) {
             disabled={isLoading}
           />
           <div className="trading-chat-actions">
-            <button 
-              type="button" 
+            <button
+              type="button"
+              className="trading-chat-btn trading-chat-btn-pill"
+              onClick={onCaptureChart}
+              title="Attach chart screenshot"
+            >
+              <Camera className="trading-chat-icon-sm" />
+            </button>
+            <button
+              type="button"
               className={`trading-chat-btn trading-chat-btn-pill ${mode === 'deep' ? 'active' : ''}`}
               onClick={handleModeToggle}
               title={mode === 'fast' ? 'Fast Mode - Click to switch to Deep Mode' : 'Deep Mode - Click to switch to Fast Mode'}
@@ -87,4 +101,4 @@ function TradingChatInput({ onSend, isLoading = false }) {
   );
 }
 
-export default TradingChatInput;
+export default React.memo(TradingChatInput);

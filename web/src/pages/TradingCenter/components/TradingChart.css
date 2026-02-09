@@ -76,10 +76,80 @@
 .chart-tools {
   padding: 8px 20px;
   display: flex;
-  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
   border-bottom: 1px solid #1a1f35;
   flex-shrink: 0;
 }
+
+.chart-tools-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.indicator-toggles {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.indicator-toggles-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  margin-right: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.indicator-toggle-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #555a6e;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.indicator-toggle-btn:hover {
+  color: #c4c8d8;
+}
+
+.indicator-toggle-active {
+  border-color: currentColor;
+}
+
+.interval-selector {
+  display: flex;
+  gap: 2px;
+  background-color: #141826;
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.interval-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #8b8fa3;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.interval-btn:hover { color: #c4c8d8; background: rgba(102,126,234,0.1); }
+.interval-btn-active { color: #fff; background: #667eea; }
+.interval-btn-active:hover { background: #5a6fd6; }
+
+.chart-tool-buttons { display: flex; gap: 8px; }
 
 .chart-tool-btn {
   width: 32px;

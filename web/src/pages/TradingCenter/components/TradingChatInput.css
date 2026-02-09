@@ -139,3 +139,36 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+.chart-attachment-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border, #1a1f35);
+}
+
+.chart-attachment-thumb {
+  height: 48px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border, #2a2f45);
+}
+
+.chart-attachment-remove {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-attachment-remove:hover {
+  background: rgba(239, 68, 68, 0.35);
+}
