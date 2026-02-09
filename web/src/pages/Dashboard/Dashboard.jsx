@@ -1,25 +1,14 @@
 import { getAuthUserId } from '@/api/client';
 import {
   DEFAULT_USER_ID,
-  DEFAULT_WATCHLIST_NAMES,
-  DEFAULT_WATCHLIST_SYMBOLS,
   INDEX_SYMBOLS,
-  addPortfolioHolding,
-  addWatchlistItem,
-  deletePortfolioHolding,
-  deleteWatchlistItem,
   fallbackIndex,
   getCurrentUser,
   getIndices,
-  getPortfolio,
-  getStockPrices,
-  listWatchlists,
-  listWatchlistItems,
   normalizeIndexSymbol,
-  updatePortfolioHolding,
   getInfoFlowResults,
 } from './utils/api';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '@/components/ui/use-toast';
 import { getWorkspaces, createWorkspace } from '../ChatAgent/utils/api';
 import { useNavigate } from 'react-router-dom';
@@ -36,6 +25,8 @@ import WatchlistCard from './components/WatchlistCard';
 import AddWatchlistItemDialog from './components/AddWatchlistItemDialog';
 import AddPortfolioHoldingDialog from './components/AddPortfolioHoldingDialog';
 import PortfolioCard from './components/PortfolioCard';
+import { useWatchlistData } from './hooks/useWatchlistData';
+import { usePortfolioData } from './hooks/usePortfolioData';
 import './Dashboard.css';
 
 const POPULAR_ITEMS = [
@@ -285,81 +276,8 @@ function Dashboard() {
     checkOnboarding();
   }, []);
 
-  const [watchlistRows, setWatchlistRows] = useState([]);
-  const [watchlistLoading, setWatchlistLoading] = useState(true);
-  const [watchlistModalOpen, setWatchlistModalOpen] = useState(false);
-  const [currentWatchlistId, setCurrentWatchlistId] = useState(null);
-  
-  /**
-   * Fetches watchlist data by:
-   * 1. Getting all watchlists for the user
-   * 2. Using the first watchlist's ID to fetch its items
-   * 3. Getting stock prices for those symbols
-   * 4. Combining the data for display
-   */
-  const fetchWatchlist = useCallback(async () => {
-    setWatchlistLoading(true);
-    try {
-      // Step 1: Get all watchlists for the user
-      const { watchlists } = await listWatchlists(DEFAULT_USER_ID);
-      
-      // Step 2: Get the first watchlist's ID (or use 'default' if no watchlists exist)
-      const firstWatchlist = watchlists?.[0];
-      const watchlistId = firstWatchlist?.watchlist_id || 'default';
-      
-      // Store the watchlist ID for use in add/delete operations
-      setCurrentWatchlistId(watchlistId);
-      
-      // Step 3: Fetch items for the watchlist
-      const { items } = await listWatchlistItems(watchlistId, DEFAULT_USER_ID);
-      
-      // Step 4: Extract symbols from items (empty array if no items)
-      const symbols = items?.length ? items.map((i) => i.symbol) : [];
-      
-      // Step 5: Get stock prices for the symbols (only if there are symbols)
-      const prices = symbols.length > 0 ? await getStockPrices(symbols) : [];
-      const bySym = Object.fromEntries((prices || []).map((p) => [p.symbol, p]));
-      
-      // Step 6: Combine watchlist items with price data
-      // If no items exist, set empty array
-      const rows = items?.length
-        ? items.map((i) => {
-            const sym = String(i.symbol || '').trim().toUpperCase();
-            const p = bySym[sym] || {};
-            return {
-              item_id: i.item_id,
-              symbol: sym,
-              price: p.price ?? 0,
-              change: p.change ?? 0,
-              changePercent: p.changePercent ?? 0,
-              isPositive: p.isPositive ?? true,
-            };
-          })
-        : [];
-      setWatchlistRows(rows);
-    } catch {
-      // If any step fails, set empty rows (no fallback to default symbols)
-      setWatchlistRows([]);
-    } finally {
-      setWatchlistLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    // Fetch immediately on mount
-    fetchWatchlist();
-    
-    // Set up interval to fetch every minute (60000ms)
-    const intervalId = setInterval(() => {
-      console.log('[Dashboard] Refreshing Watchlist data');
-      fetchWatchlist();
-    }, 60000); // 60 seconds = 1 minute
-    
-    // Cleanup interval on unmount
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [fetchWatchlist]);
+  const watchlist = useWatchlistData();
+  const portfolio = usePortfolioData();
 
   const [deleteConfirm, setDeleteConfirm] = useState({
     open: false,
@@ -368,263 +286,12 @@ function Dashboard() {
     onConfirm: null,
   });
 
-  /**
-   * Adds a stock to the current watchlist with full details
-   * Uses the watchlist ID from the most recent fetch
-   * @param {Object} itemData - Stock item data: { symbol, instrument_type, exchange, name, notes, alert_settings }
-   * @param {string} watchlistId - The watchlist ID
-   * @param {string} userId - The user ID
-   */
-  const handleAddWatchlist = useCallback(async (itemData, watchlistId, userId) => {
-    try {
-      // Ensure we have a watchlist ID
-      let targetWatchlistId = watchlistId || currentWatchlistId;
-      if (!targetWatchlistId) {
-        const { watchlists } = await listWatchlists(DEFAULT_USER_ID);
-        targetWatchlistId = watchlists?.[0]?.watchlist_id || 'default';
-        setCurrentWatchlistId(targetWatchlistId);
-      }
-      
-      await addWatchlistItem(itemData, targetWatchlistId, userId || DEFAULT_USER_ID);
-      setWatchlistModalOpen(false);
-      fetchWatchlist();
-      
-      toast({
-        title: 'Stock added',
-        description: `${itemData.symbol} has been added to your watchlist.`,
-      });
-    } catch (e) {
-      console.error('Add watchlist item failed:', e?.response?.status, e?.response?.data, e?.message);
-      
-      const status = e?.response?.status;
-      const msg = e?.response?.data?.detail || e?.response?.data?.message || '';
-      
-      if (status === 409 || msg.toLowerCase().includes('already exists')) {
-        toast({
-          variant: 'destructive',
-          title: 'Already in watchlist',
-          description: `${itemData.symbol} is already in your watchlist.`,
-        });
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Cannot add stock',
-          description: msg || 'Failed to add to watchlist. Please try again.',
-        });
-      }
-    }
-  }, [currentWatchlistId, fetchWatchlist, toast]);
-
-  /**
-   * Deletes a watchlist item by ID
-   * Uses the watchlist ID from the most recent fetch
-   */
-  const handleDeleteWatchlistItem = useCallback(
-    async (itemId) => {
-      try {
-        // Get current watchlist ID (or fetch it if not available)
-        let watchlistId = currentWatchlistId;
-        if (!watchlistId) {
-          const { watchlists } = await listWatchlists(DEFAULT_USER_ID);
-          watchlistId = watchlists?.[0]?.watchlist_id || 'default';
-          setCurrentWatchlistId(watchlistId);
-        }
-        
-        await deleteWatchlistItem(itemId, watchlistId, DEFAULT_USER_ID);
-        fetchWatchlist();
-      } catch (e) {
-        console.error('Delete watchlist item failed:', e?.response?.status, e?.response?.data, e?.message);
-      }
-    },
-    [currentWatchlistId, fetchWatchlist]
-  );
-
-  const [portfolioRows, setPortfolioRows] = useState([]);
-  const [portfolioLoading, setPortfolioLoading] = useState(true);
-  const [portfolioHasRealHoldings, setPortfolioHasRealHoldings] = useState(false);
-  const [portfolioModalOpen, setPortfolioModalOpen] = useState(false);
-
-  /**
-   * Fetches portfolio holdings data by:
-   * 1. Getting all holdings for the user from /api/v1/users/me/portfolio
-   * 2. Getting current stock prices for those symbols
-   * 3. Calculating Unrealized P/L % using average_cost and current price
-   * 4. Combining the data for display
-   */
-  const fetchPortfolio = useCallback(async () => {
-    setPortfolioLoading(true);
-    try {
-      // Step 1: Get all portfolio holdings for the user
-      const { holdings } = await getPortfolio(DEFAULT_USER_ID);
-      
-      // Step 2: Extract symbols from holdings (empty array if no holdings)
-      const symbols = holdings?.length
-        ? holdings.map((h) => String(h.symbol || '').trim().toUpperCase())
-        : [];
-      
-      // Step 3: Get current stock prices for the symbols (only if there are symbols)
-      const prices = symbols.length > 0 ? await getStockPrices(symbols) : [];
-      const bySym = Object.fromEntries((prices || []).map((p) => [p.symbol, p]));
-      
-      // Step 4: Combine holdings with price data
-      // If no holdings exist, set empty array
-      if (holdings?.length) {
-        setPortfolioHasRealHoldings(true);
-        const rows = holdings.map((h) => {
-          const sym = String(h.symbol || '').trim().toUpperCase();
-          const p = bySym[sym] || {};
-          const q = Number(h.quantity || 0);
-          const ac = h.average_cost != null ? Number(h.average_cost) : null;
-          const price = p.price ?? 0;
-          const marketValue = q * price;
-          // Calculate Unrealized P/L %: ((current_price - average_cost) / average_cost) * 100
-          const plPct = ac != null && ac > 0 ? ((price - ac) / ac) * 100 : null;
-          return {
-            holding_id: h.holding_id,
-            symbol: sym,
-            quantity: q,
-            average_cost: ac,
-            notes: h.notes ?? '',
-            price, // Current price from stock prices API
-            marketValue,
-            unrealizedPlPercent: plPct, // Unrealized P/L %
-            isPositive: plPct == null ? true : plPct >= 0,
-          };
-        });
-        setPortfolioRows(rows);
-      } else {
-        setPortfolioHasRealHoldings(false);
-        setPortfolioRows([]);
-      }
-    } catch (error) {
-      console.error('[Dashboard] Error fetching portfolio:', error);
-      setPortfolioHasRealHoldings(false);
-      setPortfolioRows([]);
-    } finally {
-      setPortfolioLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    // Fetch immediately on mount
-    fetchPortfolio();
-    
-    // Set up interval to fetch every minute (60000ms)
-    const intervalId = setInterval(() => {
-      console.log('[Dashboard] Refreshing Portfolio data');
-      fetchPortfolio();
-    }, 60000); // 60 seconds = 1 minute
-    
-    // Cleanup interval on unmount
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [fetchPortfolio]);
-
   const handleDeletePortfolioItem = useCallback(
     (holdingId) => {
-      setDeleteConfirm({
-        open: true,
-        title: 'Remove holding',
-        message: 'Remove this holding from your portfolio?',
-        onConfirm: async () => {
-          try {
-            await deletePortfolioHolding(holdingId, DEFAULT_USER_ID);
-            fetchPortfolio();
-          } catch (e) {
-            console.error('Delete portfolio holding failed:', e?.response?.status, e?.response?.data, e?.message);
-          }
-        },
-      });
+      setDeleteConfirm(portfolio.handleDelete(holdingId));
     },
-    [fetchPortfolio]
+    [portfolio.handleDelete]
   );
-
-  /**
-   * Adds a portfolio holding with full details
-   * @param {Object} payload - Portfolio holding data from AddPortfolioHoldingDialog
-   * @param {string} userId - The user ID
-   */
-  const handleAddPortfolio = useCallback(async (payload, userId) => {
-    try {
-      await addPortfolioHolding(payload, userId || DEFAULT_USER_ID);
-      setPortfolioModalOpen(false);
-      fetchPortfolio();
-      
-      toast({
-        title: 'Holding added',
-        description: `${payload.symbol} has been added to your portfolio.`,
-      });
-    } catch (e) {
-      console.error('Add portfolio holding failed:', e?.response?.status, e?.response?.data, e?.message);
-      
-      const msg = e?.response?.data?.detail || e?.response?.data?.message || '';
-      
-      if (msg.includes('NumericValueOutOfRange') || msg.includes('numeric overflow')) {
-        toast({
-          variant: 'destructive',
-          title: 'Holding amount too large',
-          description: 'The total position value exceeds system limits. Try reducing quantity or price.',
-        });
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Cannot add holding',
-          description: msg || 'Failed to add holding. Please try again.',
-        });
-      }
-    }
-  }, [fetchPortfolio, toast]);
-
-  const [portfolioEditRow, setPortfolioEditRow] = useState(null);
-  const [portfolioEditForm, setPortfolioEditForm] = useState({ quantity: '', averageCost: '', notes: '' });
-
-  const openPortfolioEdit = useCallback((row) => {
-    setPortfolioEditRow(row);
-    setPortfolioEditForm({
-      quantity: row.quantity != null ? String(row.quantity) : '',
-      averageCost: row.average_cost != null ? String(row.average_cost) : '',
-      notes: row.notes ?? '',
-    });
-  }, []);
-
-  const handleUpdatePortfolio = useCallback(async () => {
-    if (!portfolioEditRow?.holding_id) return;
-    const q = Number(portfolioEditForm.quantity);
-    const ac = Number(portfolioEditForm.averageCost);
-    if (!Number.isFinite(q) || q <= 0 || !Number.isFinite(ac) || ac <= 0) return;
-    try {
-      await updatePortfolioHolding(
-        portfolioEditRow.holding_id,
-        {
-          quantity: q,
-          average_cost: ac,
-          notes: portfolioEditForm.notes.trim() || undefined,
-        },
-        DEFAULT_USER_ID
-      );
-      setPortfolioEditRow(null);
-      fetchPortfolio();
-    } catch (e) {
-      console.error('Update portfolio holding failed:', e?.response?.status, e?.response?.data, e?.message);
-      
-      const msg = e?.response?.data?.detail || e?.response?.data?.message || '';
-      
-      if (msg.includes('NumericValueOutOfRange')) {
-        toast({
-          variant: 'destructive',
-          title: 'Holding amount too large',
-          description: 'The total position value exceeds system limits. Try reducing quantity or price.',
-        });
-      } else {
-        toast({
-          variant: 'destructive',
-          title: 'Update failed',
-          description: 'Something went wrong while saving your portfolio.',
-        });
-      }
-    }
-  }, [portfolioEditRow, portfolioEditForm, fetchPortfolio]);
 
   const runDeleteConfirm = useCallback(async () => {
     if (deleteConfirm.onConfirm) await deleteConfirm.onConfirm();
@@ -723,35 +390,35 @@ function Dashboard() {
 
               <div className="w-full flex flex-col gap-4 h-full min-h-0 overflow-hidden">
                 <WatchlistCard
-                  rows={watchlistRows}
-                  loading={watchlistLoading}
-                  onHeaderAddClick={() => setWatchlistModalOpen(true)}
-                  onDeleteItem={handleDeleteWatchlistItem}
+                  rows={watchlist.rows}
+                  loading={watchlist.loading}
+                  onHeaderAddClick={() => watchlist.setModalOpen(true)}
+                  onDeleteItem={watchlist.handleDelete}
                 />
                 <AddWatchlistItemDialog
-                  open={watchlistModalOpen}
-                  onClose={() => setWatchlistModalOpen(false)}
-                  onAdd={handleAddWatchlist}
-                  watchlistId={currentWatchlistId}
+                  open={watchlist.modalOpen}
+                  onClose={() => watchlist.setModalOpen(false)}
+                  onAdd={watchlist.handleAdd}
+                  watchlistId={watchlist.currentWatchlistId}
                   userId={DEFAULT_USER_ID}
                 />
                 <PortfolioCard
-                  rows={portfolioRows}
-                  loading={portfolioLoading}
-                  hasRealHoldings={portfolioHasRealHoldings}
-                  onHeaderAddClick={() => setPortfolioModalOpen(true)}
-                  editRow={portfolioEditRow}
-                  editForm={portfolioEditForm}
-                  onEditFormChange={setPortfolioEditForm}
-                  onEditSubmit={handleUpdatePortfolio}
-                  onEditClose={() => setPortfolioEditRow(null)}
+                  rows={portfolio.rows}
+                  loading={portfolio.loading}
+                  hasRealHoldings={portfolio.hasRealHoldings}
+                  onHeaderAddClick={() => portfolio.setModalOpen(true)}
+                  editRow={portfolio.editRow}
+                  editForm={portfolio.editForm}
+                  onEditFormChange={portfolio.setEditForm}
+                  onEditSubmit={portfolio.handleUpdate}
+                  onEditClose={() => portfolio.openEdit(null)}
                   onDeleteItem={handleDeletePortfolioItem}
-                  onEditItem={openPortfolioEdit}
+                  onEditItem={portfolio.openEdit}
                 />
                 <AddPortfolioHoldingDialog
-                  open={portfolioModalOpen}
-                  onClose={() => setPortfolioModalOpen(false)}
-                  onAdd={handleAddPortfolio}
+                  open={portfolio.modalOpen}
+                  onClose={() => portfolio.setModalOpen(false)}
+                  onAdd={portfolio.handleAdd}
                   userId={DEFAULT_USER_ID}
                 />
                 </div>
