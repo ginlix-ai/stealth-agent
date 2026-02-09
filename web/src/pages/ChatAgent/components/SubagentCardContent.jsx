@@ -6,11 +6,22 @@ import TextMessageContent from './TextMessageContent';
 import ToolCallMessageContent from './ToolCallMessageContent';
 
 /**
+ * Returns true if a line is markdown-structural (headings, lists, blockquotes,
+ * code fences, horizontal rules, or table rows) and should keep its newline.
+ */
+const MD_STRUCTURAL_RE =
+  /^(?:#|[*\-+] |\d+[.)] |>|```|---+|___+|\*\*\*+|\|)/;
+
+function isStructuralLine(line) {
+  return MD_STRUCTURAL_RE.test(line.trimStart());
+}
+
+/**
  * Normalize text content from backend for proper display in subagent cards.
  * - Unescape literal \n (backslash-n) if backend sends escaped strings
- * - Collapse single newlines to spaces to avoid unexpected line breaks
+ * - Collapse single newlines to spaces ONLY between plain prose lines
+ * - Preserve newlines adjacent to markdown-structural lines (headings, lists, etc.)
  * - Preserve double newlines (paragraph breaks)
- * - Preserve table blocks (lines starting with |) since GFM tables need single newlines
  */
 function normalizeSubagentText(content) {
   if (!content || typeof content !== 'string') return '';
@@ -24,12 +35,18 @@ function normalizeSubagentText(content) {
   return blocks
     .map((block) => {
       const trimmed = block.trim();
-      // Preserve table blocks: if any line starts with |, keep newlines intact
-      if (trimmed.split('\n').some((line) => line.trimStart().startsWith('|'))) {
-        return trimmed;
+      const lines = trimmed.split('\n');
+      if (lines.length <= 1) return trimmed;
+
+      // Join lines, preserving newlines when either adjacent line is structural
+      let result = lines[0];
+      for (let i = 1; i < lines.length; i++) {
+        const prevStructural = isStructuralLine(lines[i - 1]);
+        const curStructural = isStructuralLine(lines[i]);
+        result += prevStructural || curStructural ? '\n' : ' ';
+        result += lines[i];
       }
-      // For normal text blocks, collapse single newlines to spaces
-      return trimmed.replace(/\n/g, ' ');
+      return result;
     })
     .join('\n\n');
 }

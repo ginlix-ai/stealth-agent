@@ -44,7 +44,7 @@ function ThreadCard({ thread, onClick, onDelete, onRename }) {
         style={{
           backgroundColor: thread.current_status === 'completed'
             ? '#0FEDBE'
-            : thread.current_status === 'running'
+            : thread.current_status === 'in_progress'
             ? '#6155F5'
             : 'rgba(255, 255, 255, 0.3)',
         }}
