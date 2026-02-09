@@ -1,0 +1,402 @@
+/* CreateWorkspaceModal — two-phase workspace creation with file upload */
+
+.cwm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-bg-overlay-strong);
+}
+
+.cwm-modal {
+  position: relative;
+  width: 100%;
+  max-width: 512px;
+  border-radius: 12px;
+  padding: 24px;
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-muted);
+}
+
+/* ---- Header ---- */
+.cwm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.cwm-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.cwm-close-btn {
+  padding: 4px;
+  border-radius: 9999px;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s;
+}
+
+.cwm-close-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ---- Form fields ---- */
+.cwm-field {
+  margin-bottom: 16px;
+}
+
+.cwm-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin-bottom: 6px;
+}
+
+.cwm-label-required {
+  color: var(--color-loss);
+}
+
+.cwm-label-optional {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.cwm-textarea {
+  width: 100%;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+  resize: none;
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border-muted);
+  color: var(--color-text-primary);
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+
+.cwm-textarea:focus {
+  border-color: var(--color-accent-primary);
+}
+
+/* ---- Dropzone ---- */
+.cwm-dropzone-wrapper {
+  margin-bottom: 16px;
+}
+
+.cwm-dropzone-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin-bottom: 6px;
+}
+
+.cwm-dropzone-sublabel {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+
+.cwm-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  border: 1.5px dashed var(--color-border-muted);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.cwm-dropzone:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.cwm-dropzone-active {
+  border-color: var(--color-accent-primary) !important;
+  background-color: var(--color-accent-soft) !important;
+}
+
+.cwm-dropzone-icon {
+  color: var(--color-text-secondary);
+}
+
+.cwm-dropzone-text {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.cwm-dropzone-text span {
+  color: var(--color-accent-primary);
+  font-weight: 500;
+}
+
+/* ---- Queued file list ---- */
+.cwm-file-list {
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.cwm-file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-border-muted);
+}
+
+.cwm-file-icon {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+
+.cwm-file-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.cwm-file-size {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.cwm-file-remove {
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.cwm-file-remove:hover {
+  color: var(--color-loss);
+  background-color: var(--color-loss-soft);
+}
+
+/* ---- Error ---- */
+.cwm-error {
+  font-size: 13px;
+  color: var(--color-loss);
+  margin-bottom: 8px;
+}
+
+/* ---- Action buttons ---- */
+.cwm-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding-top: 16px;
+}
+
+.cwm-btn-cancel {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.cwm-btn-cancel:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.cwm-btn-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cwm-btn-create {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-on-accent);
+  background-color: var(--color-accent-primary);
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.cwm-btn-create:disabled {
+  background-color: var(--color-accent-disabled);
+  cursor: not-allowed;
+}
+
+/* ---- Progress phase ---- */
+.cwm-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.cwm-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cwm-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cwm-step-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cwm-step-icon--done {
+  color: var(--color-profit);
+}
+
+.cwm-step-icon--active {
+  color: var(--color-accent-primary);
+}
+
+.cwm-step-icon--pending {
+  color: var(--color-text-secondary);
+  opacity: 0.4;
+}
+
+.cwm-step-icon--error {
+  color: var(--color-loss);
+}
+
+.cwm-step-label {
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.cwm-step-label--pending {
+  opacity: 0.4;
+}
+
+/* ---- Upload file progress ---- */
+.cwm-upload-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-border-muted);
+}
+
+.cwm-upload-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cwm-upload-file-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.cwm-upload-file-status {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.cwm-upload-file-status--done {
+  color: var(--color-profit);
+}
+
+.cwm-upload-file-status--failed {
+  color: var(--color-loss);
+}
+
+.cwm-upload-file-status--uploading {
+  color: var(--color-accent-primary);
+}
+
+.cwm-progress-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background-color: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.cwm-progress-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background-color: var(--color-accent-primary);
+  transition: width 0.2s ease;
+}
+
+/* ---- Done / Error summary ---- */
+.cwm-done-summary {
+  text-align: center;
+  padding: 8px 0;
+}
+
+.cwm-done-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+}
+
+.cwm-done-subtitle {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.cwm-error-box {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background-color: var(--color-loss-soft);
+  border: 1px solid var(--color-border-loss);
+  font-size: 13px;
+  color: var(--color-loss);
+}
