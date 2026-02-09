@@ -38,7 +38,7 @@ from ptc_agent.agent.graph import build_ptc_graph_with_session
 from ptc_agent.agent.flash import build_flash_graph
 from src.server.services.session_manager import SessionService
 from src.server.services.workspace_manager import WorkspaceManager
-from src.server.database.workspace import update_workspace_activity, create_workspace as db_create_workspace
+from src.server.database.workspace import update_workspace_activity, get_or_create_flash_workspace
 from src.server.services.background_task_manager import (
     BackgroundTaskManager,
     TaskStatus,
@@ -127,6 +127,11 @@ async def chat_stream(request: ChatRequest, user_id: CurrentUserId):
             status_code=400,
             detail="workspace_id is required for 'ptc' agent mode. Create workspace first via POST /workspaces, or use agent_mode='flash' for lightweight queries.",
         )
+
+    # For flash mode, resolve workspace_id to the shared flash workspace
+    if agent_mode == "flash" and not workspace_id:
+        flash_ws = await get_or_create_flash_workspace(user_id)
+        workspace_id = str(flash_ws["workspace_id"])
     # Extract user input
     user_input = ""
     if request.messages:
@@ -207,9 +212,6 @@ async def _astream_flash_workflow(
     flash_graph = None
     persistence_service = None
 
-    # Flash mode uses thread_id as workspace_id (1:1 mapping)
-    workspace_id = thread_id
-
     logger.info(f"[FLASH_CHAT] Starting flash workflow: thread_id={thread_id}")
 
     try:
@@ -224,21 +226,9 @@ async def _astream_flash_workflow(
         # Database Persistence Setup
         # =====================================================================
 
-        # Create flash workspace with thread_id as workspace_id (no sandbox)
-        try:
-            await db_create_workspace(
-                user_id=user_id,
-                name="__flash__",
-                description="Flash mode conversation",
-                config={"flash_mode": True},
-                workspace_id=workspace_id,
-                status="flash",
-            )
-        except Exception as e:
-            # Workspace may already exist (resuming conversation)
-            if "duplicate key" not in str(e).lower():
-                raise
-            logger.debug(f"[FLASH_CHAT] Flash workspace already exists: {workspace_id}")
+        # Get or create the shared flash workspace for this user
+        flash_ws = await get_or_create_flash_workspace(user_id)
+        workspace_id = str(flash_ws["workspace_id"])
 
         # Ensure thread exists in database
         await qr_db.ensure_thread_exists(

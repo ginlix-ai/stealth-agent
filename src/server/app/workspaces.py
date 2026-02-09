@@ -23,6 +23,7 @@ from src.server.database.workspace import (
     get_workspace as db_get_workspace,
     get_workspaces_for_user,
     update_workspace as db_update_workspace,
+    get_or_create_flash_workspace,
 )
 from src.server.models.workspace import (
     WorkspaceActionResponse,
@@ -98,6 +99,27 @@ async def create_workspace(
     except Exception as e:
         logger.exception(f"Error creating workspace: {e}")
         raise HTTPException(status_code=500, detail="Failed to create workspace")
+
+
+@router.post("/flash", response_model=WorkspaceResponse)
+async def get_flash_workspace(
+    x_user_id: str = Header(..., alias="X-User-Id", description="User ID"),
+):
+    """
+    Get or create the shared flash workspace for this user.
+
+    Uses a deterministic UUID so the same user always gets the same workspace.
+    Idempotent — safe to call on every app load.
+
+    Returns:
+        Flash workspace details
+    """
+    try:
+        workspace = await get_or_create_flash_workspace(x_user_id)
+        return _workspace_to_response(workspace)
+    except Exception as e:
+        logger.exception(f"Error ensuring flash workspace: {e}")
+        raise HTTPException(status_code=500, detail="Failed to ensure flash workspace")
 
 
 @router.get("", response_model=WorkspaceListResponse)
@@ -374,6 +396,14 @@ async def delete_workspace(workspace_id: str):
         workspace_id: Workspace UUID
     """
     try:
+        # Guard: prevent deletion of flash workspaces
+        workspace = await db_get_workspace(workspace_id)
+        if workspace and workspace.get("status") == "flash":
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete flash workspace",
+            )
+
         manager = WorkspaceManager.get_instance()
         await manager.delete_workspace(workspace_id)
 
