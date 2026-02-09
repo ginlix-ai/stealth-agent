@@ -797,6 +797,7 @@ class BackgroundTaskManager:
                             from src.server.models.workflow import serialize_state_snapshot
 
                             persistence_service = ConversationPersistenceService.get_instance(thread_id)
+                            persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
 
                             # Get tracking context for partial data
                             tracking_context = ExecutionTracker.get_context()
@@ -913,6 +914,7 @@ class BackgroundTaskManager:
                         from src.server.models.workflow import serialize_state_snapshot
 
                         persistence_service = ConversationPersistenceService.get_instance(thread_id)
+                        persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
 
                         # Get partial data before failure
                         tracking_context = ExecutionTracker.get_context()
@@ -1015,6 +1017,7 @@ class BackgroundTaskManager:
                         workspace_id=workspace_id,
                         user_id=user_id
                     )
+                    persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
 
                     tracking_context = ExecutionTracker.get_context()
                     raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
@@ -1279,6 +1282,7 @@ class BackgroundTaskManager:
                         from src.server.models.workflow import serialize_state_snapshot
 
                         persistence_service = ConversationPersistenceService.get_instance(thread_id)
+                        persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
 
                         # Get partial data before cancellation
                         tracking_context = ExecutionTracker.get_context()

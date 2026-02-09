@@ -818,6 +818,7 @@ async def _astream_workflow(
                 _persistence_service = ConversationPersistenceService.get_instance(
                     thread_id
                 )
+                _persistence_service._on_pair_persisted = lambda: manager.clear_event_buffer(thread_id)
 
                 # Get per-call records for usage tracking
                 _per_call_records = (
@@ -891,13 +892,6 @@ async def _astream_workflow(
                     f"[PTC_CHAT] Background completion persistence failed for {thread_id}: {e}",
                     exc_info=True,
                 )
-
-        # Clear event buffer when resuming from interrupt
-        if request.hitl_response:
-            logger.info(
-                f"[PTC_CHAT] Clearing event buffer for interrupt resume: {thread_id}"
-            )
-            await manager.clear_event_buffer(thread_id)
 
         # Start workflow in background with event buffering
         task_info = await manager.start_workflow(

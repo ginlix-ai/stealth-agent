@@ -64,6 +64,9 @@ class ConversationPersistenceService:
         self.workspace_id = workspace_id
         self.user_id = user_id
 
+        # Post-persist callback (set by BackgroundTaskManager to clear event buffer, etc.)
+        self._on_pair_persisted: Optional[callable] = None
+
         # Track persistence state per pair_index (Set-based for multi-iteration support)
         self._persisted_queries: set[int] = set()        # Track which pair_index queries created
         self._persisted_interrupts: set[int] = set()     # Track which pair_index interrupts saved
@@ -145,6 +148,18 @@ class ConversationPersistenceService:
                 f"[ConversationPersistence] Incremented pair_index to {self._pair_index_cache} "
                 f"for thread_id={self.thread_id}"
             )
+
+    async def _finalize_pair(self):
+        """Increment pair index and run post-persist hook (clear event buffer, etc.)."""
+        self.increment_pair_index()
+        if self._on_pair_persisted:
+            try:
+                await self._on_pair_persisted()
+            except Exception as e:
+                logger.warning(
+                    f"[ConversationPersistence] _on_pair_persisted callback failed "
+                    f"for thread_id={self.thread_id}: {e}"
+                )
 
     async def persist_query_start(
         self,
@@ -333,8 +348,8 @@ class ConversationPersistenceService:
                 f"pair_index={pair_index} response_id={response_id}"
             )
 
-            # Increment pair_index for next query-response pair
-            self.increment_pair_index()
+            # Increment pair_index and run post-persist hook (e.g. clear event buffer)
+            await self._finalize_pair()
 
             return response_id
 
@@ -503,8 +518,8 @@ class ConversationPersistenceService:
                 f"pair_index={pair_index} response_id={response_id}"
             )
 
-            # Increment pair_index for next query-response pair
-            self.increment_pair_index()
+            # Increment pair_index and run post-persist hook (e.g. clear event buffer)
+            await self._finalize_pair()
 
             return response_id
 
@@ -637,8 +652,8 @@ class ConversationPersistenceService:
                 f"pair_index={pair_index} response_id={response_id}"
             )
 
-            # Increment pair_index for next query-response pair
-            self.increment_pair_index()
+            # Increment pair_index and run post-persist hook (e.g. clear event buffer)
+            await self._finalize_pair()
 
             return response_id
 
@@ -763,8 +778,8 @@ class ConversationPersistenceService:
                 f"pair_index={pair_index} response_id={response_id}"
             )
 
-            # Increment pair_index for next query-response pair
-            self.increment_pair_index()
+            # Increment pair_index and run post-persist hook (e.g. clear event buffer)
+            await self._finalize_pair()
 
             return response_id
 
