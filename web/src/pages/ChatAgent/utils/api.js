@@ -291,6 +291,21 @@ export async function downloadWorkspaceFile(workspaceId, filePath) {
 }
 
 /**
+ * Download a file from workspace sandbox as ArrayBuffer (for client-side parsing)
+ * @param {string} workspaceId
+ * @param {string} filePath
+ * @returns {Promise<ArrayBuffer>}
+ */
+export async function downloadWorkspaceFileAsArrayBuffer(workspaceId, filePath) {
+  const response = await api.get(`/api/v1/workspaces/${workspaceId}/files/download`, {
+    params: { path: filePath },
+    headers: headers(getAuthUserId() || DEFAULT_USER_ID),
+    responseType: 'arraybuffer',
+  });
+  return response.data;
+}
+
+/**
  * Trigger file download in browser
  * @param {string} workspaceId
  * @param {string} filePath

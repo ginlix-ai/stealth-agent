@@ -1,11 +1,17 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download, Upload, Folder, ChevronRight, ChevronDown, ArrowUpDown } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
+import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download, Upload, Folder, ChevronRight, ChevronDown, ArrowUpDown, AlertTriangle } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { readWorkspaceFile, downloadWorkspaceFile, triggerFileDownload, uploadWorkspaceFile } from '../utils/api';
+import { readWorkspaceFile, downloadWorkspaceFile, downloadWorkspaceFileAsArrayBuffer, triggerFileDownload, uploadWorkspaceFile } from '../utils/api';
 import { stripLineNumbers } from './toolDisplayConfig';
 import Markdown from './Markdown';
+import DocumentErrorBoundary from './viewers/DocumentErrorBoundary';
 import './FilePanel.css';
+
+const PdfViewer = React.lazy(() => import('./viewers/PdfViewer'));
+const ExcelViewer = React.lazy(() => import('./viewers/ExcelViewer'));
+const CsvViewer = React.lazy(() => import('./viewers/CsvViewer'));
+const HtmlViewer = React.lazy(() => import('./viewers/HtmlViewer'));
 
 const EXT_TO_LANG = {
   py: 'python', js: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
@@ -112,6 +118,36 @@ function groupFilesByDirectory(filePaths) {
   return entries;
 }
 
+function DocumentLoadingFallback() {
+  return (
+    <div className="flex items-center justify-center py-12">
+      <RefreshCw className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} />
+    </div>
+  );
+}
+
+function DocumentErrorFallback({ workspaceId, filePath }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-12">
+      <AlertTriangle className="h-6 w-6" style={{ color: 'rgba(255,255,255,0.4)' }} />
+      <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>Unable to preview this file</p>
+      <button
+        className="text-xs px-3 py-1.5 rounded"
+        style={{ background: 'rgba(97, 85, 245, 0.2)', color: '#a39bff', border: '1px solid rgba(97, 85, 245, 0.3)' }}
+        onClick={async () => {
+          try {
+            await triggerFileDownload(workspaceId, filePath);
+          } catch (err) {
+            console.error('[FilePanel] Download failed:', err);
+          }
+        }}
+      >
+        Download instead
+      </button>
+    </div>
+  );
+}
+
 function FilePanel({
   workspaceId,
   onClose,
@@ -128,6 +164,7 @@ function FilePanel({
   // File detail view state
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileContent, setFileContent] = useState(null);
+  const [fileArrayBuffer, setFileArrayBuffer] = useState(null);
   const [fileMime, setFileMime] = useState(null);
   const [fileLoading, setFileLoading] = useState(false);
 
@@ -231,6 +268,38 @@ function FilePanel({
         }
         return;
       }
+      // PDF — preview inline
+      if (ext === 'pdf') {
+        setSelectedFile(filePath);
+        setFileLoading(true);
+        setFileMime('pdf');
+        try {
+          const buf = await downloadWorkspaceFileAsArrayBuffer(workspaceId, filePath);
+          setFileArrayBuffer(buf);
+        } catch (err) {
+          console.error('[FilePanel] Failed to load PDF:', err);
+          setFileMime('error');
+        } finally {
+          setFileLoading(false);
+        }
+        return;
+      }
+      // Excel — preview inline
+      if (ext === 'xlsx' || ext === 'xls') {
+        setSelectedFile(filePath);
+        setFileLoading(true);
+        setFileMime('excel');
+        try {
+          const buf = await downloadWorkspaceFileAsArrayBuffer(workspaceId, filePath);
+          setFileArrayBuffer(buf);
+        } catch (err) {
+          console.error('[FilePanel] Failed to load Excel file:', err);
+          setFileMime('error');
+        } finally {
+          setFileLoading(false);
+        }
+        return;
+      }
       // For other binary files, trigger download
       try {
         await triggerFileDownload(workspaceId, filePath);
@@ -262,6 +331,7 @@ function FilePanel({
     }
     setSelectedFile(null);
     setFileContent(null);
+    setFileArrayBuffer(null);
     setFileMime(null);
     // Don't clear targetDirectory — stay in directory view after closing file detail
   };
@@ -477,29 +547,59 @@ function FilePanel({
         <div className="file-panel-content">
           {selectedFile ? (
             // File Detail View
-            <div className="p-4">
-              {fileLoading ? (
+            fileLoading ? (
+              <div className="p-4">
                 <div className="flex items-center justify-center py-12">
                   <RefreshCw className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} />
                 </div>
-              ) : fileMime === 'image' ? (
-                <img src={fileContent} alt={fileName} className="max-w-full rounded" />
-              ) : selectedFile?.startsWith('/large_tool_results/') ? (
-                <Markdown variant="panel" content={stripLineNumbers(fileContent)} className="text-sm" />
-              ) : fileMime?.includes('markdown') || getFileExtension(selectedFile) === 'md' ? (
-                <Markdown variant="panel" content={fileContent} className="text-sm" />
-              ) : (
-                <SyntaxHighlighter
-                  language={EXT_TO_LANG[getFileExtension(selectedFile)] || 'text'}
-                  style={oneDark}
-                  customStyle={{ margin: 0, padding: 0, backgroundColor: 'transparent', fontSize: '12px', lineHeight: '1.6' }}
-                  codeTagProps={{ style: { backgroundColor: 'transparent' } }}
-                  wrapLongLines
-                >
-                  {fileContent}
-                </SyntaxHighlighter>
-              )}
-            </div>
+              </div>
+            ) : fileMime === 'pdf' ? (
+              <Suspense fallback={<DocumentLoadingFallback />}>
+                <DocumentErrorBoundary fallback={<DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />}>
+                  <PdfViewer data={fileArrayBuffer} />
+                </DocumentErrorBoundary>
+              </Suspense>
+            ) : fileMime === 'excel' ? (
+              <Suspense fallback={<DocumentLoadingFallback />}>
+                <DocumentErrorBoundary fallback={<DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />}>
+                  <ExcelViewer data={fileArrayBuffer} />
+                </DocumentErrorBoundary>
+              </Suspense>
+            ) : getFileExtension(selectedFile) === 'csv' ? (
+              <Suspense fallback={<DocumentLoadingFallback />}>
+                <DocumentErrorBoundary fallback={<DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />}>
+                  <CsvViewer content={fileContent} />
+                </DocumentErrorBoundary>
+              </Suspense>
+            ) : ['html', 'htm'].includes(getFileExtension(selectedFile)) ? (
+              <Suspense fallback={<DocumentLoadingFallback />}>
+                <DocumentErrorBoundary fallback={<DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />}>
+                  <HtmlViewer content={fileContent} />
+                </DocumentErrorBoundary>
+              </Suspense>
+            ) : (
+              <div className="p-4">
+                {fileMime === 'image' ? (
+                  <img src={fileContent} alt={fileName} className="max-w-full rounded" />
+                ) : fileMime === 'error' ? (
+                  <DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />
+                ) : selectedFile?.startsWith('/large_tool_results/') ? (
+                  <Markdown variant="panel" content={stripLineNumbers(fileContent)} className="text-sm" />
+                ) : fileMime?.includes('markdown') || getFileExtension(selectedFile) === 'md' ? (
+                  <Markdown variant="panel" content={fileContent} className="text-sm" />
+                ) : (
+                  <SyntaxHighlighter
+                    language={EXT_TO_LANG[getFileExtension(selectedFile)] || 'text'}
+                    style={oneDark}
+                    customStyle={{ margin: 0, padding: 0, backgroundColor: 'transparent', fontSize: '12px', lineHeight: '1.6' }}
+                    codeTagProps={{ style: { backgroundColor: 'transparent' } }}
+                    wrapLongLines
+                  >
+                    {fileContent}
+                  </SyntaxHighlighter>
+                )}
+              </div>
+            )
           ) : (
             // File List View
             <div className="py-1">

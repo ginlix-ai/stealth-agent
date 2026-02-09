@@ -18,14 +18,15 @@ const KNOWN_EXTS = new Set([
 
 /**
  * Extract file paths from message text.
- * Matches patterns like dir/file.ext, dir/subdir/file.ext.
+ * Matches patterns like dir/file.ext, dir/subdir/file.ext, /home/daytona/results/file.ext.
  * Requires at least one `/` and a known file extension to avoid false positives.
  */
 export function extractFilePaths(text) {
   if (!text) return [];
   // Match paths: must have at least one /, end with .extension
+  // Handles relative (dir/file.ext) and absolute (/home/daytona/file.ext) paths
   // Handles paths in backticks, quotes, or bare
-  const regex = /(?:^|[\s`"'(\[])([a-zA-Z_][^\s`"')\]<>]*\/[^\s`"')\]<>]*\.[a-zA-Z0-9]{1,10})(?=[\s`"')\],:;!?|]|$)/gm;
+  const regex = /(?:^|[\s`"'(\[])(\/[a-zA-Z_][^\s`"')\]<>]*\/[^\s`"')\]<>]*\.[a-zA-Z0-9]{1,10}|[a-zA-Z_][^\s`"')\]<>]*\/[^\s`"')\]<>]*\.[a-zA-Z0-9]{1,10})(?=[\s`"')\],:;!?|]|$)/gm;
   const paths = new Set();
   let match;
   while ((match = regex.exec(text)) !== null) {
@@ -36,6 +37,8 @@ export function extractFilePaths(text) {
     if (!KNOWN_EXTS.has(ext)) continue;
     // Skip URLs
     if (path.startsWith('http') || path.startsWith('www.') || path.startsWith('//')) continue;
+    // Normalize absolute sandbox paths to relative
+    path = path.replace(/^\/home\/daytona\//, '');
     paths.add(path);
   }
   return Array.from(paths);

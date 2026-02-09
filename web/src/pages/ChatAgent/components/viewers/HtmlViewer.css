@@ -1,0 +1,67 @@
+.html-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Toolbar with Preview / Source toggle */
+.html-viewer-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.html-viewer-tab {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.html-viewer-tab:hover {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.html-viewer-tab.active {
+  color: #fff;
+  background: rgba(97, 85, 245, 0.25);
+  border-color: rgba(97, 85, 245, 0.4);
+}
+
+/* Iframe preview */
+.html-viewer-frame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: none;
+  background: #ffffff;
+}
+
+/* Source view */
+.html-viewer-source {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 2;
+}
+
+.html-viewer-source code {
+  font: inherit;
+  color: inherit;
+}

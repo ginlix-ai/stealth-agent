@@ -1,0 +1,123 @@
+.excel-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.excel-viewer-empty {
+  padding: 2rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+}
+
+/* Sheet tabs */
+.excel-sheet-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.excel-sheet-tab {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.excel-sheet-tab:hover {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.excel-sheet-tab.active {
+  color: #fff;
+  background: rgba(97, 85, 245, 0.25);
+  border-color: rgba(97, 85, 245, 0.4);
+}
+
+/* Table wrapper — white background like a real spreadsheet */
+.excel-table-wrapper {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  background: #ffffff;
+}
+
+/* Table */
+.excel-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.excel-table th,
+.excel-table td {
+  padding: 3px 8px;
+  text-align: left;
+  border: 1px solid #e0e0e0;
+  white-space: nowrap;
+  max-width: 350px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #1a1a1a;
+  vertical-align: bottom;
+}
+
+/* Header row — preserves original styling via inline styles;
+   the defaults below apply when the Excel file has no header formatting */
+.excel-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f5f6f8;
+  color: #333;
+  font-weight: 600;
+  border-bottom: 2px solid #ccc;
+}
+
+.excel-table tbody tr:hover td {
+  outline: 1px solid rgba(97, 85, 245, 0.35);
+  outline-offset: -1px;
+}
+
+/* Row number column — stays neutral/dark for contrast */
+.excel-row-num {
+  color: #999 !important;
+  background: #f8f8f8 !important;
+  font-size: 10px;
+  text-align: right !important;
+  padding-right: 6px !important;
+  user-select: none;
+  width: 40px;
+  min-width: 40px;
+  border-right: 1px solid #e0e0e0 !important;
+  font-weight: 400 !important;
+}
+
+thead .excel-row-num {
+  background: #eef0f3 !important;
+  border-bottom: 2px solid #ccc !important;
+}
+
+/* Truncated notice */
+.excel-truncated {
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
