@@ -616,6 +616,33 @@ class PTCSandbox:
                     timeout=60,
                     retry_policy=_DaytonaRetryPolicy.SAFE,
                 )
+            elif state_value == "stopping":
+                # Wait for sandbox to finish stopping, then start it
+                logger.info(
+                    "Sandbox is stopping, waiting before start",
+                    sandbox_id=sandbox_id,
+                )
+                for _ in range(20):  # Max ~10 seconds
+                    await asyncio.sleep(0.5)
+                    state = getattr(sandbox, "state", None)
+                    state_value = state.value if hasattr(state, "value") else str(state)
+                    if state_value in ("stopped",):
+                        break
+                if state_value == "stopped":
+                    logger.info(
+                        "Sandbox finished stopping, starting it",
+                        sandbox_id=sandbox_id,
+                    )
+                    await self._daytona_call(
+                        sandbox.start,
+                        timeout=60,
+                        retry_policy=_DaytonaRetryPolicy.SAFE,
+                    )
+                else:
+                    raise RuntimeError(
+                        f"Sandbox still in state '{state_value}' after waiting. "
+                        f"Expected 'stopped'."
+                    )
             else:
                 raise RuntimeError(
                     f"Cannot reconnect to sandbox in state: {state_value}. "

@@ -776,6 +776,42 @@ class ConversationPersistenceService:
             )
             raise
 
+    async def update_streaming_chunks(
+        self,
+        response_id: str,
+        streaming_chunks: List[Dict[str, Any]],
+    ) -> bool:
+        """Update streaming_chunks for an already-persisted response.
+
+        Used by the post-interrupt subagent result collector to replace
+        incomplete subagent events with the full set captured by middleware.
+
+        Args:
+            response_id: The response ID to update
+            streaming_chunks: Updated streaming chunks list
+
+        Returns:
+            True if the row was updated, False if not found
+        """
+        try:
+            result = await qr_db.update_streaming_chunks(
+                response_id=response_id,
+                streaming_chunks=streaming_chunks,
+            )
+            if result:
+                logger.info(
+                    f"[ConversationPersistence] Updated streaming_chunks for "
+                    f"response_id={response_id} ({len(streaming_chunks)} chunks)"
+                )
+            return result
+        except Exception as e:
+            logger.error(
+                f"[ConversationPersistence] Failed to update streaming_chunks "
+                f"response_id={response_id}: {e}",
+                exc_info=True,
+            )
+            return False
+
     async def persist_filesystem_snapshot(
         self,
         files: Dict[str, Any],

@@ -1,9 +1,23 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download } from 'lucide-react';
-import { ScrollArea } from '../../../components/ui/scroll-area';
-import { listWorkspaceFiles, readWorkspaceFile, downloadWorkspaceFile, triggerFileDownload } from '../utils/api';
-import ReactMarkdown from 'react-markdown';
+import React, { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
+import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download, Upload, Folder, ChevronRight, ChevronDown, ArrowUpDown, AlertTriangle } from 'lucide-react';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { readWorkspaceFile, downloadWorkspaceFile, downloadWorkspaceFileAsArrayBuffer, triggerFileDownload, uploadWorkspaceFile } from '../utils/api';
+import { stripLineNumbers } from './toolDisplayConfig';
+import Markdown from './Markdown';
+import DocumentErrorBoundary from './viewers/DocumentErrorBoundary';
 import './FilePanel.css';
+
+const PdfViewer = React.lazy(() => import('./viewers/PdfViewer'));
+const ExcelViewer = React.lazy(() => import('./viewers/ExcelViewer'));
+const CsvViewer = React.lazy(() => import('./viewers/CsvViewer'));
+const HtmlViewer = React.lazy(() => import('./viewers/HtmlViewer'));
+
+const EXT_TO_LANG = {
+  py: 'python', js: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
+  json: 'json', html: 'html', css: 'css', sql: 'sql', sh: 'bash', bash: 'bash',
+  yaml: 'yaml', yml: 'yaml', xml: 'xml', java: 'java', go: 'go', rs: 'rust', rb: 'ruby',
+};
 
 function getFileIcon(fileName) {
   const ext = fileName.split('.').pop()?.toLowerCase();
@@ -16,35 +30,199 @@ function getFileExtension(fileName) {
   return fileName.split('.').pop()?.toLowerCase() || '';
 }
 
-function FilePanel({ workspaceId, onClose, targetFile, onTargetFileHandled }) {
-  const [files, setFiles] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+// Map extensions to human-readable type categories
+const EXT_TO_TYPE = {
+  md: 'Docs', txt: 'Docs', pdf: 'Docs',
+  py: 'Code', js: 'Code', jsx: 'Code', ts: 'Code', tsx: 'Code',
+  html: 'Code', css: 'Code', sql: 'Code', sh: 'Code', bash: 'Code',
+  java: 'Code', go: 'Code', rs: 'Code', rb: 'Code',
+  json: 'Data', csv: 'Data', yaml: 'Data', yml: 'Data', xml: 'Data',
+  xlsx: 'Data', xls: 'Data',
+  png: 'Image', jpg: 'Image', jpeg: 'Image', gif: 'Image', svg: 'Image', webp: 'Image',
+};
 
+function getFileType(filePath) {
+  const ext = getFileExtension(filePath.split('/').pop() || '');
+  return EXT_TO_TYPE[ext] || 'Other';
+}
+
+/** Derive available type categories from current file list */
+function getAvailableTypes(filePaths) {
+  const types = new Set();
+  for (const fp of filePaths) types.add(getFileType(fp));
+  // Fixed display order, filtered to only those present
+  return ['Docs', 'Code', 'Data', 'Image', 'Other'].filter((t) => types.has(t));
+}
+
+const SORT_OPTIONS = [
+  { value: 'name-asc', label: 'Name A-Z' },
+  { value: 'name-desc', label: 'Name Z-A' },
+  { value: 'type', label: 'Type' },
+];
+
+function sortFiles(filePaths, sortBy) {
+  const sorted = [...filePaths];
+  switch (sortBy) {
+    case 'name-asc':
+      return sorted.sort((a, b) => {
+        const na = a.split('/').pop().toLowerCase();
+        const nb = b.split('/').pop().toLowerCase();
+        return na.localeCompare(nb);
+      });
+    case 'name-desc':
+      return sorted.sort((a, b) => {
+        const na = a.split('/').pop().toLowerCase();
+        const nb = b.split('/').pop().toLowerCase();
+        return nb.localeCompare(na);
+      });
+    case 'type':
+      return sorted.sort((a, b) => {
+        const ea = getFileExtension(a.split('/').pop() || '');
+        const eb = getFileExtension(b.split('/').pop() || '');
+        if (ea !== eb) return ea.localeCompare(eb);
+        return a.split('/').pop().toLowerCase().localeCompare(b.split('/').pop().toLowerCase());
+      });
+    default:
+      return sorted;
+  }
+}
+
+/** Directory display priority: root first, then results/, data/, rest alphabetical */
+const DIR_PRIORITY = { '/': 0, 'results': 1, 'data': 2 };
+
+function dirSortKey(dir) {
+  return DIR_PRIORITY[dir] ?? 3;
+}
+
+/**
+ * Groups file paths by their top-level directory.
+ * Files without a directory go into a special '/' (root) group.
+ * Returns array of { dir: string, files: string[] } sorted: root → results → data → other.
+ */
+function groupFilesByDirectory(filePaths) {
+  const groups = new Map(); // dir -> file paths
+  for (const fp of filePaths) {
+    const slashIdx = fp.indexOf('/');
+    const dir = slashIdx >= 0 ? fp.slice(0, slashIdx) : '/';
+    if (!groups.has(dir)) groups.set(dir, []);
+    groups.get(dir).push(fp);
+  }
+  const entries = Array.from(groups.entries())
+    .sort(([a], [b]) => {
+      const pa = dirSortKey(a);
+      const pb = dirSortKey(b);
+      if (pa !== pb) return pa - pb;
+      return a.localeCompare(b);
+    })
+    .map(([dir, files]) => ({ dir, files }));
+  return entries;
+}
+
+function DocumentLoadingFallback() {
+  return (
+    <div className="flex items-center justify-center py-12">
+      <RefreshCw className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} />
+    </div>
+  );
+}
+
+function DocumentErrorFallback({ workspaceId, filePath }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-12">
+      <AlertTriangle className="h-6 w-6" style={{ color: 'rgba(255,255,255,0.4)' }} />
+      <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>Unable to preview this file</p>
+      <button
+        className="text-xs px-3 py-1.5 rounded"
+        style={{ background: 'rgba(97, 85, 245, 0.2)', color: '#a39bff', border: '1px solid rgba(97, 85, 245, 0.3)' }}
+        onClick={async () => {
+          try {
+            await triggerFileDownload(workspaceId, filePath);
+          } catch (err) {
+            console.error('[FilePanel] Download failed:', err);
+          }
+        }}
+      >
+        Download instead
+      </button>
+    </div>
+  );
+}
+
+function FilePanel({
+  workspaceId,
+  onClose,
+  targetFile,
+  onTargetFileHandled,
+  targetDirectory,
+  onTargetDirHandled,
+  // Shared file list from useWorkspaceFiles hook
+  files = [],
+  filesLoading = false,
+  filesError = null,
+  onRefreshFiles,
+}) {
   // File detail view state
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileContent, setFileContent] = useState(null);
+  const [fileArrayBuffer, setFileArrayBuffer] = useState(null);
   const [fileMime, setFileMime] = useState(null);
   const [fileLoading, setFileLoading] = useState(false);
 
-  const fetchFiles = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await listWorkspaceFiles(workspaceId, '.');
-      setFiles(data.files || []);
-    } catch (err) {
-      console.error('[FilePanel] Failed to list files:', err);
-      setError(err?.response?.status === 503 ? 'Sandbox not available' : 'Failed to load files');
-      setFiles([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [workspaceId]);
+  // Upload state
+  const [uploadProgress, setUploadProgress] = useState(null); // null = idle, 0-100 = uploading
+  const [uploadError, setUploadError] = useState(null);
+  const fileInputRef = useRef(null);
 
+  // Filter and sort state
+  const [filterType, setFilterType] = useState('All'); // 'All' | 'Docs' | 'Code' | 'Data' | 'Image' | 'Other'
+  const [sortBy, setSortBy] = useState('name-asc');
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const sortMenuRef = useRef(null);
+
+  const availableTypes = useMemo(() => getAvailableTypes(files), [files]);
+
+  // Apply directory filter, type filter, sort, then group
+  const filteredSortedFiles = useMemo(() => {
+    let result = files;
+    // Filter by target directory when navigating from a directory card
+    if (targetDirectory) {
+      const prefix = targetDirectory.endsWith('/') ? targetDirectory : targetDirectory + '/';
+      result = result.filter((fp) => fp.startsWith(prefix));
+    }
+    if (filterType !== 'All') {
+      result = result.filter((fp) => getFileType(fp) === filterType);
+    }
+    return sortFiles(result, sortBy);
+  }, [files, filterType, sortBy, targetDirectory]);
+
+  // Directory collapse state
+  const [collapsedDirs, setCollapsedDirs] = useState(new Set());
+  const groupedFiles = useMemo(() => groupFilesByDirectory(filteredSortedFiles), [filteredSortedFiles]);
+
+  const toggleDir = useCallback((dir) => {
+    setCollapsedDirs((prev) => {
+      const next = new Set(prev);
+      if (next.has(dir)) next.delete(dir);
+      else next.add(dir);
+      return next;
+    });
+  }, []);
+
+  // Close sort menu on outside click
   useEffect(() => {
-    fetchFiles();
-  }, [fetchFiles]);
+    if (!showSortMenu) return;
+    const handler = (e) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target)) {
+        setShowSortMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showSortMenu]);
+
+  // Drag-and-drop state
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounterRef = useRef(0);
 
   // Cleanup blob URL on unmount to prevent memory leaks
   useEffect(() => {
@@ -90,6 +268,38 @@ function FilePanel({ workspaceId, onClose, targetFile, onTargetFileHandled }) {
         }
         return;
       }
+      // PDF — preview inline
+      if (ext === 'pdf') {
+        setSelectedFile(filePath);
+        setFileLoading(true);
+        setFileMime('pdf');
+        try {
+          const buf = await downloadWorkspaceFileAsArrayBuffer(workspaceId, filePath);
+          setFileArrayBuffer(buf);
+        } catch (err) {
+          console.error('[FilePanel] Failed to load PDF:', err);
+          setFileMime('error');
+        } finally {
+          setFileLoading(false);
+        }
+        return;
+      }
+      // Excel — preview inline
+      if (ext === 'xlsx' || ext === 'xls') {
+        setSelectedFile(filePath);
+        setFileLoading(true);
+        setFileMime('excel');
+        try {
+          const buf = await downloadWorkspaceFileAsArrayBuffer(workspaceId, filePath);
+          setFileArrayBuffer(buf);
+        } catch (err) {
+          console.error('[FilePanel] Failed to load Excel file:', err);
+          setFileMime('error');
+        } finally {
+          setFileLoading(false);
+        }
+        return;
+      }
       // For other binary files, trigger download
       try {
         await triggerFileDownload(workspaceId, filePath);
@@ -121,8 +331,67 @@ function FilePanel({ workspaceId, onClose, targetFile, onTargetFileHandled }) {
     }
     setSelectedFile(null);
     setFileContent(null);
+    setFileArrayBuffer(null);
     setFileMime(null);
+    // Don't clear targetDirectory — stay in directory view after closing file detail
   };
+
+  // Upload handling
+  const handleUpload = useCallback(async (file) => {
+    if (!file || !workspaceId) return;
+    setUploadError(null);
+    setUploadProgress(0);
+    try {
+      await uploadWorkspaceFile(workspaceId, file, null, (pct) => setUploadProgress(pct));
+      setUploadProgress(null);
+      onRefreshFiles?.();
+    } catch (err) {
+      console.error('[FilePanel] Upload failed:', err);
+      const msg = err?.response?.data?.detail || err?.message || 'Upload failed';
+      setUploadError(msg);
+      setUploadProgress(null);
+    }
+  }, [workspaceId, onRefreshFiles]);
+
+  const handleFileInputChange = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (file) handleUpload(file);
+    // Reset input so same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, [handleUpload]);
+
+  // Drag-and-drop handlers
+  const handleDragEnter = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragOver(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleUpload(file);
+  }, [handleUpload]);
 
   const fileName = selectedFile?.split('/').pop() || '';
 
@@ -131,20 +400,44 @@ function FilePanel({ workspaceId, onClose, targetFile, onTargetFileHandled }) {
       {/* Header */}
       <div className="file-panel-header">
         <div className="flex items-center gap-2 min-w-0">
-          {selectedFile && (
+          {selectedFile ? (
             <button onClick={handleBack} className="file-panel-icon-btn" title="Back to file list">
               <ArrowLeft className="h-4 w-4" />
             </button>
-          )}
+          ) : targetDirectory ? (
+            <button onClick={() => onTargetDirHandled?.()} className="file-panel-icon-btn" title="Back to all files">
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          ) : null}
           <span className="text-sm font-semibold truncate" style={{ color: '#FFFFFF' }}>
-            {selectedFile ? fileName : 'Workspace Files'}
+            {selectedFile ? fileName : targetDirectory ? `${targetDirectory}/` : 'Workspace Files'}
           </span>
         </div>
         <div className="flex items-center gap-1">
           {!selectedFile && (
-            <button onClick={fetchFiles} className="file-panel-icon-btn" title="Refresh">
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+            <>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="file-panel-icon-btn"
+                title="Upload file"
+                disabled={uploadProgress !== null}
+              >
+                <Upload className="h-3.5 w-3.5" />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileInputChange}
+              />
+              <button
+                onClick={onRefreshFiles}
+                className="file-panel-icon-btn"
+                title="Refresh"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${filesLoading ? 'animate-spin' : ''}`} />
+              </button>
+            </>
           )}
           {selectedFile && (
             <button
@@ -167,62 +460,234 @@ function FilePanel({ workspaceId, onClose, targetFile, onTargetFileHandled }) {
         </div>
       </div>
 
-      {/* Content */}
-      <ScrollArea className="file-panel-content">
-        {selectedFile ? (
-          // File Detail View
-          <div className="p-4">
-            {fileLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <RefreshCw className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} />
+      {/* Upload progress bar */}
+      {uploadProgress !== null && (
+        <div className="file-panel-upload-progress">
+          <div
+            className="file-panel-upload-progress-bar"
+            style={{ width: `${uploadProgress}%` }}
+          />
+        </div>
+      )}
+
+      {/* Upload error */}
+      {uploadError && (
+        <div className="file-panel-upload-error">
+          <span>{uploadError}</span>
+          <button onClick={() => setUploadError(null)} className="file-panel-icon-btn" style={{ padding: 2 }}>
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
+      {/* Filter & Sort toolbar — only in file list view */}
+      {!selectedFile && !filesLoading && !filesError && files.length > 0 && (
+        <div className="file-panel-toolbar">
+          {/* Type filter chips */}
+          <div className="file-panel-filter-chips">
+            <button
+              className={`file-panel-chip ${filterType === 'All' ? 'active' : ''}`}
+              onClick={() => setFilterType('All')}
+            >
+              All
+            </button>
+            {availableTypes.map((t) => (
+              <button
+                key={t}
+                className={`file-panel-chip ${filterType === t ? 'active' : ''}`}
+                onClick={() => setFilterType(filterType === t ? 'All' : t)}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          {/* Sort dropdown */}
+          <div className="file-panel-sort-wrapper" ref={sortMenuRef}>
+            <button
+              className="file-panel-icon-btn"
+              title="Sort files"
+              onClick={() => setShowSortMenu((v) => !v)}
+            >
+              <ArrowUpDown className="h-3.5 w-3.5" />
+            </button>
+            {showSortMenu && (
+              <div className="file-panel-sort-menu">
+                {SORT_OPTIONS.map((opt) => (
+                  <div
+                    key={opt.value}
+                    className={`file-panel-sort-item ${sortBy === opt.value ? 'active' : ''}`}
+                    onClick={() => { setSortBy(opt.value); setShowSortMenu(false); }}
+                  >
+                    {opt.label}
+                  </div>
+                ))}
               </div>
-            ) : fileMime === 'image' ? (
-              <img src={fileContent} alt={fileName} className="max-w-full rounded" />
-            ) : fileMime?.includes('markdown') || getFileExtension(selectedFile) === 'md' ? (
-              <div className="file-panel-markdown prose prose-invert prose-sm max-w-none">
-                <ReactMarkdown>{fileContent}</ReactMarkdown>
-              </div>
-            ) : (
-              <pre className="file-panel-code">{fileContent}</pre>
             )}
           </div>
-        ) : (
-          // File List View
-          <div className="py-1">
-            {loading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="file-panel-item animate-pulse">
-                  <div className="h-4 w-4 rounded" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }} />
-                  <div className="h-4 flex-1 rounded" style={{ backgroundColor: 'rgba(255,255,255,0.1)', width: `${50 + i * 10}%` }} />
-                </div>
-              ))
-            ) : error ? (
-              <div className="px-4 py-8 text-center">
-                <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>{error}</p>
-              </div>
-            ) : files.length === 0 ? (
-              <div className="px-4 py-8 text-center">
-                <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>No files yet</p>
-              </div>
-            ) : (
-              files.map((filePath) => {
-                const name = filePath.split('/').pop();
-                const Icon = getFileIcon(name);
-                return (
-                  <div
-                    key={filePath}
-                    className="file-panel-item"
-                    onClick={() => handleFileClick(filePath)}
-                  >
-                    <Icon className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.5)' }} />
-                    <span className="text-sm truncate" style={{ color: '#FFFFFF' }}>{name}</span>
-                  </div>
-                );
-              })
-            )}
+        </div>
+      )}
+
+      {/* Content */}
+      <div
+        className="file-panel-content-wrapper"
+        onDragEnter={!selectedFile ? handleDragEnter : undefined}
+        onDragLeave={!selectedFile ? handleDragLeave : undefined}
+        onDragOver={!selectedFile ? handleDragOver : undefined}
+        onDrop={!selectedFile ? handleDrop : undefined}
+        style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}
+      >
+        {/* Drag overlay */}
+        {isDragOver && !selectedFile && (
+          <div className="file-panel-drag-overlay">
+            <Upload className="h-8 w-8" style={{ color: 'rgba(97, 85, 245, 0.9)' }} />
+            <span>Drop file to upload</span>
           </div>
         )}
-      </ScrollArea>
+
+        <div className="file-panel-content">
+          {selectedFile ? (
+            // File Detail View
+            fileLoading ? (
+              <div className="p-4">
+                <div className="flex items-center justify-center py-12">
+                  <RefreshCw className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} />
+                </div>
+              </div>
+            ) : fileMime === 'pdf' ? (
+              <Suspense fallback={<DocumentLoadingFallback />}>
+                <DocumentErrorBoundary fallback={<DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />}>
+                  <PdfViewer data={fileArrayBuffer} />
+                </DocumentErrorBoundary>
+              </Suspense>
+            ) : fileMime === 'excel' ? (
+              <Suspense fallback={<DocumentLoadingFallback />}>
+                <DocumentErrorBoundary fallback={<DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />}>
+                  <ExcelViewer data={fileArrayBuffer} />
+                </DocumentErrorBoundary>
+              </Suspense>
+            ) : getFileExtension(selectedFile) === 'csv' ? (
+              <Suspense fallback={<DocumentLoadingFallback />}>
+                <DocumentErrorBoundary fallback={<DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />}>
+                  <CsvViewer content={fileContent} />
+                </DocumentErrorBoundary>
+              </Suspense>
+            ) : ['html', 'htm'].includes(getFileExtension(selectedFile)) ? (
+              <Suspense fallback={<DocumentLoadingFallback />}>
+                <DocumentErrorBoundary fallback={<DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />}>
+                  <HtmlViewer content={fileContent} />
+                </DocumentErrorBoundary>
+              </Suspense>
+            ) : (
+              <div className="p-4">
+                {fileMime === 'image' ? (
+                  <img src={fileContent} alt={fileName} className="max-w-full rounded" />
+                ) : fileMime === 'error' ? (
+                  <DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />
+                ) : selectedFile?.startsWith('/large_tool_results/') ? (
+                  <Markdown variant="panel" content={stripLineNumbers(fileContent)} className="text-sm" />
+                ) : fileMime?.includes('markdown') || getFileExtension(selectedFile) === 'md' ? (
+                  <Markdown variant="panel" content={fileContent} className="text-sm" />
+                ) : (
+                  <SyntaxHighlighter
+                    language={EXT_TO_LANG[getFileExtension(selectedFile)] || 'text'}
+                    style={oneDark}
+                    customStyle={{ margin: 0, padding: 0, backgroundColor: 'transparent', fontSize: '12px', lineHeight: '1.6' }}
+                    codeTagProps={{ style: { backgroundColor: 'transparent' } }}
+                    wrapLongLines
+                  >
+                    {fileContent}
+                  </SyntaxHighlighter>
+                )}
+              </div>
+            )
+          ) : (
+            // File List View
+            <div className="py-1">
+              {filesLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="file-panel-item animate-pulse">
+                    <div className="h-4 w-4 rounded" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }} />
+                    <div className="h-4 flex-1 rounded" style={{ backgroundColor: 'rgba(255,255,255,0.1)', width: `${50 + i * 10}%` }} />
+                  </div>
+                ))
+              ) : filesError ? (
+                <div className="px-4 py-8 text-center">
+                  <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>{filesError}</p>
+                </div>
+              ) : files.length === 0 ? (
+                <div className="px-4 py-8 text-center">
+                  <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>No files yet</p>
+                </div>
+              ) : filteredSortedFiles.length === 0 ? (
+                <div className="px-4 py-8 text-center">
+                  <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>No {filterType.toLowerCase()} files</p>
+                </div>
+              ) : (
+                groupedFiles.map(({ dir, files: groupFiles }) => {
+                  const isRoot = dir === '/';
+                  const isCollapsed = collapsedDirs.has(dir);
+                  return (
+                    <div key={dir}>
+                      {/* Directory header (skip for root if it's the only group) */}
+                      {!isRoot && (
+                        <div
+                          className="file-panel-dir-header"
+                          onClick={() => toggleDir(dir)}
+                        >
+                          {isCollapsed
+                            ? <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                            : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                          }
+                          <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.45)' }} />
+                          <span className="text-xs font-medium truncate" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                            {dir}/
+                          </span>
+                          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                            {groupFiles.length}
+                          </span>
+                        </div>
+                      )}
+                      {isRoot && groupedFiles.length > 1 && (
+                        <div
+                          className="file-panel-dir-header"
+                          onClick={() => toggleDir(dir)}
+                        >
+                          {isCollapsed
+                            ? <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                            : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                          }
+                          <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.45)' }} />
+                          <span className="text-xs font-medium truncate" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                            /
+                          </span>
+                          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                            {groupFiles.length}
+                          </span>
+                        </div>
+                      )}
+                      {/* File items */}
+                      {!isCollapsed && groupFiles.map((filePath) => {
+                        const name = filePath.split('/').pop();
+                        const Icon = getFileIcon(name);
+                        return (
+                          <div
+                            key={filePath}
+                            className={`file-panel-item ${!isRoot || groupedFiles.length > 1 ? 'file-panel-item-nested' : ''}`}
+                            onClick={() => handleFileClick(filePath)}
+                          >
+                            <Icon className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.5)' }} />
+                            <span className="text-sm truncate" style={{ color: '#FFFFFF' }}>{name}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

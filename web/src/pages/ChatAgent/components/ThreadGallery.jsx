@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Loader2, Folder, FileText } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Loader2, Folder, FileText, Zap } from 'lucide-react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import ThreadCard from './ThreadCard';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import RenameThreadModal from './RenameThreadModal';
-import ChatInput from './ChatInput';
+import ChatInputWithMentions from './ChatInputWithMentions';
 import FilePanel from './FilePanel';
 import { getAuthUserId } from '@/api/client';
-import { getWorkspaceThreads, getWorkspaces, deleteThread, updateThreadTitle, listWorkspaceFiles } from '../utils/api';
+import { getWorkspaceThreads, getWorkspace, deleteThread, updateThreadTitle } from '../utils/api';
+import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
 import { DEFAULT_USER_ID } from '../utils/api';
 import { removeStoredThreadId } from '../hooks/utils/threadStorage';
+import { saveChatSession } from '../hooks/utils/chatSessionRestore';
 import iconComputer from '../../../assets/img/icon-computer.svg';
 import '../../Dashboard/Dashboard.css';
 
@@ -27,9 +29,16 @@ import '../../Dashboard/Dashboard.css';
  * @param {Function} onBack - Callback to navigate back to workspace gallery
  * @param {Function} onThreadSelect - Callback when a thread is selected (receives workspaceId and threadId)
  */
-function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
+function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
+  const location = useLocation();
   const [threads, setThreads] = useState([]);
-  const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceName, setWorkspaceName] = useState(
+    location.state?.workspaceName || ''
+  );
+  const [workspaceStatus, setWorkspaceStatus] = useState(
+    location.state?.workspaceStatus || null
+  );
+  const isFlash = workspaceStatus === 'flash';
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, thread: null });
@@ -41,21 +50,78 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [showFilePanel, setShowFilePanel] = useState(false);
   const [filePanelWidth, setFilePanelWidth] = useState(420);
-  const [files, setFiles] = useState([]);
+  const [filePanelTargetFile, setFilePanelTargetFile] = useState(null);
+  // Initialize files from cache for instant display on return navigation
+  const [files, setFiles] = useState(() => cache?.current?.[workspaceId]?.files || []);
   const isDraggingRef = useRef(false);
+
+  // Shared workspace files for the FilePanel (skip for flash workspaces — no sandbox)
+  const {
+    files: panelFiles,
+    loading: panelFilesLoading,
+    error: panelFilesError,
+    refresh: refreshPanelFiles,
+  } = useWorkspaceFiles(isFlash ? null : workspaceId);
+
   const navigate = useNavigate();
   const { threadId: currentThreadId } = useParams();
   const loadingRef = useRef(false);
 
-  // Load workspace name and threads on mount
+  // Sort helper for file list display
+  const sortFiles = useCallback((fileList) => {
+    const dirPriority = (fp) => {
+      if (!fp.includes('/')) return 0;
+      const dir = fp.slice(0, fp.indexOf('/'));
+      if (dir === 'results') return 1;
+      if (dir === 'data') return 2;
+      return 3;
+    };
+    return [...fileList].sort((a, b) => {
+      const pa = dirPriority(a);
+      const pb = dirPriority(b);
+      if (pa !== pb) return pa - pb;
+      return a.localeCompare(b);
+    });
+  }, []);
+
+  // Derive sorted file list from hook data and save to cache
+  useEffect(() => {
+    if (panelFiles.length > 0) {
+      const sorted = sortFiles(panelFiles);
+      setFiles(sorted);
+      // Save to cache so files show instantly on return navigation
+      if (cache?.current?.[workspaceId]) {
+        cache.current[workspaceId].files = sorted;
+      }
+    }
+  }, [panelFiles, sortFiles, workspaceId, cache]);
+
+  // Save workspace-level session on unmount so tab switching restores to this workspace
+  useEffect(() => {
+    return () => {
+      if (workspaceId) {
+        saveChatSession({ workspaceId });
+      }
+    };
+  }, [workspaceId]);
+
+  // Load threads on mount, using cache for instant display on return navigation
   useEffect(() => {
     if (!workspaceId) return;
-    
+
     // Guard: Prevent duplicate calls
     if (loadingRef.current) {
       return;
     }
-    
+
+    // Show cached data instantly (stale-while-revalidate)
+    const cached = cache?.current?.[workspaceId];
+    if (cached?.threads) {
+      setThreads(cached.threads);
+      if (cached.workspaceName) setWorkspaceName(cached.workspaceName);
+      setIsLoading(false);
+    }
+
     loadingRef.current = true;
     loadData().finally(() => {
       loadingRef.current = false;
@@ -63,32 +129,50 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
   }, [workspaceId]);
 
   /**
-   * Fetches workspace name and threads from the API
+   * Fetches threads (and workspace name if not yet known) from the API.
+   * File listing is handled separately by useWorkspaceFiles hook.
    */
   const loadData = async () => {
     try {
-      setIsLoading(true);
+      // Only show spinner if we have nothing cached
+      const hasCached = cache?.current?.[workspaceId]?.threads;
+      if (!hasCached) setIsLoading(true);
       setError(null);
 
-      // Load workspace name, threads, and files in parallel
       const userId = getAuthUserId() || DEFAULT_USER_ID;
-      const [workspacesData, threadsData, filesData] = await Promise.all([
-        getWorkspaces(userId).catch(() => ({ workspaces: [] })),
-        getWorkspaceThreads(workspaceId, userId),
-        listWorkspaceFiles(workspaceId, 'results').catch(() => ({ files: [] })),
-      ]);
 
-      // Find workspace name
-      const workspace = workspacesData.workspaces?.find(
-        (ws) => ws.workspace_id === workspaceId
-      );
-      setWorkspaceName(workspace?.name || 'Workspace');
+      // If we don't have workspace name yet, fetch it in parallel with threads
+      const needsName = !workspaceName;
+      const promises = [getWorkspaceThreads(workspaceId, userId)];
+      if (needsName) {
+        promises.push(getWorkspace(workspaceId, userId).catch(() => null));
+      }
 
-      // Set threads
-      setThreads(threadsData.threads || []);
+      const [threadsData, workspaceData] = await Promise.all(promises);
 
-      // Set files
-      setFiles(filesData.files || []);
+      const freshThreads = threadsData.threads || [];
+      setThreads(freshThreads);
+
+      const freshName = workspaceData?.name || workspaceName || 'Workspace';
+      if (needsName && workspaceData?.name) {
+        setWorkspaceName(freshName);
+      }
+
+      // Detect workspace status from API if not provided via navigation state
+      if (!workspaceStatus && workspaceData?.status) {
+        setWorkspaceStatus(workspaceData.status);
+      }
+
+      // Update cache for stale-while-revalidate on return navigation
+      // Spread existing entry to preserve cached files
+      if (cache?.current) {
+        cache.current[workspaceId] = {
+          ...cache.current[workspaceId],
+          threads: freshThreads,
+          workspaceName: freshName,
+          fetchedAt: Date.now(),
+        };
+      }
     } catch (err) {
       console.error('Error loading threads:', err);
       setError('Failed to load threads. Please refresh the page.');
@@ -103,7 +187,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
    */
   const handleThreadClick = (thread) => {
     if (onThreadSelect) {
-      onThreadSelect(workspaceId, thread.thread_id);
+      onThreadSelect(workspaceId, thread.thread_id, isFlash ? 'flash' : null);
     }
   };
 
@@ -257,6 +341,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
         state: {
           initialMessage: message.trim(),
           planMode: planMode,
+          ...(isFlash ? { agentMode: 'flash' } : {}),
         },
       });
     } catch (error) {
@@ -369,7 +454,11 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
             {/* Workspace Header */}
             <div className="w-full flex flex-col items-center mt-[8vh]">
               <div className="flex items-center justify-center transition-colors cursor-pointer">
-                <img src={iconComputer} alt="Workspace" className="w-10 h-10" />
+                {isFlash ? (
+                  <Zap className="w-10 h-10" style={{ color: '#6155F5' }} />
+                ) : (
+                  <img src={iconComputer} alt="Workspace" className="w-10 h-10" />
+                )}
               </div>
               <h1
                 className="text-xl font-medium mt-3 text-center dashboard-title-font"
@@ -386,14 +475,15 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
 
             {/* Chat Input */}
             <div className="w-full">
-              <ChatInput
+              <ChatInputWithMentions
                 onSend={handleSendMessage}
                 disabled={isSendingMessage || !workspaceId}
+                files={panelFiles}
               />
             </div>
 
-            {/* Files Card */}
-            <div className="w-full">
+            {/* Files Card — hidden for flash workspaces (no sandbox) */}
+            {!isFlash && <div className="w-full">
               <div
                 className="flex-1 min-w-0 flex flex-col ps-[16px] pt-[12px] pb-[14px] pe-[20px] rounded-[12px] border cursor-pointer hover:bg-white/5 transition-colors"
                 style={{
@@ -411,13 +501,22 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
                     {showFilePanel ? 'Close' : 'View all'}
                   </div>
                 </div>
-                {/* Show first two file names */}
+                {/* Show first two file names — clicking a name opens that file directly */}
                 {files.length > 0 && (
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-0.5">
                     {files.slice(0, 2).map((filePath, index) => {
                       const fileName = filePath.split('/').pop();
                       return (
-                        <div key={index} className="flex items-center gap-2 text-[13px]" style={{ color: '#FFFFFF', opacity: 0.7 }}>
+                        <div
+                          key={index}
+                          className="flex items-center gap-2 text-[13px] rounded-md px-1 py-1 -mx-1 transition-colors hover:bg-white/5"
+                          style={{ color: '#FFFFFF', opacity: 0.7 }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFilePanelTargetFile(filePath);
+                            setShowFilePanel(true);
+                          }}
+                        >
                           <FileText className="h-3.5 w-3.5 flex-shrink-0" />
                           <span className="truncate">{fileName}</span>
                         </div>
@@ -426,7 +525,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
                   </div>
                 )}
               </div>
-            </div>
+            </div>}
 
             {/* Threads Section */}
             <div className="w-full flex flex-col gap-4 pb-8">
@@ -465,8 +564,8 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
         </div>
       </div>
 
-      {/* Right Side: File Panel */}
-      {showFilePanel && (
+      {/* Right Side: File Panel — hidden for flash workspaces */}
+      {showFilePanel && !isFlash && (
         <>
           <div
             className="w-[4px] bg-transparent hover:bg-white/20 cursor-col-resize flex-shrink-0 transition-colors"
@@ -476,6 +575,12 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect }) {
             <FilePanel
               workspaceId={workspaceId}
               onClose={() => setShowFilePanel(false)}
+              targetFile={filePanelTargetFile}
+              onTargetFileHandled={() => setFilePanelTargetFile(null)}
+              files={panelFiles}
+              filesLoading={panelFilesLoading}
+              filesError={panelFilesError}
+              onRefreshFiles={refreshPanelFiles}
             />
           </div>
         </>

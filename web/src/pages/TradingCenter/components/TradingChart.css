@@ -4,8 +4,10 @@
   flex-direction: column;
   background-color: #0f1422;
   position: relative;
-  overflow: visible;
+  overflow: hidden;
   min-height: 0;
+  min-width: 0;
+  height: 100%;
 }
 
 /* Capture wheel over chart so K-line pan/zoom doesn't scroll the page */
@@ -13,24 +15,35 @@
   overflow: hidden;
 }
 
-.trading-chart-mock-warning {
-  background-color: #f59e0b;
-  color: #000;
-  padding: 8px 16px;
-  border-radius: 4px;
-  margin-bottom: 10px;
-  font-size: 14px;
-  font-weight: 500;
+
+.chart-mode-switcher {
+  flex-shrink: 0;
 }
 
-.trading-chart-mock-warning code {
-  background: rgba(0,0,0,0.15);
-  padding: 2px 6px;
-  border-radius: 4px;
+.chart-indicators {
+  display: flex;
+  gap: 12px;
+  flex-shrink: 0;
 }
 
-.chart-header {
-  padding: 10px 20px;
+.indicator-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #c4c8d8;
+  white-space: nowrap;
+}
+
+.indicator-color {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.chart-tools {
+  padding: 8px 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -38,52 +51,94 @@
   flex-shrink: 0;
 }
 
-.chart-info {
+.chart-tools-left {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
+  align-items: center;
+  gap: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  min-width: 0;
 }
 
-.chart-label {
-  font-size: 14px;
-  color: #8b8fa3;
+.chart-tools-left::-webkit-scrollbar {
+  display: none;
 }
 
-.update-time {
-  font-size: 12px;
+.indicator-toggles {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.indicator-toggles-label {
+  font-size: 11px;
+  font-weight: 600;
   color: #6b7280;
+  margin-right: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.chart-indicators {
+.indicator-toggle-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #555a6e;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.indicator-toggle-btn:hover {
+  color: #c4c8d8;
+}
+
+.indicator-toggle-active {
+  border-color: currentColor;
+}
+
+.interval-selector {
   display: flex;
-  gap: 20px;
+  gap: 2px;
+  background-color: #141826;
+  border-radius: 6px;
+  padding: 2px;
 }
 
-.indicator-item {
+.interval-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #8b8fa3;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.interval-btn:hover { color: #c4c8d8; background: rgba(102,126,234,0.1); }
+.interval-btn-active { color: #fff; background: #667eea; }
+.interval-btn-active:hover { background: #5a6fd6; }
+
+.chart-tools-right {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
-  color: #ffffff;
-}
-
-.indicator-color {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-}
-
-.chart-tools {
-  padding: 8px 20px;
-  display: flex;
-  gap: 8px;
-  border-bottom: 1px solid #1a1f35;
   flex-shrink: 0;
 }
 
+.chart-tool-buttons { display: flex; gap: 4px; flex-shrink: 0; }
+
 .chart-tool-btn {
-  width: 32px;
-  height: 32px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
   background-color: #1a1f35;
   border: 1px solid #2a2f45;
   border-radius: 4px;
@@ -92,14 +147,42 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  transition: all 0.3s;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+  white-space: nowrap;
 }
 
 .chart-tool-btn:hover {
   background-color: #2a2f45;
   color: #ffffff;
   border-color: #667eea;
+}
+
+.chart-tool-btn-active {
+  background-color: rgba(102,126,234,0.15);
+  color: #667eea;
+  border-color: #667eea;
+}
+
+/* Light chart visible in Light mode: fills parent flex column */
+.light-chart-visible {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Light chart hidden behind Advanced mode: keeps layout for screenshot capture */
+.light-chart-hidden {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
 }
 
 .charts-container {
@@ -122,7 +205,7 @@
   height: 120px;
   flex-shrink: 0;
   border-top: 1px solid #1a1f35;
-  padding: 8px 20px;
+  padding: 4px 0 0 0;
   display: flex;
   flex-direction: column;
 }
@@ -130,7 +213,7 @@
 .rsi-label {
   font-size: 12px;
   color: #8b8fa3;
-  margin-bottom: 6px;
+  margin: 0 0 2px 8px;
 }
 
 .rsi-chart-wrapper {

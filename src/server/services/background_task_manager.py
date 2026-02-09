@@ -835,24 +835,10 @@ class BackgroundTaskManager:
                             # Calculate execution time from start_time
                             execution_time = calculate_execution_time(metadata)
 
-                            # Get agent_llm_preset from workflow state and resolve mapping
-                            agent_llm_preset = "default"  # Default fallback
-                            try:
-                                if snapshot and snapshot.values:
-                                    agent_llm_preset = snapshot.values.get("agent_llm_preset", "default")
-                            except Exception:
-                                pass
-
-                            # Resolve mapping from preset
-                            from src.config.agents import get_agent_llm_map
-                            agent_llm_mapping = get_agent_llm_map(agent_llm_preset)
-
                             # Build metadata with all context
                             persist_metadata = {
                                 "msg_type": metadata.get("msg_type"),
                                 "stock_code": metadata.get("stock_code"),
-                                "agent_llm_preset": agent_llm_preset,
-                                "agent_llm_mapping": agent_llm_mapping,
                                 "deepthinking": metadata.get("deepthinking", False)
                             }
 
@@ -867,6 +853,15 @@ class BackgroundTaskManager:
                                 streaming_chunks=streaming_chunks
                             )
                             logger.info(f"[WorkflowPersistence] Workflow {thread_id} paused for human feedback")
+
+                            # Update Redis workflow tracker to interrupted
+                            # (prevents frontend from reconnecting to a paused workflow)
+                            from src.server.services.workflow_tracker import WorkflowTracker
+                            tracker = WorkflowTracker.get_instance()
+                            await tracker.mark_interrupted(
+                                thread_id=thread_id,
+                                metadata={"interrupt_reason": "plan_review_required"},
+                            )
                         except Exception as persist_error:
                             logger.error(
                                 f"[WorkflowPersistence] Failed to persist interrupt for thread_id={thread_id}: {persist_error}",
@@ -1058,7 +1053,7 @@ class BackgroundTaskManager:
                         "soft_interrupted": True
                     }
 
-                    await persistence_service.persist_interrupt(
+                    response_id = await persistence_service.persist_interrupt(
                         interrupt_reason="soft_interrupt",
                         state_snapshot=state_snapshot,
                         agent_messages=agent_messages,
@@ -1069,11 +1064,193 @@ class BackgroundTaskManager:
                         streaming_chunks=streaming_chunks
                     )
                     logger.info(f"[WorkflowPersistence] Soft interrupt persisted for thread_id={thread_id}")
+
+                    # Spawn collector if subagents are still running
+                    from src.server.services.background_registry_store import BackgroundRegistryStore
+                    bg_store = BackgroundRegistryStore.get_instance()
+                    bg_registry = await bg_store.get_registry(thread_id)
+
+                    if bg_registry and bg_registry.has_pending_tasks():
+                        logger.info(
+                            f"[WorkflowPersistence] {bg_registry.pending_count} subagents still running, "
+                            f"spawning result collector for thread_id={thread_id}"
+                        )
+                        asyncio.create_task(
+                            self._collect_subagent_results_after_interrupt(
+                                thread_id=thread_id,
+                                response_id=response_id,
+                                original_chunks=streaming_chunks or [],
+                                bg_registry=bg_registry,
+                                workspace_id=workspace_id,
+                                user_id=user_id,
+                                timeout=120.0,
+                            ),
+                            name=f"subagent-collector-{thread_id}",
+                        )
                 except Exception as persist_error:
                     logger.error(
                         f"[WorkflowPersistence] Failed to persist soft interrupt for {thread_id}: {persist_error}",
                         exc_info=True
                     )
+
+    async def _collect_subagent_results_after_interrupt(
+        self,
+        thread_id: str,
+        response_id: str,
+        original_chunks: list[dict[str, Any]],
+        bg_registry: Any,
+        workspace_id: str,
+        user_id: str,
+        timeout: float = 120.0,
+    ) -> None:
+        """Wait for subagents incrementally, persist as each completes.
+
+        Fire-and-forget task spawned by _mark_soft_interrupted() when background
+        subagents are still running after the user presses ESC.
+
+        Uses asyncio.FIRST_COMPLETED so each subagent's events are persisted
+        to DB as soon as that subagent finishes, rather than waiting for all.
+        """
+        import copy
+
+        try:
+            all_tasks = await bg_registry.get_all_tasks()
+            subagent_agent_ids = {t.agent_id for t in all_tasks if t.agent_id}
+
+            logger.info(
+                f"[SubagentCollector] Starting incremental collection for "
+                f"thread_id={thread_id}, total_tasks={len(all_tasks)}, "
+                f"pending={bg_registry.pending_count}"
+            )
+
+            # Main agent events (unchanged throughout)
+            main_chunks = [
+                c for c in original_chunks
+                if c.get("data", {}).get("agent", "") not in subagent_agent_ids
+            ]
+
+            # Accumulate subagent events across iterations
+            all_subagent_events: list[dict] = []
+
+            # Collect from already-completed tasks
+            for task in all_tasks:
+                if task.completed and task.captured_events:
+                    for event in task.captured_events:
+                        enriched = copy.deepcopy(event)
+                        enriched["data"]["thread_id"] = thread_id
+                        all_subagent_events.append(enriched)
+                    task.captured_events.clear()  # Safe: subagent is done, no more appends
+
+            # Get pending tasks
+            pending = {
+                t.asyncio_task: t for t in all_tasks
+                if t.is_pending and t.asyncio_task
+            }
+
+            # Persist initial batch if any already-completed tasks had events
+            if all_subagent_events:
+                await self._persist_collected_events(
+                    main_chunks, all_subagent_events, response_id,
+                    thread_id, workspace_id, user_id,
+                )
+
+            if not pending:
+                if not all_subagent_events:
+                    logger.info(
+                        f"[SubagentCollector] No subagent events captured "
+                        f"for thread_id={thread_id}"
+                    )
+                return
+
+            # Wait for remaining tasks one-by-one
+            deadline = time.time() + timeout
+
+            while pending:
+                remaining_timeout = deadline - time.time()
+                if remaining_timeout <= 0:
+                    logger.warning(
+                        f"[SubagentCollector] Timeout for thread_id={thread_id}, "
+                        f"{len(pending)} tasks still pending"
+                    )
+                    break
+
+                done, _ = await asyncio.wait(
+                    pending.keys(),
+                    timeout=remaining_timeout,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                if not done:
+                    break  # timeout
+
+                for asyncio_task in done:
+                    task = pending.pop(asyncio_task)
+
+                    # Mark task completed
+                    async with bg_registry._lock:
+                        task.completed = True
+                        try:
+                            task.result = asyncio_task.result()
+                        except Exception as e:
+                            task.error = str(e)
+                            task.result = {"success": False, "error": str(e)}
+
+                    # Collect this task's captured events
+                    if task.captured_events:
+                        for event in task.captured_events:
+                            enriched = copy.deepcopy(event)
+                            enriched["data"]["thread_id"] = thread_id
+                            all_subagent_events.append(enriched)
+                        task.captured_events.clear()  # Safe: subagent is done, no more appends
+
+                    logger.info(
+                        f"[SubagentCollector] {task.display_id} completed, "
+                        f"persisting {len(all_subagent_events)} total events"
+                    )
+
+                # Persist after each batch of completions
+                if all_subagent_events:
+                    await self._persist_collected_events(
+                        main_chunks, all_subagent_events, response_id,
+                        thread_id, workspace_id, user_id,
+                    )
+
+        except Exception as e:
+            logger.error(
+                f"[SubagentCollector] Failed for thread_id={thread_id}: {e}",
+                exc_info=True,
+            )
+
+    async def _persist_collected_events(
+        self,
+        main_chunks: list[dict],
+        subagent_events: list[dict],
+        response_id: str,
+        thread_id: str,
+        workspace_id: str,
+        user_id: str,
+    ) -> None:
+        """Sort, clean, and persist main + subagent events to DB."""
+        import copy
+
+        sorted_events = sorted(subagent_events, key=lambda e: e.get("ts", 0))
+        cleaned = []
+        for event in sorted_events:
+            e = copy.deepcopy(event)
+            e.pop("ts", None)
+            cleaned.append(e)
+
+        updated_chunks = main_chunks + cleaned
+
+        from src.server.services.conversation_persistence_service import (
+            ConversationPersistenceService,
+        )
+        persistence_service = ConversationPersistenceService.get_instance(
+            thread_id, workspace_id=workspace_id, user_id=user_id,
+        )
+        await persistence_service.update_streaming_chunks(
+            response_id=response_id, streaming_chunks=updated_chunks,
+        )
 
     async def _mark_cancelled(self, thread_id: str):
         async with self.task_lock:

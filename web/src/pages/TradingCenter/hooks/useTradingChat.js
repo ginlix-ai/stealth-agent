@@ -9,8 +9,8 @@
  * - Simplified message parsing (no subagents, no todo lists)
  */
 
-import { useState, useRef, useEffect } from 'react';
-import { sendFlashChatMessage, deleteTradingThread, deleteFlashWorkspaces } from '../utils/api';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { sendFlashChatMessage, deleteTradingThread } from '../utils/api';
 
 const DEFAULT_USER_ID = 'test_user_001';
 
@@ -55,6 +55,9 @@ function appendMessage(messages, newMessage) {
  * @param {string} userId - User ID (defaults to DEFAULT_USER_ID)
  * @returns {Object} Chat state and handlers
  */
+// Batch flush interval (ms) — SSE events are buffered and flushed at this rate
+const BATCH_FLUSH_INTERVAL_MS = 150;
+
 export function useTradingChat(userId = DEFAULT_USER_ID) {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -63,13 +66,49 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
   const contentOrderCounterRef = useRef(0);
   const currentReasoningIdRef = useRef(null);
 
+  // --- Batching infrastructure ---
+  // Pending updates accumulate here; flushed on a timer
+  const pendingUpdatesRef = useRef([]);
+  const flushTimerRef = useRef(null);
+
+  /**
+   * Queue a message-transform function and schedule a batched flush.
+   * Each `updater` is a function (messages: Message[]) => Message[]
+   */
+  const queueUpdate = useCallback((updater) => {
+    pendingUpdatesRef.current.push(updater);
+
+    if (!flushTimerRef.current) {
+      flushTimerRef.current = setTimeout(() => {
+        flushTimerRef.current = null;
+        const updates = pendingUpdatesRef.current;
+        if (updates.length === 0) return;
+        pendingUpdatesRef.current = [];
+        // Apply all queued transforms in a single setState
+        setMessages((prev) => updates.reduce((msgs, fn) => fn(msgs), prev));
+      }, BATCH_FLUSH_INTERVAL_MS);
+    }
+  }, []);
+
+  /**
+   * Flush any remaining queued updates immediately (used at stream end).
+   */
+  const flushUpdates = useCallback(() => {
+    clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = null;
+    const updates = pendingUpdatesRef.current;
+    if (updates.length === 0) return;
+    pendingUpdatesRef.current = [];
+    setMessages((prev) => updates.reduce((msgs, fn) => fn(msgs), prev));
+  }, []);
+
   /**
    * Handles text message chunk events with chronological ordering
    */
-  function handleMessageChunk({ assistantMessageId, content, setMessages }) {
+  function handleMessageChunk({ assistantMessageId, content }) {
     if (!assistantMessageId || !content) return false;
 
-    setMessages((prev) =>
+    queueUpdate((prev) =>
       prev.map((msg) => {
         if (msg.id !== assistantMessageId) return msg;
 
@@ -103,14 +142,14 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
   /**
    * Handles reasoning signal events
    */
-  function handleReasoningSignal({ assistantMessageId, signalContent, setMessages }) {
+  function handleReasoningSignal({ assistantMessageId, signalContent }) {
     if (signalContent === 'start') {
       const reasoningId = `reasoning-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       currentReasoningIdRef.current = reasoningId;
       contentOrderCounterRef.current++;
       const currentOrder = contentOrderCounterRef.current;
 
-      setMessages((prev) =>
+      queueUpdate((prev) =>
         prev.map((msg) => {
           if (msg.id !== assistantMessageId) return msg;
 
@@ -144,7 +183,7 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
     } else if (signalContent === 'complete') {
       if (currentReasoningIdRef.current) {
         const reasoningId = currentReasoningIdRef.current;
-        setMessages((prev) =>
+        queueUpdate((prev) =>
           prev.map((msg) => {
             if (msg.id !== assistantMessageId) return msg;
 
@@ -173,10 +212,10 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
   /**
    * Handles reasoning content chunks
    */
-  function handleReasoningContent({ assistantMessageId, content, setMessages }) {
+  function handleReasoningContent({ assistantMessageId, content }) {
     if (currentReasoningIdRef.current && content) {
       const reasoningId = currentReasoningIdRef.current;
-      setMessages((prev) =>
+      queueUpdate((prev) =>
         prev.map((msg) => {
           if (msg.id !== assistantMessageId) return msg;
 
@@ -202,7 +241,7 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
   /**
    * Handles tool calls events
    */
-  function handleToolCalls({ assistantMessageId, toolCalls, finishReason, setMessages }) {
+  function handleToolCalls({ assistantMessageId, toolCalls, finishReason }) {
     if (!toolCalls || !Array.isArray(toolCalls)) {
       return false;
     }
@@ -211,7 +250,7 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
       const toolCallId = toolCall.id;
 
       if (toolCallId) {
-        setMessages((prev) =>
+        queueUpdate((prev) =>
           prev.map((msg) => {
             if (msg.id !== assistantMessageId) return msg;
 
@@ -256,7 +295,7 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
     });
 
     if (finishReason === 'tool_calls') {
-      setMessages((prev) =>
+      queueUpdate((prev) =>
         prev.map((msg) => {
           if (msg.id !== assistantMessageId) return msg;
 
@@ -282,20 +321,20 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
   /**
    * Handles tool call result events
    */
-  function handleToolCallResult({ assistantMessageId, toolCallId, result, setMessages }) {
+  function handleToolCallResult({ assistantMessageId, toolCallId, result }) {
     if (!toolCallId) {
       return false;
     }
 
-    setMessages((prev) =>
+    queueUpdate((prev) =>
       prev.map((msg) => {
         if (msg.id !== assistantMessageId) return msg;
 
         const toolCallProcesses = { ...(msg.toolCallProcesses || {}) };
-        
+
         const resultContent = result.content || '';
         const isFailed = /failed|error|Error|ERROR|exception|Exception|failed:|error:/i.test(resultContent);
-        
+
         if (toolCallProcesses[toolCallId]) {
           toolCallProcesses[toolCallId] = {
             ...toolCallProcesses[toolCallId],
@@ -355,7 +394,7 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
   /**
    * Handles sending a message in flash mode
    */
-  const handleSendMessage = async (message) => {
+  const handleSendMessage = async (message, additionalContext = null) => {
     if (!message.trim() || isLoading) {
       return;
     }
@@ -405,7 +444,6 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
               handleReasoningSignal({
                 assistantMessageId,
                 signalContent,
-                setMessages,
               });
             }
             // Handle reasoning content
@@ -413,7 +451,6 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
               handleReasoningContent({
                 assistantMessageId,
                 content: event.content,
-                setMessages,
               });
             }
             // Handle text content
@@ -421,18 +458,20 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
               handleMessageChunk({
                 assistantMessageId,
                 content: event.content,
-                setMessages,
               });
             }
           } else if (eventType === 'error') {
             hasReceivedError = true;
             const errorMessage = event.error || event.message || 'An error occurred';
             console.error('[TradingChat] Server error event:', errorMessage, event);
-            
+
+            // Flush pending batched updates before setting error
+            flushUpdates();
+
             // Set error state
             setError(errorMessage);
             setIsLoading(false);
-            
+
             // Update message with error
             setMessages((prev) =>
               prev.map((msg) => {
@@ -446,8 +485,14 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
             );
           }
         },
-        userId
+        userId,
+        'en-US',
+        'America/New_York',
+        additionalContext
       );
+
+      // Flush any remaining batched updates
+      flushUpdates();
 
       // Mark message as complete (only if no error was received)
       if (!hasReceivedError) {
@@ -461,7 +506,7 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
           })
         );
       }
-      
+
       // Always stop loading
       setIsLoading(false);
       
@@ -474,7 +519,10 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
       }
     } catch (err) {
       console.error('[TradingChat] Error sending message:', err);
-      
+
+      // Flush any remaining batched updates
+      flushUpdates();
+
       // Mark message as not streaming
       setMessages((prev) =>
         prev.map((msg) => {
@@ -519,19 +567,17 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
     }
   };
 
-  // Cleanup: Delete thread and flash workspaces on unmount
+  // Cleanup: Delete thread on unmount, clear flush timer
   useEffect(() => {
     return () => {
+      // Clear batch flush timer
+      clearTimeout(flushTimerRef.current);
       // Delete thread
       if (threadIdRef.current && threadIdRef.current !== '__default__') {
         deleteTradingThread(threadIdRef.current, userId).catch((err) => {
           console.warn('[TradingChat] Error deleting thread on unmount:', err);
         });
       }
-      // Delete all flash workspaces
-      deleteFlashWorkspaces(userId).catch((err) => {
-        console.warn('[TradingChat] Error deleting flash workspaces on unmount:', err);
-      });
     };
   }, [userId]);
 

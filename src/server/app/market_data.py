@@ -12,18 +12,27 @@ from fastapi import APIRouter, HTTPException, Query
 from src.server.models.market_data import (
     IntradayDataPoint,
     IntradayResponse,
+    DailyResponse,
     BatchIntradayRequest,
     BatchIntradayResponse,
     CacheMetadata,
     BatchCacheStats,
+    CompanyOverviewResponse,
     StockSearchResult,
     StockSearchResponse,
+    PriceTargetSummary,
+    AnalystGrade,
+    AnalystDataResponse,
     STOCK_INTERVALS,
     INDEX_INTERVALS,
 )
 from src.server.services.intraday_cache_service import (
     IntradayCacheService,
     IntradayCacheKeyBuilder,
+)
+from src.server.services.daily_cache_service import (
+    DailyCacheService,
+    DailyCacheKeyBuilder,
 )
 from src.data_client.fmp.fmp_client import FMPClient
 
@@ -107,6 +116,56 @@ async def get_stock_intraday(
         raise
     except Exception as e:
         logger.error(f"Error fetching stock intraday data for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Daily Stock Endpoints
+# =============================================================================
+
+
+@router.get(
+    "/daily/stocks/{symbol}",
+    response_model=DailyResponse,
+    summary="Get stock daily historical data",
+    description="Retrieve daily EOD OHLCV data for a single stock symbol (~500 days by default).",
+)
+async def get_stock_daily(
+    symbol: str,
+    from_date: Optional[str] = Query(None, alias="from", description="Start date (YYYY-MM-DD)"),
+    to_date: Optional[str] = Query(None, alias="to", description="End date (YYYY-MM-DD)"),
+) -> DailyResponse:
+    """Get daily historical data for a single stock."""
+    try:
+        service = DailyCacheService.get_instance()
+        result = await service.get_stock_daily(
+            symbol=symbol,
+            from_date=from_date,
+            to_date=to_date,
+        )
+
+        if result.error:
+            raise HTTPException(status_code=500, detail=result.error)
+
+        cache_key = DailyCacheKeyBuilder.stock_key(symbol, from_date, to_date)
+        data_points = _convert_data_points(result.data)
+
+        return DailyResponse(
+            symbol=result.symbol,
+            data=data_points,
+            count=len(data_points),
+            cache=CacheMetadata(
+                cached=result.cached,
+                cache_key=cache_key,
+                ttl_remaining=result.ttl_remaining,
+                refreshed_in_background=result.background_refresh_triggered,
+            ),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching daily stock data for {symbol}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -346,3 +405,120 @@ async def search_stocks(
     except Exception as e:
         logger.error(f"Error searching stocks for query '{query}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to search stocks: {str(e)}")
+
+
+# =============================================================================
+# Company Overview Endpoint
+# =============================================================================
+
+
+@router.get(
+    "/stocks/{symbol}/overview",
+    response_model=CompanyOverviewResponse,
+    summary="Get company overview",
+    description="Retrieve comprehensive company overview data including quote, performance, analyst ratings, financials, and revenue breakdown.",
+)
+async def get_company_overview(symbol: str) -> CompanyOverviewResponse:
+    """Get company overview data for a stock symbol."""
+    if not symbol or not symbol.strip():
+        raise HTTPException(status_code=422, detail="Symbol is required")
+
+    try:
+        from src.tools.market_data.implementations import fetch_company_overview_data
+
+        artifact = await fetch_company_overview_data(symbol.strip().upper())
+
+        return CompanyOverviewResponse(
+            symbol=artifact.get("symbol", symbol),
+            name=artifact.get("name"),
+            quote=artifact.get("quote"),
+            performance=artifact.get("performance"),
+            analystRatings=artifact.get("analystRatings"),
+            quarterlyFundamentals=artifact.get("quarterlyFundamentals"),
+            earningsSurprises=artifact.get("earningsSurprises"),
+            cashFlow=artifact.get("cashFlow"),
+            revenueByProduct=artifact.get("revenueByProduct"),
+            revenueByGeo=artifact.get("revenueByGeo"),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching company overview for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch company overview: {str(e)}")
+
+
+# =============================================================================
+# Analyst Data Endpoint
+# =============================================================================
+
+
+@router.get(
+    "/stocks/{symbol}/analyst-data",
+    response_model=AnalystDataResponse,
+    summary="Get analyst price targets and grades",
+    description="Retrieve analyst price target consensus and recent stock grade changes.",
+)
+async def get_analyst_data(
+    symbol: str,
+    grade_limit: int = Query(50, description="Maximum number of grade records to return", ge=1, le=200),
+) -> AnalystDataResponse:
+    """Get analyst data for a stock symbol."""
+    if not symbol or not symbol.strip():
+        raise HTTPException(status_code=422, detail="Symbol is required")
+
+    symbol_upper = symbol.strip().upper()
+
+    try:
+        fmp_client = FMPClient()
+
+        try:
+            # Fetch price targets and grades in parallel
+            import asyncio
+            price_targets_raw, grades_raw = await asyncio.gather(
+                fmp_client.get_price_target_summary(symbol_upper),
+                fmp_client.get_stock_grades(symbol_upper, limit=grade_limit),
+                return_exceptions=True,
+            )
+
+            # Process price targets
+            price_targets = None
+            if isinstance(price_targets_raw, list) and len(price_targets_raw) > 0:
+                pt = price_targets_raw[0]
+                price_targets = PriceTargetSummary(
+                    targetHigh=pt.get("targetHigh"),
+                    targetLow=pt.get("targetLow"),
+                    targetConsensus=pt.get("targetConsensus"),
+                    targetMedian=pt.get("targetMedian"),
+                )
+            elif isinstance(price_targets_raw, Exception):
+                logger.warning(f"Failed to fetch price targets for {symbol_upper}: {price_targets_raw}")
+
+            # Process grades
+            grades = []
+            if isinstance(grades_raw, list):
+                for g in grades_raw:
+                    grades.append(AnalystGrade(
+                        date=g.get("date", ""),
+                        company=g.get("gradingCompany", ""),
+                        previousGrade=g.get("previousGrade"),
+                        newGrade=g.get("newGrade"),
+                        action=g.get("action"),
+                    ))
+            elif isinstance(grades_raw, Exception):
+                logger.warning(f"Failed to fetch grades for {symbol_upper}: {grades_raw}")
+
+            return AnalystDataResponse(
+                symbol=symbol_upper,
+                priceTargets=price_targets,
+                grades=grades,
+            )
+
+        finally:
+            await fmp_client.close()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching analyst data for {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch analyst data: {str(e)}")

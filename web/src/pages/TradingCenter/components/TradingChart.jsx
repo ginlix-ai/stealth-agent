@@ -1,208 +1,366 @@
-import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
-import { createChart, ColorType } from 'lightweight-charts';
+import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
+import { createChart, ColorType, CrosshairMode, PriceScaleMode, LineType } from 'lightweight-charts';
 import html2canvas from 'html2canvas';
 import './TradingChart.css';
 import { fetchStockData } from '../utils/api';
+import { calculateMA, calculateRSI } from '../utils/chartHelpers';
+import {
+  CHART_BG, CHART_TEXT, CHART_GRID,
+  INTERVALS, INITIAL_LOAD_DAYS, SCROLL_CHUNK_DAYS,
+  SCROLL_LOAD_THRESHOLD, RANGE_CHANGE_DEBOUNCE_MS,
+  MA_CONFIGS, DEFAULT_ENABLED_MA, RSI_PERIODS, BARS_PER_DAY,
+  OVERLAY_COLORS, OVERLAY_LABELS,
+} from '../utils/chartConstants';
+import CrosshairTooltip from './CrosshairTooltip';
+import TradingViewWidget from './TradingViewWidget';
+import { useChartAnnotations } from '../hooks/useChartAnnotations';
+import { useChartOverlays } from '../hooks/useChartOverlays';
 
-const TradingChart = forwardRef(({ symbol, onCapture, onStockMeta }, ref) => {
+const TradingChart = React.memo(forwardRef(({
+  symbol,
+  interval = '1day',
+  onIntervalChange,
+  onCapture,
+  onStockMeta,
+  quoteData,
+  earningsData,
+  overlayData,
+  stockMeta,
+}, ref) => {
   const chartContainerRef = useRef();
   const rsiChartContainerRef = useRef();
+  const lightWrapperRef = useRef();
   const chartRef = useRef();
   const rsiChartRef = useRef();
   const candlestickSeriesRef = useRef();
-  const ma50SeriesRef = useRef();
-  const ma200SeriesRef = useRef();
   const rsiSeriesRef = useRef();
+  const volumeSeriesRef = useRef(null);
+  const maSeriesRefs = useRef({});
+  const baselineSeriesRef = useRef(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdateTime, setLastUpdateTime] = useState(null);
   const [rsiValue, setRsiValue] = useState(null);
-  const [ma50Value, setMa50Value] = useState(null);
-  const [ma200Value, setMa200Value] = useState(null);
-  const [isMockData, setIsMockData] = useState(false);
 
-  const calculateMA = (data, period) => {
-    const result = [];
-    for (let i = 0; i < data.length; i++) {
-      if (i >= period - 1) {
-        let sum = 0;
-        for (let j = i - period + 1; j <= i; j++) {
-          sum += data[j].close;
-        }
-        const maValue = sum / period;
-        if (!isNaN(maValue) && isFinite(maValue)) {
-          result.push({
-            time: data[i].time,
-            value: maValue
-          });
-        }
-      }
+  // MA / RSI config state
+  const [enabledMaPeriods, setEnabledMaPeriods] = useState(DEFAULT_ENABLED_MA);
+  const [rsiPeriod, setRsiPeriod] = useState(14);
+  const [maValues, setMaValues] = useState({});
+
+  // Chart mode: 'custom' (our lightweight-charts) or 'tradingview' (full TV widget)
+  const [chartMode, setChartMode] = useState('custom');
+
+  // Chart feature toggles
+  const [priceScaleMode, setPriceScaleMode] = useState(PriceScaleMode.Normal);
+  const [magnetMode, setMagnetMode] = useState(false);
+  const [showBaseline, setShowBaseline] = useState(false);
+  const [annotationsVisible, setAnnotationsVisible] = useState(false);
+  const [overlayVisibility, setOverlayVisibility] = useState({
+    earnings: false,
+    grades: false,
+    priceTargets: false,
+  });
+
+  // Crosshair tooltip state
+  const [tooltipState, setTooltipState] = useState({ visible: false, x: 0, y: 0, data: null });
+
+  // Refs for stable callbacks (avoid stale closures)
+  const enabledMaPeriodsRef = useRef(DEFAULT_ENABLED_MA);
+  const rsiPeriodRef = useRef(14);
+
+  // Keep refs synced with state
+  useEffect(() => { enabledMaPeriodsRef.current = enabledMaPeriods; }, [enabledMaPeriods]);
+  useEffect(() => { rsiPeriodRef.current = rsiPeriod; }, [rsiPeriod]);
+
+  // Refs for scroll-based loading
+  const allDataRef = useRef([]);
+  const oldestDateRef = useRef(null);
+  const fetchingRef = useRef(false);
+  const rangeChangeTimerRef = useRef(null);
+  const rangeUnsubRef = useRef(null);
+
+  // Chart data state for hooks
+  const [chartDataForHooks, setChartDataForHooks] = useState([]);
+
+  // --- Price lines via hook ---
+  const priceTargetsForAnnotations = overlayVisibility.priceTargets ? overlayData?.priceTargets : null;
+  useChartAnnotations(candlestickSeriesRef, stockMeta, quoteData, priceTargetsForAnnotations, annotationsVisible, symbol);
+
+  // --- Series markers via hook ---
+  useChartOverlays(candlestickSeriesRef, chartDataForHooks, earningsData, overlayData, overlayVisibility, symbol);
+
+  // Temporarily reveal the hidden Light chart for capture, then restore.
+  // Since it's behind the TV widget (z-index: -1), no visual flash occurs.
+  const revealForCapture = useCallback(async (fn) => {
+    const wrapper = lightWrapperRef.current;
+    const needsReveal = wrapper && wrapper.classList.contains('light-chart-hidden');
+    if (needsReveal) wrapper.style.visibility = 'visible';
+    try {
+      return await fn();
+    } finally {
+      if (needsReveal) wrapper.style.visibility = '';
     }
-    return result;
-  };
-
-  const calculateRSI = (data, period = 14) => {
-    const result = [];
-    const gains = [];
-    const losses = [];
-
-    for (let i = 1; i < data.length; i++) {
-      const change = data[i].close - data[i - 1].close;
-      gains.push(change > 0 ? change : 0);
-      losses.push(change < 0 ? -change : 0);
-    }
-
-    for (let i = 0; i < data.length; i++) {
-      if (i >= period) {
-        const avgGain = gains.slice(i - period, i).reduce((a, b) => a + b, 0) / period;
-        const avgLoss = losses.slice(i - period, i).reduce((a, b) => a + b, 0) / period;
-        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-        const rsi = 100 - (100 / (1 + rs));
-        if (!isNaN(rsi) && isFinite(rsi)) {
-          result.push({
-            time: data[i].time,
-            value: rsi
-          });
-        }
-      }
-    }
-    return result;
-  };
+  }, []);
 
   useImperativeHandle(ref, () => ({
     captureChart: async () => {
-      if (!chartContainerRef.current) return null;
-      try {
-        const canvas = await html2canvas(chartContainerRef.current, {
-          backgroundColor: '#0f1422',
-          scale: 2,
-          logging: false,
-        });
-        return new Promise((resolve) => {
-          canvas.toBlob((blob) => resolve(blob), 'image/png');
-        });
-      } catch (err) {
-        console.error('Chart capture failed:', err);
-        return null;
+      // Use native takeScreenshot for main chart download
+      if (chartRef.current) {
+        try {
+          const canvas = chartRef.current.takeScreenshot();
+          if (canvas) {
+            return new Promise((resolve) => {
+              canvas.toBlob((blob) => resolve(blob), 'image/png');
+            });
+          }
+        } catch (err) {
+          console.warn('Native takeScreenshot failed, falling back to html2canvas:', err);
+        }
       }
-    }
+      // Fallback to html2canvas (temporarily reveal if hidden)
+      if (!chartContainerRef.current) return null;
+      return revealForCapture(async () => {
+        try {
+          const canvas = await html2canvas(chartContainerRef.current, {
+            backgroundColor: CHART_BG,
+            scale: 2,
+            logging: false,
+          });
+          return new Promise((resolve) => {
+            canvas.toBlob((blob) => resolve(blob), 'image/png');
+          });
+        } catch (err) {
+          console.error('Chart capture failed:', err);
+          return null;
+        }
+      });
+    },
+    captureChartAsDataUrl: async () => {
+      // Capture the Light chart (main + RSI) for LLM context.
+      // Temporarily reveal the hidden wrapper so html2canvas can render it.
+      const container = chartContainerRef.current?.parentElement; // .charts-container
+      if (!container) return null;
+      return revealForCapture(async () => {
+        try {
+          const canvas = await html2canvas(container, {
+            backgroundColor: CHART_BG,
+            scale: 1,
+            logging: false,
+          });
+          return canvas.toDataURL('image/jpeg', 0.85);
+        } catch (err) {
+          console.error('Chart capture failed:', err);
+          return null;
+        }
+      });
+    },
+    getChartMetadata: () => {
+      const data = allDataRef.current;
+      if (!data || data.length === 0) return null;
+
+      const firstTime = data[0].time;
+      const lastTime = data[data.length - 1].time;
+      const formatDate = (ts) => new Date(ts * 1000).toISOString().split('T')[0];
+
+      const enabledMAs = enabledMaPeriodsRef.current;
+      const maInfo = enabledMAs
+        .filter((p) => maValues[p] != null)
+        .map((p) => `MA${p}: ${maValues[p]}`);
+
+      const lastCandle = data[data.length - 1];
+
+      return {
+        chartMode: chartMode === 'tradingview' ? 'Advanced (TradingView)' : 'Light',
+        dateRange: { from: formatDate(firstTime), to: formatDate(lastTime) },
+        dataPoints: data.length,
+        enabledMAs,
+        maValues: Object.fromEntries(
+          enabledMAs.filter((p) => maValues[p] != null).map((p) => [p, maValues[p]])
+        ),
+        maDescription: maInfo.length > 0 ? maInfo.join(', ') : null,
+        rsiPeriod: rsiPeriodRef.current,
+        rsiValue: rsiValue,
+        lastCandle: {
+          open: lastCandle.open,
+          high: lastCandle.high,
+          low: lastCandle.low,
+          close: lastCandle.close,
+          volume: lastCandle.volume,
+        },
+        annotationsVisible,
+        overlayVisibility,
+        priceScaleMode,
+      };
+    },
   }));
 
-  const loadData = async (isMountedRef) => {
-    setLoading(true);
-    setError(null);
-    setIsMockData(false);
-    try {
-      const result = await fetchStockData(symbol, '1day');
-      
-      // Check if component is still mounted before proceeding
-      if (!isMountedRef.current) return;
-      
-      const data = result && result.data ? result.data : result;
-      const isReal = !(result && result.data && result.isReal === false);
-      const errorMsg = result && result.data ? result.error : null;
+  // --- Update series data helper (used by both initial load and scroll load) ---
+  const updateSeriesData = useCallback((data) => {
+    // Candlestick
+    if (candlestickSeriesRef.current) {
+      candlestickSeriesRef.current.setData(data);
+    }
 
-      setIsMockData(!isReal);
-      if (!isReal) {
-        console.warn('⚠️ [Mock Data] Currently displaying mock data. Reason:', errorMsg || 'FMP API call failed');
+    // Volume histogram
+    if (volumeSeriesRef.current) {
+      volumeSeriesRef.current.setData(data.map((d, i) => ({
+        time: d.time,
+        value: d.volume || 0,
+        color: i > 0 && d.close >= data[i - 1].close
+          ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)',
+      })));
+    }
+
+    // All MAs — compute all enabled, clear disabled
+    const enabled = enabledMaPeriodsRef.current;
+    const newMaValues = {};
+    MA_CONFIGS.forEach(({ period }) => {
+      const series = maSeriesRefs.current[period];
+      if (!series) return;
+      if (enabled.includes(period)) {
+        const maData = calculateMA(data, period);
+        series.setData(maData);
+        const last = maData[maData.length - 1]?.value;
+        if (last != null) newMaValues[period] = last.toFixed(2);
       } else {
-        console.log('✅ [Real Data] Currently displaying real data (FMP API)');
+        series.setData([]);
       }
+    });
+    setMaValues(newMaValues);
 
-      if (data && Array.isArray(data) && data.length > 0) {
-        // Check if charts and series are still available before updating
-        if (candlestickSeriesRef.current && chartRef.current) {
-          candlestickSeriesRef.current.setData(data);
-        }
+    // RSI
+    const currentRsiPeriod = rsiPeriodRef.current;
+    const rsiData = calculateRSI(data, currentRsiPeriod);
+    if (rsiData.length > 0 && rsiSeriesRef.current) {
+      rsiSeriesRef.current.setData(rsiData);
+      const lastRsi = rsiData[rsiData.length - 1]?.value;
+      if (lastRsi != null) setRsiValue(lastRsi.toFixed(0));
+      if (rsiChartRef.current) rsiChartRef.current.timeScale().fitContent();
+    }
 
-        const ma50Data = calculateMA(data, 50);
-        if (ma50SeriesRef.current && chartRef.current) {
-          ma50SeriesRef.current.setData(ma50Data);
-          const lastMa50 = ma50Data[ma50Data.length - 1]?.value;
-          if (lastMa50) {
-            setMa50Value(lastMa50.toFixed(2));
-          }
-        }
+    // Update chart data state for overlay hooks
+    setChartDataForHooks(data);
+  }, []);
 
-        const ma200Data = calculateMA(data, 200);
-        if (ma200SeriesRef.current && chartRef.current) {
-          ma200SeriesRef.current.setData(ma200Data);
-          const lastMa200 = ma200Data[ma200Data.length - 1]?.value;
-          if (lastMa200) {
-            setMa200Value(lastMa200.toFixed(2));
-          }
-        }
+  // --- Scroll-based lazy loading ---
+  const handleScrollLoadMore = useCallback(async () => {
+    if (fetchingRef.current || !oldestDateRef.current) return;
+    fetchingRef.current = true;
 
-        const rsiData = calculateRSI(data, 14);
-        if (rsiData.length > 0 && rsiSeriesRef.current && rsiChartRef.current) {
-          rsiSeriesRef.current.setData(rsiData);
-          const lastRsi = rsiData[rsiData.length - 1]?.value;
-          if (lastRsi !== undefined && lastRsi !== null) {
-            setRsiValue(lastRsi.toFixed(0));
-          }
-          rsiChartRef.current.timeScale().fitContent();
-        }
+    try {
+      const oldest = new Date(oldestDateRef.current * 1000);
+      const toDate = new Date(oldest);
+      toDate.setDate(toDate.getDate() - 1);
+      const fromDate = new Date(toDate);
+      fromDate.setDate(fromDate.getDate() - SCROLL_CHUNK_DAYS[interval]);
 
-        if (chartRef.current) {
-          chartRef.current.timeScale().fitContent();
-        }
-        setLastUpdateTime(new Date());
-        setError(null);
-        if (typeof onStockMeta === 'function' && result?.fiftyTwoWeekHigh != null && result?.fiftyTwoWeekLow != null) {
-          onStockMeta({ fiftyTwoWeekHigh: result.fiftyTwoWeekHigh, fiftyTwoWeekLow: result.fiftyTwoWeekLow });
-        }
-      } else {
-        setError('Stock data not found');
-        if (typeof onStockMeta === 'function') onStockMeta(null);
+      const fromStr = fromDate.toISOString().split('T')[0];
+      const toStr = toDate.toISOString().split('T')[0];
+
+      const result = await fetchStockData(symbol, interval, fromStr, toStr);
+      const newData = result?.data;
+
+      if (newData && Array.isArray(newData) && newData.length > 0) {
+        const existingMap = new Map(allDataRef.current.map((d) => [d.time, d]));
+        newData.forEach((d) => {
+          if (!existingMap.has(d.time)) existingMap.set(d.time, d);
+        });
+        const merged = Array.from(existingMap.values()).sort((a, b) => a.time - b.time);
+        allDataRef.current = merged;
+        oldestDateRef.current = merged[0].time;
+        updateSeriesData(merged);
       }
     } catch (err) {
-      // Only update state if component is still mounted
-      if (isMountedRef.current) {
-        console.error('Failed to load stock data:', err);
-        setError('Failed to load data. Please check FMP API configuration. If API fails, mock data will be used.');
-        setIsMockData(true);
-      }
+      console.warn('Scroll-load fetch failed:', err);
     } finally {
-      // Only update loading state if component is still mounted
-      if (isMountedRef.current) {
-        setLoading(false);
-      }
+      fetchingRef.current = false;
     }
-  };
+  }, [symbol, interval, updateSeriesData]);
 
+  // --- Backfill older data when a newly-enabled MA needs more bars ---
+  const backfillForMaPeriod = useCallback(async (period) => {
+    const currentLen = allDataRef.current.length;
+    if (currentLen >= period || fetchingRef.current || !oldestDateRef.current) return;
+
+    fetchingRef.current = true;
+    try {
+      const deficit = period - currentLen;
+      const extraDays = Math.ceil((deficit / (BARS_PER_DAY[interval] || 1)) * 1.5);
+
+      const oldest = new Date(oldestDateRef.current * 1000);
+      const toDate = new Date(oldest);
+      toDate.setDate(toDate.getDate() - 1);
+      const fromDate = new Date(toDate);
+      fromDate.setDate(fromDate.getDate() - extraDays);
+
+      const fromStr = fromDate.toISOString().split('T')[0];
+      const toStr = toDate.toISOString().split('T')[0];
+
+      const result = await fetchStockData(symbol, interval, fromStr, toStr);
+      const newData = result?.data;
+
+      if (newData && Array.isArray(newData) && newData.length > 0) {
+        const existingMap = new Map(allDataRef.current.map((d) => [d.time, d]));
+        newData.forEach((d) => {
+          if (!existingMap.has(d.time)) existingMap.set(d.time, d);
+        });
+        const merged = Array.from(existingMap.values()).sort((a, b) => a.time - b.time);
+        allDataRef.current = merged;
+        oldestDateRef.current = merged[0].time;
+        updateSeriesData(merged);
+      }
+    } catch (err) {
+      console.warn('MA backfill fetch failed:', err);
+    } finally {
+      fetchingRef.current = false;
+    }
+  }, [symbol, interval, updateSeriesData]);
+
+  // --- Toggle handlers ---
+  const handleToggleMa = useCallback((period) => {
+    const isCurrentlyEnabled = enabledMaPeriodsRef.current.includes(period);
+    if (!isCurrentlyEnabled && allDataRef.current.length < period) {
+      backfillForMaPeriod(period);
+    }
+    setEnabledMaPeriods(prev =>
+      prev.includes(period) ? prev.filter(p => p !== period) : [...prev, period]
+    );
+  }, [backfillForMaPeriod]);
+
+  const handleChangeRsiPeriod = useCallback((period) => {
+    setRsiPeriod(period);
+  }, []);
+
+  // --- Effect 1: Chart creation (mount only) ---
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // Track if this effect is still active
-    const isMountedRef = { current: true };
-    
-    // Clear previous series refs
-    candlestickSeriesRef.current = null;
-    ma50SeriesRef.current = null;
-    ma200SeriesRef.current = null;
-    rsiSeriesRef.current = null;
-
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0f1422' },
-        textColor: '#8b8fa3',
+        background: { type: ColorType.Solid, color: CHART_BG },
+        textColor: CHART_TEXT,
       },
-      width: chartContainerRef.current.clientWidth,
-      height: chartContainerRef.current.clientHeight,
+      autoSize: true,
       grid: {
-        vertLines: { color: '#1a1f35' },
-        horzLines: { color: '#1a1f35' },
+        vertLines: { color: CHART_GRID },
+        horzLines: { color: CHART_GRID },
       },
-      crosshair: { mode: 1 },
+      watermark: {
+        visible: true,
+        text: symbol,
+        fontSize: 48,
+        color: 'rgba(139,143,163,0.08)',
+        horzAlign: 'center',
+        vertAlign: 'center',
+      },
+      crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: {
-        borderColor: '#1a1f35',
-        scaleMargins: {
-          top: 0.1,
-          bottom: 0.1,
-        },
+        borderColor: CHART_GRID,
+        scaleMargins: { top: 0.1, bottom: 0.2 },
       },
       timeScale: {
-        borderColor: '#1a1f35',
+        borderColor: CHART_GRID,
         timeVisible: true,
         secondsVisible: false,
         handleScroll: {
@@ -213,111 +371,135 @@ const TradingChart = forwardRef(({ symbol, onCapture, onStockMeta }, ref) => {
         },
       },
     });
-
     chartRef.current = chart;
 
-    const candlestickSeries = chart.addCandlestickSeries({
+    candlestickSeriesRef.current = chart.addCandlestickSeries({
       upColor: '#10b981',
       downColor: '#ef4444',
       borderVisible: false,
       wickUpColor: '#10b981',
       wickDownColor: '#ef4444',
     });
-    candlestickSeriesRef.current = candlestickSeries;
 
-    const ma50Series = chart.addLineSeries({
-      color: '#3b82f6',
-      lineWidth: 2,
-      title: 'MA50',
+    // Volume histogram series
+    volumeSeriesRef.current = chart.addHistogramSeries({
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'volume',
     });
-    ma50SeriesRef.current = ma50Series;
-
-    const ma200Series = chart.addLineSeries({
-      color: '#f59e0b',
-      lineWidth: 2,
-      title: 'MA200',
+    chart.priceScale('volume').applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
     });
-    ma200SeriesRef.current = ma200Series;
 
-    const rsiChartTimeout = setTimeout(() => {
-      // Check if component is still mounted and container is still available
-      if (!isMountedRef.current || !rsiChartContainerRef.current || rsiChartRef.current) {
+    // All MA line series (curved)
+    MA_CONFIGS.forEach(({ period, color }) => {
+      maSeriesRefs.current[period] = chart.addLineSeries({
+        color,
+        lineWidth: 1.5,
+        lineType: LineType.Curved,
+        title: '',
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
+    });
+
+    // Subscribe to crosshair move for tooltip
+    chart.subscribeCrosshairMove((param) => {
+      if (!param.time || !param.point) {
+        setTooltipState((prev) => prev.visible ? { visible: false, x: 0, y: 0, data: null } : prev);
         return;
       }
-      
+      const candleData = param.seriesData.get(candlestickSeriesRef.current);
+      if (!candleData) {
+        setTooltipState((prev) => prev.visible ? { visible: false, x: 0, y: 0, data: null } : prev);
+        return;
+      }
+
+      // Gather MA values from crosshair
+      const maVals = {};
+      const enabled = enabledMaPeriodsRef.current;
+      MA_CONFIGS.forEach(({ period }) => {
+        if (!enabled.includes(period)) return;
+        const s = maSeriesRefs.current[period];
+        if (!s) return;
+        const val = param.seriesData.get(s);
+        if (val && val.value != null) maVals[period] = val.value;
+      });
+
+      // Gather RSI value
+      let rsiVal = null;
+      if (rsiSeriesRef.current) {
+        const rsiData = param.seriesData.get(rsiSeriesRef.current);
+        if (rsiData && rsiData.value != null) rsiVal = rsiData.value;
+      }
+
+      setTooltipState({
+        visible: true,
+        x: param.point.x,
+        y: param.point.y,
+        data: {
+          time: candleData.time ?? param.time,
+          open: candleData.open,
+          high: candleData.high,
+          low: candleData.low,
+          close: candleData.close,
+          volume: candleData.volume,
+          maValues: maVals,
+          rsiValue: rsiVal,
+        },
+      });
+    });
+
+    // RSI chart (deferred so DOM is ready)
+    const rsiTimeout = setTimeout(() => {
+      if (!rsiChartContainerRef.current || rsiChartRef.current) return;
       const rsiChart = createChart(rsiChartContainerRef.current, {
         layout: {
-          background: { type: ColorType.Solid, color: '#0f1422' },
-          textColor: '#8b8fa3',
+          background: { type: ColorType.Solid, color: CHART_BG },
+          textColor: CHART_TEXT,
         },
-        width: rsiChartContainerRef.current.clientWidth,
-        height: rsiChartContainerRef.current.clientHeight,
+        autoSize: true,
         grid: {
-          vertLines: { color: '#1a1f35' },
-          horzLines: { color: '#1a1f35' },
+          vertLines: { color: CHART_GRID },
+          horzLines: { color: CHART_GRID },
         },
         rightPriceScale: {
-          borderColor: '#1a1f35',
+          borderColor: CHART_GRID,
           visible: true,
-          scaleMargins: {
-            top: 0.1,
-            bottom: 0.1,
-          },
+          scaleMargins: { top: 0.1, bottom: 0.1 },
         },
         timeScale: {
-          borderColor: '#1a1f35',
+          borderColor: CHART_GRID,
           timeVisible: true,
           secondsVisible: false,
         },
       });
-
       rsiChartRef.current = rsiChart;
-
-      const rsiSeries = rsiChart.addLineSeries({
-        color: '#667eea',
+      // RSI as area series with gradient
+      rsiSeriesRef.current = rsiChart.addAreaSeries({
+        lineColor: '#667eea',
+        topColor: 'rgba(102,126,234,0.3)',
+        bottomColor: 'rgba(102,126,234,0.02)',
         lineWidth: 2,
-        priceFormat: {
-          type: 'price',
-          precision: 0,
-          minMove: 1,
-        },
+        priceFormat: { type: 'price', precision: 0, minMove: 1 },
       });
-      rsiSeriesRef.current = rsiSeries;
     }, 100);
 
-    loadData(isMountedRef);
-    const handleResize = () => {
-      if (chartContainerRef.current && chartRef.current) {
-        chartRef.current.applyOptions({
-          width: chartContainerRef.current.clientWidth,
-          height: chartContainerRef.current.clientHeight,
-        });
-      }
-      if (rsiChartContainerRef.current && rsiChartRef.current) {
-        rsiChartRef.current.applyOptions({
-          width: rsiChartContainerRef.current.clientWidth,
-          height: rsiChartContainerRef.current.clientHeight,
-        });
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-
     return () => {
-      // Mark as unmounted to prevent updates after cleanup
-      isMountedRef.current = false;
-      
-      // Clear the RSI chart timeout if it hasn't fired yet
-      clearTimeout(rsiChartTimeout);
-      
-      window.removeEventListener('resize', handleResize);
-      
-      // Clear series refs before removing charts
+      clearTimeout(rsiTimeout);
+
+      // Unsubscribe scroll-load listener
+      if (rangeUnsubRef.current) {
+        rangeUnsubRef.current();
+        rangeUnsubRef.current = null;
+      }
+      clearTimeout(rangeChangeTimerRef.current);
+
       candlestickSeriesRef.current = null;
-      ma50SeriesRef.current = null;
-      ma200SeriesRef.current = null;
+      volumeSeriesRef.current = null;
+      baselineSeriesRef.current = null;
+      Object.keys(maSeriesRefs.current).forEach(k => { maSeriesRefs.current[k] = null; });
       rsiSeriesRef.current = null;
-      
+
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
@@ -327,78 +509,476 @@ const TradingChart = forwardRef(({ symbol, onCapture, onStockMeta }, ref) => {
         rsiChartRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Mount only
+
+  // --- Effect: Update watermark when symbol changes ---
+  useEffect(() => {
+    if (chartRef.current) {
+      chartRef.current.applyOptions({
+        watermark: {
+          visible: true,
+          text: symbol,
+          fontSize: 48,
+          color: 'rgba(139,143,163,0.08)',
+          horzAlign: 'center',
+          vertAlign: 'center',
+        },
+      });
+    }
   }, [symbol]);
+
+  // --- Effect: Price scale mode ---
+  useEffect(() => {
+    if (chartRef.current) {
+      chartRef.current.priceScale('right').applyOptions({ mode: priceScaleMode });
+    }
+  }, [priceScaleMode]);
+
+  // --- Effect: Crosshair magnet mode ---
+  useEffect(() => {
+    if (chartRef.current) {
+      chartRef.current.applyOptions({
+        crosshair: { mode: magnetMode ? CrosshairMode.Magnet : CrosshairMode.Normal },
+      });
+    }
+  }, [magnetMode]);
+
+  // --- Effect: Baseline series toggle ---
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (showBaseline) {
+      // Hide candlestick + volume, show baseline
+      if (candlestickSeriesRef.current) {
+        candlestickSeriesRef.current.applyOptions({ visible: false });
+      }
+      if (volumeSeriesRef.current) {
+        volumeSeriesRef.current.applyOptions({ visible: false });
+      }
+      // Hide MAs too
+      MA_CONFIGS.forEach(({ period }) => {
+        const s = maSeriesRefs.current[period];
+        if (s) s.applyOptions({ visible: false });
+      });
+
+      const prevClose = quoteData?.previousClose || quoteData?.open;
+      const basePrice = prevClose || (allDataRef.current.length > 0 ? allDataRef.current[0].open : 0);
+
+      if (!baselineSeriesRef.current) {
+        baselineSeriesRef.current = chart.addBaselineSeries({
+          baseValue: { type: 'price', price: basePrice },
+          topLineColor: '#10b981',
+          topFillColor1: 'rgba(16,185,129,0.2)',
+          topFillColor2: 'rgba(16,185,129,0.02)',
+          bottomLineColor: '#ef4444',
+          bottomFillColor1: 'rgba(239,68,68,0.02)',
+          bottomFillColor2: 'rgba(239,68,68,0.2)',
+          lineWidth: 2,
+        });
+      } else {
+        baselineSeriesRef.current.applyOptions({
+          baseValue: { type: 'price', price: basePrice },
+        });
+      }
+
+      // Set close-only data
+      const data = allDataRef.current;
+      if (data.length > 0) {
+        baselineSeriesRef.current.setData(data.map((d) => ({ time: d.time, value: d.close })));
+      }
+    } else {
+      // Show candlestick + volume + MAs, remove baseline
+      if (candlestickSeriesRef.current) {
+        candlestickSeriesRef.current.applyOptions({ visible: true });
+      }
+      if (volumeSeriesRef.current) {
+        volumeSeriesRef.current.applyOptions({ visible: true });
+      }
+      MA_CONFIGS.forEach(({ period }) => {
+        const s = maSeriesRefs.current[period];
+        if (s) s.applyOptions({ visible: true });
+      });
+
+      if (baselineSeriesRef.current) {
+        try { chart.removeSeries(baselineSeriesRef.current); } catch (_) { /* ok */ }
+        baselineSeriesRef.current = null;
+      }
+    }
+  }, [showBaseline, quoteData]);
+
+  // --- Effect 2: Data loading (on symbol or interval change) ---
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    // Reset scroll-load state
+    allDataRef.current = [];
+    oldestDateRef.current = null;
+    fetchingRef.current = false;
+
+    // Unsubscribe previous scroll listener
+    if (rangeUnsubRef.current) {
+      rangeUnsubRef.current();
+      rangeUnsubRef.current = null;
+    }
+
+    // Reset baseline on symbol/interval change
+    if (showBaseline) setShowBaseline(false);
+
+    // Clear stale chart data so previous interval/symbol doesn't linger under an error
+    const clearChartSeries = () => {
+      if (candlestickSeriesRef.current) candlestickSeriesRef.current.setData([]);
+      if (volumeSeriesRef.current) volumeSeriesRef.current.setData([]);
+      if (rsiSeriesRef.current) rsiSeriesRef.current.setData([]);
+      MA_CONFIGS.forEach(({ period }) => {
+        const s = maSeriesRefs.current[period];
+        if (s) s.setData([]);
+      });
+      setChartDataForHooks([]);
+    };
+
+    const loadData = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const loadDays = INITIAL_LOAD_DAYS[interval];
+        let fromDate, toDate;
+        if (loadDays > 0) {
+          const maxMaPeriod = Math.max(...enabledMaPeriodsRef.current, 0);
+          const overheadDays = Math.ceil((maxMaPeriod / (BARS_PER_DAY[interval] || 1)) * 1.5);
+          const now = new Date();
+          toDate = now.toISOString().split('T')[0];
+          const from = new Date(now);
+          from.setDate(from.getDate() - loadDays - overheadDays);
+          fromDate = from.toISOString().split('T')[0];
+        }
+
+        const result = await fetchStockData(symbol, interval, fromDate, toDate, { signal: abortController.signal });
+
+        if (abortController.signal.aborted) return;
+
+        const data = result?.data || [];
+
+        if (Array.isArray(data) && data.length > 0) {
+          allDataRef.current = data;
+          oldestDateRef.current = data[0].time;
+
+          updateSeriesData(data);
+
+          if (chartRef.current) {
+            chartRef.current.timeScale().fitContent();
+          }
+          setLastUpdateTime(new Date());
+          setError(null);
+
+          if (typeof onStockMeta === 'function' && result?.fiftyTwoWeekHigh != null && result?.fiftyTwoWeekLow != null) {
+            onStockMeta({ fiftyTwoWeekHigh: result.fiftyTwoWeekHigh, fiftyTwoWeekLow: result.fiftyTwoWeekLow });
+          }
+
+          // Subscribe to visible range changes for scroll-based loading (debounced)
+          if (chartRef.current) {
+            const unsubscribe = chartRef.current.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+              clearTimeout(rangeChangeTimerRef.current);
+              rangeChangeTimerRef.current = setTimeout(() => {
+                if (range && range.from <= SCROLL_LOAD_THRESHOLD) {
+                  handleScrollLoadMore();
+                }
+              }, RANGE_CHANGE_DEBOUNCE_MS);
+            });
+            rangeUnsubRef.current = unsubscribe;
+          }
+        } else {
+          clearChartSeries();
+          const isIntraday = interval !== '1day';
+          const fallbackMsg = isIntraday
+            ? 'Intraday data not available — market may be closed. Try the 1D interval.'
+            : 'Stock data not found';
+          setError(result?.error || fallbackMsg);
+          if (typeof onStockMeta === 'function') onStockMeta(null);
+        }
+      } catch (err) {
+        if (abortController.signal.aborted) return;
+        console.error('Failed to load stock data:', err);
+        clearChartSeries();
+        setError('Failed to load data. Please check FMP API configuration.');
+      } finally {
+        if (!abortController.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadData();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [symbol, interval, onStockMeta, updateSeriesData, handleScrollLoadMore]);
+
+  // --- Effect 3: TimeScale options per interval ---
+  useEffect(() => {
+    const isIntraday = interval !== '1day';
+    const showSeconds = interval === '1min';
+    const opts = { timeVisible: isIntraday, secondsVisible: showSeconds };
+    if (chartRef.current) chartRef.current.applyOptions({ timeScale: opts });
+    if (rsiChartRef.current) rsiChartRef.current.applyOptions({ timeScale: opts });
+  }, [interval]);
+
+  // --- Effect 4: Re-run updateSeriesData when MA/RSI config changes ---
+  useEffect(() => {
+    if (allDataRef.current.length > 0) {
+      updateSeriesData(allDataRef.current);
+    }
+  }, [enabledMaPeriods, rsiPeriod, updateSeriesData]);
+
+  // --- Tool button handlers ---
+  const handleZoomIn = useCallback(() => {
+    if (!chartRef.current) return;
+    const ts = chartRef.current.timeScale();
+    const range = ts.getVisibleLogicalRange();
+    if (!range) return;
+    const center = (range.from + range.to) / 2;
+    const halfSpan = (range.to - range.from) / 4; // halve the range
+    ts.setVisibleLogicalRange({ from: center - halfSpan, to: center + halfSpan });
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    if (!chartRef.current) return;
+    const ts = chartRef.current.timeScale();
+    const range = ts.getVisibleLogicalRange();
+    if (!range) return;
+    const center = (range.from + range.to) / 2;
+    const halfSpan = (range.to - range.from); // double the range
+    ts.setVisibleLogicalRange({ from: center - halfSpan, to: center + halfSpan });
+  }, []);
+
+  const handleScrollToRealTime = useCallback(() => {
+    if (chartRef.current) {
+      chartRef.current.timeScale().scrollToRealTime();
+    }
+  }, []);
+
+  const handleToggleAnnotations = useCallback(() => {
+    setAnnotationsVisible((prev) => !prev);
+  }, []);
+
+  const handleToggleOverlay = useCallback((key) => {
+    setOverlayVisibility((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  const handleTogglePriceScale = useCallback((mode) => {
+    setPriceScaleMode((prev) => prev === mode ? PriceScaleMode.Normal : mode);
+  }, []);
+
+  const isTV = chartMode === 'tradingview';
 
   return (
     <div className="trading-chart-container">
-      {isMockData && (
-        <div className="trading-chart-mock-warning">
-          ⚠️ Currently displaying mock data (FMP API call failed). Please check if <code>VITE_FMP_API_KEY</code> in <code>.env</code> is set with a valid key and restart <code>npm run dev</code>.
-        </div>
-      )}
-      <div className="chart-header">
-        <div className="chart-info">
-          <span className="chart-label">Daily Summary & Indicators</span>
-          {lastUpdateTime && (
-            <span className="update-time">
-              Last update: {lastUpdateTime.toLocaleTimeString()}
-            </span>
+      {/* ---- Single toolbar: intervals, toggles, indicator values, tool buttons, mode switcher ---- */}
+      <div className="chart-tools">
+        <div className="chart-tools-left">
+          <div className="interval-selector">
+            {INTERVALS.map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                className={`interval-btn${interval === key ? ' interval-btn-active' : ''}`}
+                onClick={() => onIntervalChange?.(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {!isTV && (
+            <>
+              <div className="indicator-toggles">
+                <span className="indicator-toggles-label">MA</span>
+                {MA_CONFIGS.map(({ period, color, label }) => (
+                  <button
+                    key={period}
+                    type="button"
+                    className={`indicator-toggle-btn${enabledMaPeriods.includes(period) ? ' indicator-toggle-active' : ''}`}
+                    style={enabledMaPeriods.includes(period) ? { color, borderColor: color } : undefined}
+                    onClick={() => handleToggleMa(period)}
+                  >
+                    {period}
+                  </button>
+                ))}
+              </div>
+              <div className="indicator-toggles">
+                <span className="indicator-toggles-label">RSI</span>
+                {RSI_PERIODS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className={`indicator-toggle-btn${rsiPeriod === p ? ' indicator-toggle-active' : ''}`}
+                    style={rsiPeriod === p ? { color: '#667eea', borderColor: '#667eea' } : undefined}
+                    onClick={() => handleChangeRsiPeriod(p)}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <div className="indicator-toggles">
+                <span className="indicator-toggles-label">Overlay</span>
+                {Object.entries(OVERLAY_LABELS).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`indicator-toggle-btn${overlayVisibility[key] ? ' indicator-toggle-active' : ''}`}
+                    style={overlayVisibility[key] ? { color: OVERLAY_COLORS[key], borderColor: OVERLAY_COLORS[key] } : undefined}
+                    onClick={() => handleToggleOverlay(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
-        <div className="chart-indicators">
-          <span className="indicator-item">
-            <span className="indicator-color" style={{ backgroundColor: '#3b82f6' }}></span>
-            MA50: {ma50Value ?? '—'}
-          </span>
-          <span className="indicator-item">
-            <span className="indicator-color" style={{ backgroundColor: '#f59e0b' }}></span>
-            MA200: {ma200Value ?? '—'}
-          </span>
-          <span className="indicator-item">
-            <span className="indicator-color" style={{ backgroundColor: '#667eea' }}></span>
-            RSI (14): {rsiValue ?? '—'}
-          </span>
-        </div>
-      </div>
-      <div className="chart-tools">
-        <button type="button" className="chart-tool-btn">+</button>
-        <button type="button" className="chart-tool-btn">−</button>
-        <button type="button" className="chart-tool-btn">✎</button>
-        <button type="button" className="chart-tool-btn">T</button>
-      </div>
-      <div
-        className="charts-container chart-wheel-capture"
-        onWheel={(e) => e.stopPropagation()}
-        role="region"
-        aria-label="K-line chart"
-      >
-        <div
-          ref={chartContainerRef}
-          className="chart-wrapper"
-        />
-        <div className="rsi-container">
-          <div className="rsi-label">RSI (6,14,24) RSI 14: {rsiValue ?? '—'}</div>
-          <div className="rsi-chart-wrapper" ref={rsiChartContainerRef}></div>
-        </div>
-      </div>
-      {loading && (
-        <div className="chart-loading">
-          <div>Loading...</div>
-          <div className="chart-loading-hint">
-            If there is no response for a long time, it may be due to API rate limiting. Please wait 1 second and refresh.
+        <div className="chart-tools-right">
+          {!isTV && (
+            <div className="chart-indicators">
+              {MA_CONFIGS.filter(({ period }) => enabledMaPeriods.includes(period)).map(({ period, color, label }) => (
+                <span className="indicator-item" key={period}>
+                  <span className="indicator-color" style={{ backgroundColor: color }} />
+                  {label}: {maValues[period] ?? '\u2014'}
+                </span>
+              ))}
+              <span className="indicator-item">
+                <span className="indicator-color" style={{ backgroundColor: '#667eea' }} />
+                RSI ({rsiPeriod}): {rsiValue ?? '\u2014'}
+              </span>
+            </div>
+          )}
+          {!isTV && (
+            <div className="chart-tool-buttons">
+              <button
+                type="button"
+                className={`chart-tool-btn${priceScaleMode === PriceScaleMode.Logarithmic ? ' chart-tool-btn-active' : ''}`}
+                onClick={() => handleTogglePriceScale(PriceScaleMode.Logarithmic)}
+                title="Log Scale"
+              >
+                Log
+              </button>
+              <button
+                type="button"
+                className={`chart-tool-btn${priceScaleMode === PriceScaleMode.Percentage ? ' chart-tool-btn-active' : ''}`}
+                onClick={() => handleTogglePriceScale(PriceScaleMode.Percentage)}
+                title="Percentage Scale"
+              >
+                %
+              </button>
+              <button
+                type="button"
+                className={`chart-tool-btn${magnetMode ? ' chart-tool-btn-active' : ''}`}
+                onClick={() => setMagnetMode((v) => !v)}
+                title="Magnet Mode"
+              >
+                M
+              </button>
+              <button
+                type="button"
+                className={`chart-tool-btn${showBaseline ? ' chart-tool-btn-active' : ''}`}
+                onClick={() => setShowBaseline((v) => !v)}
+                title="Baseline vs Previous Close"
+              >
+                B
+              </button>
+              <button type="button" className="chart-tool-btn" onClick={handleZoomIn} title="Zoom In">+</button>
+              <button type="button" className="chart-tool-btn" onClick={handleZoomOut} title="Zoom Out">&minus;</button>
+              <button
+                type="button"
+                className={`chart-tool-btn${annotationsVisible ? ' chart-tool-btn-active' : ''}`}
+                onClick={handleToggleAnnotations}
+                title="Toggle Annotations"
+              >
+                T
+              </button>
+              <button type="button" className="chart-tool-btn" onClick={handleScrollToRealTime} title="Scroll to Latest">&#8635;</button>
+            </div>
+          )}
+          <div className="chart-mode-switcher">
+            <div className="interval-selector">
+              <button
+                type="button"
+                className={`interval-btn${!isTV ? ' interval-btn-active' : ''}`}
+                onClick={() => setChartMode('custom')}
+              >
+                Light
+              </button>
+              <button
+                type="button"
+                className={`interval-btn${isTV ? ' interval-btn-active' : ''}`}
+                onClick={() => setChartMode('tradingview')}
+              >
+                Advanced
+              </button>
+            </div>
           </div>
         </div>
-      )}
-      {error && (
-        <div className="chart-error">
-          <div className="chart-error-title">⚠️ Data Loading Failed</div>
-          <div>{error}</div>
+      </div>
+
+      {/* ---- Charts area: shared flex container for both modes ---- */}
+      <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {/* Light chart: always in DOM with layout preserved for screenshot capture.
+            When Advanced is active, positioned absolutely behind TV widget (invisible). */}
+        <div
+          ref={lightWrapperRef}
+          className={isTV ? 'light-chart-hidden' : 'light-chart-visible'}
+        >
+          <div
+            className="charts-container chart-wheel-capture"
+            onWheel={(e) => e.stopPropagation()}
+            role="region"
+            aria-label="K-line chart"
+          >
+            <div
+              ref={chartContainerRef}
+              className="chart-wrapper"
+            >
+              <CrosshairTooltip
+                visible={tooltipState.visible}
+                x={tooltipState.x}
+                y={tooltipState.y}
+                data={tooltipState.data}
+                enabledMaPeriods={enabledMaPeriods}
+                containerWidth={chartContainerRef.current?.clientWidth}
+                containerHeight={chartContainerRef.current?.clientHeight}
+              />
+            </div>
+            <div className="rsi-container">
+              <div className="rsi-label">RSI ({rsiPeriod}): {rsiValue ?? '\u2014'}</div>
+              <div className="rsi-chart-wrapper" ref={rsiChartContainerRef}></div>
+            </div>
+          </div>
+          {loading && (
+            <div className="chart-loading">
+              <div>Loading...</div>
+              <div className="chart-loading-hint">
+                If there is no response for a long time, it may be due to API rate limiting. Please wait 1 second and refresh.
+              </div>
+            </div>
+          )}
+          {error && (
+            <div className="chart-error">
+              <div className="chart-error-title">Data Loading Failed</div>
+              <div>{error}</div>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* TradingView Advanced Chart (only mounted when active) */}
+        {isTV && (
+          <div className="charts-container" style={{ flex: 1, minHeight: 0 }}>
+            <TradingViewWidget symbol={symbol} interval={interval} />
+          </div>
+        )}
+      </div>
     </div>
   );
-});
+}));
 
 TradingChart.displayName = 'TradingChart';
 

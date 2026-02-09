@@ -1,0 +1,151 @@
+/* ====== ChatInputWithMentions ====== */
+
+.mention-input-container {
+  background-color: rgba(0, 0, 0, 0.3);
+  border: 1.5px solid hsl(var(--primary));
+  border-radius: 8px;
+  padding: 8px 12px;
+  position: relative;
+}
+
+/* Mention pills row */
+.mention-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.mention-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background-color: rgba(97, 85, 245, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  line-height: 1.4;
+  max-width: 200px;
+}
+
+.mention-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-pill-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: color 0.15s, background-color 0.15s;
+}
+.mention-pill-remove:hover {
+  color: rgba(255, 255, 255, 0.85);
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Textarea */
+.mention-textarea {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #BBBBBB;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  min-height: 21px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-family: inherit;
+}
+.mention-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* Bottom row: buttons */
+.mention-input-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+/* Plan Mode toggle */
+.plan-mode-toggle-active {
+  animation: plan-mode-glow 2s ease-in-out infinite;
+}
+
+@keyframes plan-mode-glow {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(97, 85, 245, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(97, 85, 245, 0.5);
+  }
+}
+
+/* ====== Autocomplete dropdown ====== */
+.mention-autocomplete {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 4px;
+  background-color: #1e2029;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.mention-autocomplete-empty {
+  padding: 12px 14px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.mention-autocomplete-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+.mention-autocomplete-item:hover,
+.mention-autocomplete-item.active {
+  background-color: rgba(97, 85, 245, 0.15);
+}
+
+.mention-autocomplete-item .file-name {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-autocomplete-item .file-path {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: auto;
+}

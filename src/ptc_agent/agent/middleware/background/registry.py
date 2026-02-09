@@ -26,7 +26,7 @@ class BackgroundTask:
     """Sequential task number (1, 2, 3...) for easy reference."""
 
     description: str
-    """Description of what the subagent is doing."""
+    """Short description/label of the task."""
 
     subagent_type: str
     """Type of subagent (e.g., 'research', 'general-purpose')."""
@@ -67,6 +67,11 @@ class BackgroundTask:
 
     agent_id: str = ""
     """Stable unique identity: '{subagent_type}:{uuid4}'."""
+
+    captured_events: list[dict[str, Any]] = field(default_factory=list)
+    """SSE-shaped events captured by middleware for post-interrupt persistence.
+    Each event: {"event": "message_chunk"|"tool_calls"|"tool_call_result", "data": {...}, "ts": float}
+    """
 
     @property
     def display_id(self) -> str:
@@ -229,6 +234,21 @@ class BackgroundTaskRegistry:
             if task_id:
                 return self._tasks.get(task_id)
         return None
+
+    async def append_captured_event(self, task_id: str, event: dict[str, Any]) -> None:
+        """Append a captured SSE event to a background task.
+
+        Called by ToolCallCounterMiddleware to capture events for
+        post-interrupt persistence.
+
+        Args:
+            task_id: The task identifier
+            event: SSE-shaped event dict
+        """
+        async with self._lock:
+            task = self._tasks.get(task_id)
+            if task:
+                task.captured_events.append(event)
 
     async def update_metrics(self, task_id: str, tool_name: str) -> None:
         """Update tool call metrics for a task.

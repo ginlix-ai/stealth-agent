@@ -30,8 +30,19 @@
   }
   
   .file-panel-content {
-    flex: 1;
-    min-height: 0;
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+  }
+  .file-panel-content::-webkit-scrollbar {
+    width: 6px;
+  }
+  .file-panel-content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+  .file-panel-content::-webkit-scrollbar-track {
+    background: transparent;
   }
   
   .file-panel-item {
@@ -45,40 +56,95 @@
   .file-panel-item:hover {
     background-color: rgba(255, 255, 255, 0.05);
   }
-  
-  .file-panel-code {
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    font-size: 12px;
-    line-height: 1.6;
-    color: rgba(255, 255, 255, 0.85);
-    white-space: pre-wrap;
-    word-break: break-all;
-    margin: 0;
+  .file-panel-item-nested {
+    padding-left: 32px;
   }
-  
-  .file-panel-markdown {
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 13px;
-    line-height: 1.7;
+
+  /* ====== Filter & Sort Toolbar ====== */
+  .file-panel-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    flex-shrink: 0;
   }
-  .file-panel-markdown h1, .file-panel-markdown h2, .file-panel-markdown h3 {
-    color: #FFFFFF;
-    margin-top: 1.2em;
-    margin-bottom: 0.6em;
+  .file-panel-filter-chips {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+    flex-wrap: wrap;
+    min-width: 0;
   }
-  .file-panel-markdown code {
-    background-color: rgba(255, 255, 255, 0.08);
-    padding: 2px 5px;
-    border-radius: 3px;
-    font-size: 12px;
+  .file-panel-chip {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: transparent;
+    color: rgba(255, 255, 255, 0.45);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
   }
-  .file-panel-markdown pre {
-    background-color: rgba(0, 0, 0, 0.3);
-    padding: 12px;
+  .file-panel-chip:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.7);
+  }
+  .file-panel-chip.active {
+    background: rgba(97, 85, 245, 0.2);
+    border-color: rgba(97, 85, 245, 0.4);
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  /* Sort dropdown */
+  .file-panel-sort-wrapper {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .file-panel-sort-menu {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: 4px;
+    background-color: #1e2029;
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 6px;
-    overflow-x: auto;
+    overflow: hidden;
+    z-index: 50;
+    min-width: 110px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   }
-  
+  .file-panel-sort-item {
+    padding: 6px 12px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    transition: background-color 0.1s;
+  }
+  .file-panel-sort-item:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+  }
+  .file-panel-sort-item.active {
+    color: rgba(255, 255, 255, 0.95);
+    background-color: rgba(97, 85, 245, 0.15);
+  }
+
+  /* ====== Directory Group Header ====== */
+  .file-panel-dir-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s;
+  }
+  .file-panel-dir-header:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+  }
+
   /* ====== Resizable Split Layout ====== */
   .chat-split-container {
     display: flex;
@@ -118,4 +184,49 @@
   .chat-split-right {
     min-width: 280px;
     overflow: hidden;
+  }
+
+  /* ====== Upload Progress ====== */
+  .file-panel-upload-progress {
+    height: 3px;
+    background-color: rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+  }
+  .file-panel-upload-progress-bar {
+    height: 100%;
+    background-color: #6155F5;
+    transition: width 0.2s ease;
+  }
+
+  /* ====== Upload Error ====== */
+  .file-panel-upload-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #fca5a5;
+    background-color: rgba(220, 38, 38, 0.12);
+    flex-shrink: 0;
+  }
+
+  /* ====== Drag & Drop Overlay ====== */
+  .file-panel-drag-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background-color: rgba(27, 29, 37, 0.92);
+    border: 2px dashed rgba(97, 85, 245, 0.5);
+    border-radius: 8px;
+    margin: 8px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 14px;
+    font-weight: 500;
+    pointer-events: none;
   }

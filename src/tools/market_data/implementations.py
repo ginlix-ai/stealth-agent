@@ -5,7 +5,7 @@ Core implementation logic for market data tools.
 Contains business logic separated from LangChain tool decorators.
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta, timezone
 import logging
 import asyncio
@@ -700,7 +700,7 @@ async def fetch_stock_daily_prices(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     limit: Optional[int] = None,
-) -> str:
+) -> Tuple[str, Dict[str, Any]]:
     """
     Fetch historical daily OHLCV price data for a stock.
 
@@ -714,8 +714,7 @@ async def fetch_stock_daily_prices(
         limit: Limit number of records (if not using date range)
 
     Returns:
-        - If < 14 trading days: Markdown table with daily OHLCV data (newest first)
-        - If >= 14 trading days: Formatted string summary with aggregated statistics
+        Tuple of (content string, artifact dict with structured data for charts)
     """
     try:
         # Get FMP client (async to handle event loop properly)
@@ -753,11 +752,12 @@ async def fetch_stock_daily_prices(
         if not results:
             logger.warning(f"No price data found for {symbol}")
             timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-            return f"""## Stock Price Data: {symbol}
+            content = f"""## Stock Price Data: {symbol}
 **Retrieved:** {timestamp}
 **Status:** No data available
 
 No price data available for the specified period."""
+            return content, {"type": "stock_prices", "symbol": symbol}
 
         # Generate file-ready header
         num_days = len(results)
@@ -789,32 +789,307 @@ No price data available for the specified period."""
 
 """
 
+        # Build OHLCV artifact data (sorted oldest first for charting)
+        sorted_for_chart = sorted(
+            results, key=lambda x: x.get("date", ""), reverse=False
+        )
+        ohlcv = [
+            {
+                "date": d.get("date"),
+                "open": d.get("open"),
+                "high": d.get("high"),
+                "low": d.get("low"),
+                "close": d.get("close"),
+                "volume": d.get("volume"),
+            }
+            for d in sorted_for_chart
+            if d.get("date")
+        ]
+
+        stats = _calculate_price_statistics(results)
+
+        # Fetch intraday data at an appropriate interval for better chart
+        # rendering. Short periods need finer granularity.
+        chart_ohlcv = ohlcv
+        chart_interval = "daily"
+        if num_days <= 60 and actual_start != "N/A" and actual_end != "N/A":
+            if num_days <= 5:
+                intraday_interval = "5min"
+            elif num_days <= 20:
+                intraday_interval = "1hour"
+            else:
+                intraday_interval = "4hour"
+
+            try:
+                intraday_data = await fmp_client.get_intraday_chart(
+                    symbol=symbol,
+                    interval=intraday_interval,
+                    from_date=actual_start,
+                    to_date=actual_end,
+                )
+                if intraday_data and len(intraday_data) > 5:
+                    # Sort oldest-first for charting
+                    intraday_sorted = sorted(
+                        intraday_data,
+                        key=lambda x: x.get("date", ""),
+                        reverse=False,
+                    )
+                    chart_ohlcv = [
+                        {
+                            "date": d.get("date"),
+                            "open": d.get("open"),
+                            "high": d.get("high"),
+                            "low": d.get("low"),
+                            "close": d.get("close"),
+                            "volume": d.get("volume"),
+                        }
+                        for d in intraday_sorted
+                        if d.get("date")
+                    ]
+                    chart_interval = intraday_interval
+                    logger.debug(
+                        f"Fetched {len(chart_ohlcv)} intraday ({intraday_interval}) "
+                        f"data points for {symbol}"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to fetch intraday data for {symbol}, "
+                    f"falling back to daily: {e}"
+                )
+
+        artifact = {
+            "type": "stock_prices",
+            "symbol": symbol,
+            "ohlcv": ohlcv,
+            "chart_ohlcv": chart_ohlcv,
+            "chart_interval": chart_interval,
+            "stats": {
+                "period_change_pct": stats.get("period_change_pct"),
+                "ma_20": stats.get("ma_20"),
+                "ma_50": stats.get("ma_50"),
+                "volatility": stats.get("volatility"),
+                "avg_volume": stats.get("avg_volume"),
+                "period_high": stats.get("period_high"),
+                "period_low": stats.get("period_low"),
+            },
+        }
+
         # Check if we should return normalized summary or markdown table
         if num_days >= 14:
             # Return normalized summary for long periods
             logger.debug(
                 f"Retrieved {num_days} days for {symbol}, returning normalized summary"
             )
-            stats = _calculate_price_statistics(results)
-            return header + _format_price_summary(stats)
+            return header + _format_price_summary(stats), artifact
         else:
             # Return markdown table for short periods
             logger.debug(
                 f"Retrieved {num_days} daily price records for {symbol}, returning markdown table"
             )
-            return header + _format_price_data_as_table(results)
+            return header + _format_price_data_as_table(results), artifact
 
     except Exception as e:
         logger.error(f"Error retrieving daily prices for {symbol}: {e}")
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        return f"""## Stock Price Data: {symbol}
+        content = f"""## Stock Price Data: {symbol}
 **Retrieved:** {timestamp}
 **Status:** Error
 
 Error retrieving price data: {str(e)}"""
+        return content, {"type": "stock_prices", "symbol": symbol, "error": str(e)}
 
 
-async def fetch_company_overview(symbol: str) -> str:
+async def fetch_company_overview_data(symbol: str) -> Dict[str, Any]:
+    """
+    Fetch company overview data and return structured artifact dict.
+
+    Shared by both the agent tool and the REST API endpoint.
+
+    Args:
+        symbol: Stock ticker symbol (e.g., "AAPL", "600519.SS", "0700.HK")
+
+    Returns:
+        Dict with structured data for charts (same shape as agent artifact)
+    """
+    fmp_client = await get_fmp_client()
+
+    profile_data = await fmp_client.get_profile(symbol)
+    if not profile_data:
+        return {"type": "company_overview", "symbol": symbol}
+
+    profile = profile_data[0]
+    company_name = profile.get("companyName", symbol)
+
+    # === PARALLEL DATA FETCH ===
+    (
+        income_stmt_result,
+        earnings_calendar_result,
+        price_change_result,
+        key_metrics_result,
+        ratios_result,
+        price_target_consensus_result,
+        grades_summary_result,
+        product_data_result,
+        geo_data_result,
+        quote_result,
+        cash_flow_result,
+    ) = await asyncio.gather(
+        fmp_client.get_income_statement(symbol, period="quarter", limit=8),
+        fmp_client.get_historical_earnings_calendar(symbol, limit=10),
+        fmp_client.get_stock_price_change(symbol),
+        fmp_client.get_key_metrics_ttm(symbol),
+        fmp_client.get_ratios_ttm(symbol),
+        fmp_client.get_price_target_consensus(symbol),
+        fmp_client.get_grades_summary(symbol),
+        fmp_client.get_revenue_product_segmentation(
+            symbol, period="quarter", structure="flat"
+        ),
+        fmp_client.get_revenue_geographic_segmentation(
+            symbol, period="quarter", structure="flat"
+        ),
+        fmp_client.get_quote(symbol),
+        fmp_client.get_cash_flow(symbol, period="quarter", limit=8),
+        return_exceptions=True,
+    )
+
+    income_stmt = _safe_result(income_stmt_result, [])
+    earnings_calendar = _safe_result(earnings_calendar_result, [])
+    price_change_data = _safe_result(price_change_result, [])
+    quote_data = _safe_result(quote_result, [])
+    grades_summary_data = _safe_result(grades_summary_result, [])
+    product_data = _safe_result(product_data_result, [])
+    geo_data = _safe_result(geo_data_result, [])
+    cash_flow_data = _safe_result(cash_flow_result, [])
+
+    fiscal_period_lookup = _build_fiscal_period_lookup(income_stmt)
+
+    # Build artifact
+    artifact: Dict[str, Any] = {
+        "type": "company_overview",
+        "symbol": symbol,
+        "name": company_name,
+    }
+
+    # Quote data
+    if quote_data and len(quote_data) > 0:
+        quote = quote_data[0]
+        artifact["quote"] = {
+            "price": quote.get("price"),
+            "change": quote.get("change"),
+            "changePct": quote.get("changesPercentage"),
+            "dayHigh": quote.get("dayHigh"),
+            "dayLow": quote.get("dayLow"),
+            "yearHigh": quote.get("yearHigh"),
+            "yearLow": quote.get("yearLow"),
+            "open": quote.get("open"),
+            "previousClose": quote.get("previousClose"),
+            "volume": quote.get("volume"),
+            "avgVolume": quote.get("avgVolume"),
+            "marketCap": quote.get("marketCap"),
+            "pe": quote.get("pe"),
+            "eps": quote.get("eps"),
+        }
+
+    # Performance data
+    if price_change_data:
+        changes = price_change_data[0]
+        artifact["performance"] = {
+            k: changes.get(k)
+            for k in ["1D", "5D", "1M", "3M", "6M", "ytd", "1Y", "3Y", "5Y"]
+            if changes.get(k) is not None
+        }
+
+    # Analyst ratings
+    if grades_summary_data:
+        gs = grades_summary_data[0]
+        artifact["analystRatings"] = {
+            "strongBuy": gs.get("strongBuy", 0),
+            "buy": gs.get("buy", 0),
+            "hold": gs.get("hold", 0),
+            "sell": gs.get("sell", 0),
+            "strongSell": gs.get("strongSell", 0),
+            "consensus": gs.get("consensus", "N/A"),
+        }
+
+    # Revenue by product
+    has_product_data = False
+    if product_data and len(product_data) > 0:
+        latest_product_record = product_data[0]
+        if latest_product_record and isinstance(latest_product_record, dict):
+            fiscal_date = list(latest_product_record.keys())[0]
+            product_revenues = latest_product_record[fiscal_date]
+            if product_revenues and isinstance(product_revenues, dict) and len(product_revenues) > 0:
+                has_product_data = True
+                artifact["revenueByProduct"] = product_revenues
+
+    # Revenue by geography
+    has_geo_data = False
+    if geo_data and len(geo_data) > 0:
+        latest_geo_record = geo_data[0]
+        if latest_geo_record and isinstance(latest_geo_record, dict):
+            geo_date = list(latest_geo_record.keys())[0]
+            geo_revenues = latest_geo_record[geo_date]
+            if geo_revenues and isinstance(geo_revenues, dict) and len(geo_revenues) > 0:
+                has_geo_data = True
+                artifact["revenueByGeo"] = geo_revenues
+
+    # Quarterly fundamentals from income statement (oldest-first for charting)
+    if income_stmt:
+        artifact["quarterlyFundamentals"] = [
+            {
+                "period": fiscal_period_lookup.get(stmt.get("date"), stmt.get("date", "")),
+                "date": stmt.get("date"),
+                "revenue": stmt.get("revenue"),
+                "netIncome": stmt.get("netIncome"),
+                "grossProfit": stmt.get("grossProfit"),
+                "operatingIncome": stmt.get("operatingIncome"),
+                "ebitda": stmt.get("ebitda"),
+                "epsDiluted": stmt.get("epsdiluted"),
+                "grossMargin": stmt.get("grossProfitRatio"),
+                "operatingMargin": stmt.get("operatingIncomeRatio"),
+                "netMargin": stmt.get("netIncomeRatio"),
+            }
+            for stmt in reversed(income_stmt)
+        ]
+
+    # Earnings surprises (reported only, oldest-first)
+    reported_for_artifact = [
+        e for e in earnings_calendar if e.get("eps") is not None
+    ]
+    if reported_for_artifact:
+        artifact["earningsSurprises"] = [
+            {
+                "period": fiscal_period_lookup.get(
+                    e.get("fiscalDateEnding"), e.get("date", "")
+                ),
+                "date": e.get("date"),
+                "epsActual": e.get("eps"),
+                "epsEstimate": e.get("epsEstimated"),
+                "revenueActual": e.get("revenue"),
+                "revenueEstimate": e.get("revenueEstimated"),
+            }
+            for e in reversed(reported_for_artifact)
+        ]
+
+    # Cash flow (oldest-first for charting)
+    if cash_flow_data:
+        artifact["cashFlow"] = [
+            {
+                "period": fiscal_period_lookup.get(cf.get("date"), cf.get("date", "")),
+                "date": cf.get("date"),
+                "operatingCashFlow": cf.get("operatingCashFlow"),
+                "capitalExpenditure": cf.get("capitalExpenditure"),
+                "freeCashFlow": cf.get("freeCashFlow"),
+            }
+            for cf in reversed(cash_flow_data)
+        ]
+
+    return artifact
+
+
+async def fetch_company_overview(
+    symbol: str,
+) -> Tuple[str, Dict[str, Any]]:
     """
     Fetch comprehensive investment analysis overview for a company.
 
@@ -825,7 +1100,7 @@ async def fetch_company_overview(symbol: str) -> str:
         symbol: Stock ticker symbol (e.g., "AAPL", "600519.SS", "0700.HK")
 
     Returns:
-        Formatted string with comprehensive investment intelligence
+        Tuple of (content string, artifact dict with structured data for charts)
     """
     try:
         # Get FMP client (async to handle event loop properly)
@@ -837,11 +1112,12 @@ async def fetch_company_overview(symbol: str) -> str:
         profile_data = await fmp_client.get_profile(symbol)
         if not profile_data:
             timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-            return f"""## Company Overview: {symbol}
+            content = f"""## Company Overview: {symbol}
 **Retrieved:** {timestamp}
 **Status:** Error
 
 No data found for symbol {symbol}"""
+            return content, {"type": "company_overview", "symbol": symbol}
 
         profile = profile_data[0]
         company_name = profile.get("companyName", symbol)
@@ -885,6 +1161,7 @@ No data found for symbol {symbol}"""
             product_data_result,
             geo_data_result,
             quote_result,
+            cash_flow_result,
         ) = await asyncio.gather(
             fmp_client.get_income_statement(symbol, period="quarter", limit=8),
             fmp_client.get_historical_earnings_calendar(symbol, limit=10),
@@ -904,6 +1181,7 @@ No data found for symbol {symbol}"""
                 symbol, period="quarter", structure="flat"
             ),
             fmp_client.get_quote(symbol),
+            fmp_client.get_cash_flow(symbol, period="quarter", limit=8),
             return_exceptions=True,
         )
 
@@ -922,6 +1200,7 @@ No data found for symbol {symbol}"""
         product_data = _safe_result(product_data_result, [])
         geo_data = _safe_result(geo_data_result, [])
         quote_data = _safe_result(quote_result, [])
+        cash_flow_data = _safe_result(cash_flow_result, [])
 
         # Build fiscal_period_lookup using helper function
         fiscal_period_lookup = _build_fiscal_period_lookup(income_stmt)
@@ -1333,6 +1612,28 @@ No data found for symbol {symbol}"""
 
             output_lines.append("")
 
+        # === CASH FLOW (QUARTERLY) ===
+        if cash_flow_data:
+            output_lines.append("### Cash Flow (Quarterly)")
+            output_lines.append("")
+            output_lines.append("| Period | Operating CF | CapEx | Free CF |")
+            output_lines.append("|--------|-------------|-------|---------|")
+
+            for cf in cash_flow_data[:8]:
+                cf_date = cf.get("date", "N/A")
+                cf_label = fiscal_period_lookup.get(cf_date, cf_date)
+                op_cf = cf.get("operatingCashFlow")
+                capex = cf.get("capitalExpenditure")
+                fcf = cf.get("freeCashFlow")
+                op_cf_str = format_number(op_cf) if op_cf is not None else "N/A"
+                capex_str = format_number(capex) if capex is not None else "N/A"
+                fcf_str = format_number(fcf) if fcf is not None else "N/A"
+                output_lines.append(
+                    f"| {cf_label} | {op_cf_str} | {capex_str} | {fcf_str} |"
+                )
+
+            output_lines.append("")
+
         # === ANALYST CONSENSUS & RATINGS ===
         output_lines.append("### Analyst Consensus & Ratings")
         output_lines.append("")
@@ -1545,16 +1846,127 @@ No data found for symbol {symbol}"""
 
         result = "\n".join(output_lines)
         logger.debug(f"Retrieved comprehensive investment overview for {symbol}")
-        return result
+
+        # Build artifact with structured data for frontend charts
+        artifact: Dict[str, Any] = {
+            "type": "company_overview",
+            "symbol": symbol,
+            "name": company_name,
+        }
+
+        # Quote data for artifact
+        if quote_data and len(quote_data) > 0:
+            quote = quote_data[0]
+            artifact["quote"] = {
+                "price": quote.get("price"),
+                "change": quote.get("change"),
+                "changePct": quote.get("changesPercentage"),
+                "dayHigh": quote.get("dayHigh"),
+                "dayLow": quote.get("dayLow"),
+                "yearHigh": quote.get("yearHigh"),
+                "yearLow": quote.get("yearLow"),
+                "open": quote.get("open"),
+                "previousClose": quote.get("previousClose"),
+                "volume": quote.get("volume"),
+                "avgVolume": quote.get("avgVolume"),
+                "marketCap": quote.get("marketCap"),
+            }
+
+        # Performance data
+        if price_change_data:
+            changes = price_change_data[0]
+            artifact["performance"] = {
+                k: changes.get(k)
+                for k in ["1D", "5D", "1M", "3M", "6M", "ytd", "1Y", "3Y", "5Y"]
+                if changes.get(k) is not None
+            }
+
+        # Analyst ratings
+        if grades_summary_data:
+            gs = grades_summary_data[0]
+            artifact["analystRatings"] = {
+                "strongBuy": gs.get("strongBuy", 0),
+                "buy": gs.get("buy", 0),
+                "hold": gs.get("hold", 0),
+                "sell": gs.get("sell", 0),
+                "strongSell": gs.get("strongSell", 0),
+                "consensus": gs.get("consensus", "N/A"),
+            }
+
+        # Revenue by product
+        if has_product_data:
+            latest_product_record = product_data[0]
+            fiscal_date = list(latest_product_record.keys())[0]
+            artifact["revenueByProduct"] = latest_product_record[fiscal_date]
+
+        # Revenue by geography
+        if has_geo_data:
+            latest_geo_record = geo_data[0]
+            geo_date = list(latest_geo_record.keys())[0]
+            artifact["revenueByGeo"] = latest_geo_record[geo_date]
+
+        # Quarterly fundamentals from income statement (oldest-first for charting)
+        if income_stmt:
+            artifact["quarterlyFundamentals"] = [
+                {
+                    "period": fiscal_period_lookup.get(stmt.get("date"), stmt.get("date", "")),
+                    "date": stmt.get("date"),
+                    "revenue": stmt.get("revenue"),
+                    "netIncome": stmt.get("netIncome"),
+                    "grossProfit": stmt.get("grossProfit"),
+                    "operatingIncome": stmt.get("operatingIncome"),
+                    "ebitda": stmt.get("ebitda"),
+                    "epsDiluted": stmt.get("epsdiluted"),
+                    "grossMargin": stmt.get("grossProfitRatio"),
+                    "operatingMargin": stmt.get("operatingIncomeRatio"),
+                    "netMargin": stmt.get("netIncomeRatio"),
+                }
+                for stmt in reversed(income_stmt)
+            ]
+
+        # Earnings surprises from earnings calendar (reported only, oldest-first)
+        reported_for_artifact = [
+            e for e in earnings_calendar if e.get("eps") is not None
+        ]
+        if reported_for_artifact:
+            artifact["earningsSurprises"] = [
+                {
+                    "period": fiscal_period_lookup.get(
+                        e.get("fiscalDateEnding"), e.get("date", "")
+                    ),
+                    "date": e.get("date"),
+                    "epsActual": e.get("eps"),
+                    "epsEstimate": e.get("epsEstimated"),
+                    "revenueActual": e.get("revenue"),
+                    "revenueEstimate": e.get("revenueEstimated"),
+                }
+                for e in reversed(reported_for_artifact)
+            ]
+
+        # Cash flow (oldest-first for charting)
+        if cash_flow_data:
+            artifact["cashFlow"] = [
+                {
+                    "period": fiscal_period_lookup.get(cf.get("date"), cf.get("date", "")),
+                    "date": cf.get("date"),
+                    "operatingCashFlow": cf.get("operatingCashFlow"),
+                    "capitalExpenditure": cf.get("capitalExpenditure"),
+                    "freeCashFlow": cf.get("freeCashFlow"),
+                }
+                for cf in reversed(cash_flow_data)
+            ]
+
+        return result, artifact
 
     except Exception as e:
         logger.error(f"Error retrieving company overview for {symbol}: {e}")
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        return f"""## Company Overview: {symbol}
+        content = f"""## Company Overview: {symbol}
 **Retrieved:** {timestamp}
 **Status:** Error
 
 Error retrieving company overview: {str(e)}"""
+        return content, {"type": "company_overview", "symbol": symbol, "error": str(e)}
 
 
 async def fetch_market_indices(
@@ -1562,7 +1974,7 @@ async def fetch_market_indices(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     limit: int = 60,
-) -> str:
+) -> Tuple[str, Dict[str, Any]]:
     """
     Fetch market indices data (S&P 500, NASDAQ, Dow Jones).
 
@@ -1576,8 +1988,7 @@ async def fetch_market_indices(
         limit: Number of records per index (default 60)
 
     Returns:
-        - If < 14 trading days: Markdown tables with index OHLCV data (one table per index)
-        - If >= 14 trading days: Formatted string summary with statistics per index
+        Tuple of (content string, artifact dict with structured data for charts)
     """
     try:
         # Get FMP client (async to handle event loop properly)
@@ -1633,11 +2044,12 @@ async def fetch_market_indices(
                 if len(indices) <= 3
                 else f"{', '.join(indices[:3])} and {len(indices) - 3} more"
             )
-            return f"""## Market Indices: {indices_str}
+            content = f"""## Market Indices: {indices_str}
 **Retrieved:** {timestamp}
 **Status:** No data available
 
 No index data available for the specified period."""
+            return content, {"type": "market_indices", "indices": {}}
 
         # Determine if we should normalize based on limit/date range
         # For date ranges, estimate number of days
@@ -1689,6 +2101,96 @@ No index data available for the specified period."""
 
 """
 
+        # Determine appropriate intraday interval based on period length
+        intraday_interval = None
+        if unique_days <= 5:
+            intraday_interval = "5min"
+        elif unique_days <= 20:
+            intraday_interval = "1hour"
+        elif unique_days <= 60:
+            intraday_interval = "4hour"
+
+        # Fetch intraday data for all indices in parallel if applicable
+        intraday_map = {}
+        if intraday_interval and actual_start != "N/A" and actual_end != "N/A":
+            async def fetch_intraday(sym):
+                try:
+                    data = await fmp_client.get_intraday_chart(
+                        symbol=sym,
+                        interval=intraday_interval,
+                        from_date=actual_start,
+                        to_date=actual_end,
+                    )
+                    return (sym, data)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch intraday for index {sym}: {e}")
+                    return (sym, None)
+
+            intraday_results = await asyncio.gather(
+                *[fetch_intraday(sym) for sym in indices_data.keys()]
+            )
+            for sym, idata in intraday_results:
+                if idata and len(idata) > 5:
+                    intraday_map[sym] = idata
+
+        # Build artifact with structured data per index
+        artifact_indices = {}
+        for idx_symbol, idx_data in indices_data.items():
+            sorted_for_chart = sorted(
+                idx_data, key=lambda x: x.get("date", ""), reverse=False
+            )
+            ohlcv = [
+                {
+                    "date": d.get("date"),
+                    "open": d.get("open"),
+                    "high": d.get("high"),
+                    "low": d.get("low"),
+                    "close": d.get("close"),
+                    "volume": d.get("volume"),
+                }
+                for d in sorted_for_chart
+                if d.get("date")
+            ]
+
+            # Build chart_ohlcv from intraday if available
+            chart_ohlcv = ohlcv
+            chart_interval = "daily"
+            if idx_symbol in intraday_map:
+                intraday_sorted = sorted(
+                    intraday_map[idx_symbol],
+                    key=lambda x: x.get("date", ""),
+                    reverse=False,
+                )
+                chart_ohlcv = [
+                    {
+                        "date": d.get("date"),
+                        "open": d.get("open"),
+                        "high": d.get("high"),
+                        "low": d.get("low"),
+                        "close": d.get("close"),
+                        "volume": d.get("volume"),
+                    }
+                    for d in intraday_sorted
+                    if d.get("date")
+                ]
+                chart_interval = intraday_interval
+
+            idx_stats = _calculate_price_statistics(idx_data)
+            artifact_indices[idx_symbol] = {
+                "name": _get_index_name(idx_symbol),
+                "ohlcv": ohlcv,
+                "chart_ohlcv": chart_ohlcv,
+                "chart_interval": chart_interval,
+                "stats": {
+                    "period_change_pct": idx_stats.get("period_change_pct"),
+                    "ma_20": idx_stats.get("ma_20"),
+                    "ma_50": idx_stats.get("ma_50"),
+                    "volatility": idx_stats.get("volatility"),
+                },
+            }
+
+        artifact = {"type": "market_indices", "indices": artifact_indices}
+
         if should_normalize and indices_data:
             # Return normalized summary
             period_info = {
@@ -1700,13 +2202,13 @@ No index data available for the specified period."""
             logger.debug(
                 f"Retrieved {len(all_results)} records for {len(indices)} indices, returning normalized summary"
             )
-            return header + _format_indices_summary(indices_data, period_info)
+            return header + _format_indices_summary(indices_data, period_info), artifact
         else:
             # Return markdown tables for short periods
             logger.debug(
                 f"Retrieved {len(all_results)} records for {len(indices)} indices, returning markdown tables"
             )
-            return header + _format_indices_data_as_table(indices_data)
+            return header + _format_indices_data_as_table(indices_data), artifact
 
     except Exception as e:
         logger.error(f"Error retrieving market indices: {e}")
@@ -1716,14 +2218,17 @@ No index data available for the specified period."""
             if len(indices) <= 3
             else f"{', '.join(indices[:3])} and {len(indices) - 3} more"
         )
-        return f"""## Market Indices: {indices_str}
+        content = f"""## Market Indices: {indices_str}
 **Retrieved:** {timestamp}
 **Status:** Error
 
 Error retrieving index data: {str(e)}"""
+        return content, {"type": "market_indices", "indices": {}, "error": str(e)}
 
 
-async def fetch_sector_performance(date: Optional[str] = None) -> str:
+async def fetch_sector_performance(
+    date: Optional[str] = None,
+) -> Tuple[str, Dict[str, Any]]:
     """
     Fetch market sector performance.
 
@@ -1731,8 +2236,26 @@ async def fetch_sector_performance(date: Optional[str] = None) -> str:
         date: Analysis date in YYYY-MM-DD format (default: latest available)
 
     Returns:
-        Markdown table with sector performance data sorted by performance
+        Tuple of (content string, artifact dict with structured data for charts)
     """
+
+    def _build_sector_artifact(
+        raw_results: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Build structured artifact from raw sector results."""
+        sectors = []
+        for sector in raw_results:
+            sector_name = sector.get("sector", "N/A")
+            change_str = sector.get("changesPercentage", "0%")
+            try:
+                change_val = float(change_str.replace("%", "").replace("+", ""))
+            except (ValueError, AttributeError):
+                change_val = 0.0
+            sectors.append({"sector": sector_name, "changesPercentage": change_val})
+        # Sort descending by performance
+        sectors.sort(key=lambda x: x["changesPercentage"], reverse=True)
+        return {"type": "sector_performance", "sectors": sectors}
+
     try:
         # Get FMP client (async to handle event loop properly)
         fmp_client = await get_fmp_client()
@@ -1754,7 +2277,8 @@ async def fetch_sector_performance(date: Optional[str] = None) -> str:
 
             if results:
                 logger.debug(f"Retrieved performance data for {len(results)} sectors")
-                return header + _format_sectors_as_table(results)
+                content = header + _format_sectors_as_table(results)
+                return content, _build_sector_artifact(results)
         except Exception:
             pass
 
@@ -1767,28 +2291,35 @@ async def fetch_sector_performance(date: Optional[str] = None) -> str:
 
             if results:
                 logger.debug(f"Retrieved performance data for {len(results)} sectors")
-                return header + _format_sectors_as_table(results)
+                content = header + _format_sectors_as_table(results)
+                return content, _build_sector_artifact(results)
 
         logger.warning(
             "No sector performance data found - endpoint may not be available on this FMP plan"
         )
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        return f"""## Sector Performance Analysis{date_str}
+        content = f"""## Sector Performance Analysis{date_str}
 **Retrieved:** {timestamp}
 **Status:** No data available
 
 No sector performance data available for the specified period."""
+        return content, {"type": "sector_performance", "sectors": []}
 
     except Exception as e:
         logger.error(f"Error retrieving sector performance: {e}")
         logger.warning("Sector performance endpoint may require a higher FMP API tier")
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         date_str = f" ({date})" if date else ""
-        return f"""## Sector Performance Analysis{date_str}
+        content = f"""## Sector Performance Analysis{date_str}
 **Retrieved:** {timestamp}
 **Status:** Error
 
 Error retrieving sector performance data: {str(e)}"""
+        return content, {
+            "type": "sector_performance",
+            "sectors": [],
+            "error": str(e),
+        }
 
 
 async def fetch_earnings_transcript(symbol: str, year: int, quarter: int) -> str:

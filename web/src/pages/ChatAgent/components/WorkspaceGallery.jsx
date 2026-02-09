@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Loader2, Search, ArrowDownUp, MoreHorizontal } from 'lucide-react';
+import { Plus, Loader2, Search, ArrowDownUp, MoreHorizontal, Zap } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import CreateWorkspaceModal from './CreateWorkspaceModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
@@ -7,6 +7,7 @@ import { getAuthUserId } from '@/api/client';
 import { getWorkspaces, createWorkspace, deleteWorkspace, DEFAULT_USER_ID } from '../utils/api';
 import { DEFAULT_WORKSPACE_NAME } from '../../Dashboard/utils/workspace';
 import { removeStoredThreadId } from '../hooks/useChatMessages';
+import { clearChatSession } from '../hooks/utils/chatSessionRestore';
 import '../../Dashboard/Dashboard.css';
 
 /**
@@ -21,7 +22,7 @@ import '../../Dashboard/Dashboard.css';
  * 
  * @param {Function} onWorkspaceSelect - Callback when a workspace is selected (receives workspaceId)
  */
-function WorkspaceGallery({ onWorkspaceSelect }) {
+function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
   const [workspaces, setWorkspaces] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -35,13 +36,24 @@ function WorkspaceGallery({ onWorkspaceSelect }) {
   const { workspaceId: currentWorkspaceId } = useParams();
   const loadingRef = useRef(false);
 
-  // Load workspaces on mount
+  // Clear saved chat session so tab-switching returns to workspace gallery
+  useEffect(() => {
+    clearChatSession();
+  }, []);
+
+  // Load workspaces on mount, using cache for instant display on return navigation
   useEffect(() => {
     // Guard: Prevent duplicate calls
     if (loadingRef.current) {
       return;
     }
-    
+
+    // Show cached data instantly (stale-while-revalidate)
+    if (cache?.current?.workspaces) {
+      setWorkspaces(cache.current.workspaces);
+      setIsLoading(false);
+    }
+
     loadingRef.current = true;
     loadWorkspaces().finally(() => {
       loadingRef.current = false;
@@ -54,7 +66,8 @@ function WorkspaceGallery({ onWorkspaceSelect }) {
    */
   const loadWorkspaces = async () => {
     try {
-      setIsLoading(true);
+      const hasCached = cache?.current?.workspaces;
+      if (!hasCached) setIsLoading(true);
       setError(null);
       const userId = getAuthUserId() || DEFAULT_USER_ID;
       const data = await getWorkspaces(userId);
@@ -63,6 +76,12 @@ function WorkspaceGallery({ onWorkspaceSelect }) {
         (ws) => ws.name !== '__flash__'
       );
       setWorkspaces(filteredWorkspaces);
+
+      // Update cache
+      if (cache?.current) {
+        cache.current.workspaces = filteredWorkspaces;
+        cache.current.fetchedAt = Date.now();
+      }
     } catch (err) {
       console.error('Error loading workspaces:', err);
       setError('Failed to load workspaces. Please refresh the page.');
@@ -86,8 +105,8 @@ function WorkspaceGallery({ onWorkspaceSelect }) {
       );
       // Add new workspace to the list
       setWorkspaces((prev) => [newWorkspace, ...prev]);
-      // Automatically navigate to the new workspace
-      onWorkspaceSelect(newWorkspace.workspace_id);
+      // Return workspace so modal can use workspace_id for file uploads
+      return newWorkspace;
     } catch (err) {
       console.error('Error creating workspace:', err);
       throw err; // Let modal handle the error display
@@ -178,6 +197,11 @@ function WorkspaceGallery({ onWorkspaceSelect }) {
       workspace.name.toLowerCase().includes(searchQuery.toLowerCase())
     )
     .sort((a, b) => {
+      // Pin flash workspace to top
+      const aFlash = a.status === 'flash' ? 1 : 0;
+      const bFlash = b.status === 'flash' ? 1 : 0;
+      if (aFlash !== bFlash) return bFlash - aFlash;
+
       if (sortBy === 'activity') {
         // Sort by updated_at (most recent first)
         return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
@@ -326,17 +350,27 @@ function WorkspaceGallery({ onWorkspaceSelect }) {
             <div className="grid gap-3 md:grid-cols-2 md:gap-6 grid-cols-1 auto-rows-fr mb-3 md:mb-6">
               {filteredAndSortedWorkspaces.map((workspace) => (
                 <div key={workspace.workspace_id} className="h-full">
-                  <div className="relative group h-full">
+                  <div
+                    className="relative group h-full"
+                    onMouseEnter={() => prefetchThreads?.(workspace.workspace_id)}
+                  >
                     <div
-                      onClick={() => onWorkspaceSelect(workspace.workspace_id)}
+                      onClick={() => onWorkspaceSelect(workspace.workspace_id, workspace.name, workspace.status)}
                       className="relative flex cursor-pointer flex-col overflow-hidden rounded-xl py-4 pl-5 pr-4 transition-all ease-in-out hover:shadow-sm active:scale-[0.98] h-full w-full"
                       style={{
-                        background: 'linear-gradient(to bottom, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01))',
-                        border: '0.5px solid rgba(255, 255, 255, 0.1)',
+                        background: workspace.status === 'flash'
+                          ? 'linear-gradient(to bottom, rgba(97, 85, 245, 0.08), rgba(97, 85, 245, 0.02))'
+                          : 'linear-gradient(to bottom, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01))',
+                        border: workspace.status === 'flash'
+                          ? '0.5px solid rgba(97, 85, 245, 0.3)'
+                          : '0.5px solid rgba(255, 255, 255, 0.1)',
                       }}
                     >
                       <div className="flex flex-col flex-grow gap-4">
-                        <div className="flex items-center pr-10 overflow-hidden">
+                        <div className="flex items-center pr-10 overflow-hidden gap-2">
+                          {workspace.status === 'flash' && (
+                            <Zap className="h-4 w-4 flex-shrink-0" style={{ color: '#6155F5' }} />
+                          )}
                           <div className="font-medium truncate" style={{ color: '#FFFFFF' }}>
                             {workspace.name}
                           </div>
@@ -352,7 +386,7 @@ function WorkspaceGallery({ onWorkspaceSelect }) {
                       </div>
                     </div>
                     {/* Three dots menu */}
-                    {workspace.name !== DEFAULT_WORKSPACE_NAME && (
+                    {workspace.name !== DEFAULT_WORKSPACE_NAME && workspace.status !== 'flash' && (
                       <div className="absolute top-3 right-3 z-10 transition-opacity opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
                         <button
                           onClick={(e) => {
@@ -379,6 +413,7 @@ function WorkspaceGallery({ onWorkspaceSelect }) {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onCreate={handleCreateWorkspace}
+        onComplete={(wsId) => onWorkspaceSelect(wsId)}
       />
 
       {/* Delete Confirmation Modal */}

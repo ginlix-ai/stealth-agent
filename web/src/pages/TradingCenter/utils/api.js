@@ -36,26 +36,36 @@ export async function searchStocks(query, limit = 50) {
  *
  * @param {string} symbol - Stock symbol (e.g., 'AAPL', 'MSFT')
  * @param {string} interval - Data interval (default: '1hour' for daily-like view, supports: 1min, 5min, 15min, 30min, 1hour, 4hour)
- * @returns {Promise<{data: Array, isReal: boolean, error?: string}>} Chart data in lightweight-charts format
+ * @param {string} [fromDate] - Start date in YYYY-MM-DD format
+ * @param {string} [toDate] - End date in YYYY-MM-DD format
+ * @param {Object} [options] - Additional options
+ * @param {AbortSignal} [options.signal] - AbortController signal for cancellation
+ * @returns {Promise<{data: Array, error?: string, fiftyTwoWeekHigh?: number, fiftyTwoWeekLow?: number}>} Chart data in lightweight-charts format
  */
-export async function fetchStockData(symbol, interval = '1hour') {
+export async function fetchStockData(symbol, interval = '1hour', fromDate, toDate, { signal } = {}) {
   if (!symbol || !symbol.trim()) {
-    return { data: [], isReal: false, error: 'Symbol is required' };
+    return { data: [], error: 'Symbol is required' };
   }
 
   const symbolUpper = symbol.trim().toUpperCase();
 
   try {
-    const { data } = await api.get(`/api/v1/market-data/intraday/stocks/${encodeURIComponent(symbolUpper)}`, {
-      params: {
-        interval: interval === '1day' ? '1hour' : interval,
-      },
-    });
+    // Use daily endpoint for 1day interval, intraday endpoint for everything else
+    const isDaily = interval === '1day';
+    const url = isDaily
+      ? `/api/v1/market-data/daily/stocks/${encodeURIComponent(symbolUpper)}`
+      : `/api/v1/market-data/intraday/stocks/${encodeURIComponent(symbolUpper)}`;
+    const params = isDaily ? {} : { interval };
+
+    if (fromDate) params.from = fromDate;
+    if (toDate) params.to = toDate;
+
+    const { data } = await api.get(url, { params, signal });
 
     const dataPoints = data?.data || [];
-    
+
     if (!Array.isArray(dataPoints) || dataPoints.length === 0) {
-      return { data: [], isReal: false, error: 'No data available' };
+      return { data: [], error: 'No data available' };
     }
 
     // Convert backend format to lightweight-charts format
@@ -68,13 +78,14 @@ export async function fetchStockData(symbol, interval = '1hour') {
         high: parseFloat(point.high) || 0,
         low: parseFloat(point.low) || 0,
         close: parseFloat(point.close) || 0,
+        volume: parseFloat(point.volume) || 0,
       };
     }).filter(item =>
       !isNaN(item.open) && !isNaN(item.high) && !isNaN(item.low) && !isNaN(item.close) && item.time > 0
     ).sort((a, b) => a.time - b.time);
 
     if (chartData.length === 0) {
-      return { data: [], isReal: false, error: 'Data conversion failed' };
+      return { data: [], error: 'Data conversion failed' };
     }
 
     // Derive 52-week high/low from series for header display
@@ -89,44 +100,46 @@ export async function fetchStockData(symbol, interval = '1hour') {
 
     return {
       data: chartData,
-      isReal: true,
       fiftyTwoWeekHigh,
       fiftyTwoWeekLow,
     };
   } catch (error) {
+    // Don't treat abort as an error
+    if (error?.name === 'CanceledError' || error?.name === 'AbortError') {
+      return { data: [], error: 'Request cancelled' };
+    }
     console.error('Error fetching stock data from backend:', error);
     const errorMsg = error?.response?.data?.detail || error?.message || 'Failed to fetch stock data';
-    
-    // Return mock data as fallback
-    const mockData = generateMockData(symbolUpper);
-    return { data: mockData, isReal: false, error: errorMsg };
+    return { data: [], error: errorMsg };
   }
 }
 
 /**
  * Fetch real-time stock price and quote information
  * Uses backend API endpoint: POST /api/v1/market-data/intraday/stocks (batch endpoint)
- * 
+ *
  * @param {string} symbol - Stock symbol
+ * @param {Object} [options] - Additional options
+ * @param {AbortSignal} [options.signal] - AbortController signal for cancellation
  * @returns {Promise<{price: number, change: number, changePercent: string, open: number, high: number, low: number}>}
  */
-export async function fetchRealTimePrice(symbol) {
+export async function fetchRealTimePrice(symbol, { signal } = {}) {
   if (!symbol || !symbol.trim()) {
     throw new Error('Symbol is required');
   }
 
   const symbolUpper = symbol.trim().toUpperCase();
-  
+
   try {
     // Use batch endpoint to get latest price
     const { data } = await api.post('/api/v1/market-data/intraday/stocks', {
       symbols: [symbolUpper],
       interval: '1min',
-    });
+    }, { signal });
 
     const results = data?.results || {};
     const points = results[symbolUpper];
-    
+
     if (!Array.isArray(points) || points.length === 0) {
       throw new Error('No price data available');
     }
@@ -151,6 +164,9 @@ export async function fetchRealTimePrice(symbol) {
       changePercent,
     };
   } catch (error) {
+    if (error?.name === 'CanceledError' || error?.name === 'AbortError') {
+      throw error; // Let caller handle abort
+    }
     console.error('Error fetching real-time price:', error);
     throw error;
   }
@@ -160,28 +176,30 @@ export async function fetchRealTimePrice(symbol) {
  * Fetch stock profile/company information
  * Note: This endpoint may need to be implemented in the backend
  * For now, returns basic info from quote data
- * 
+ *
  * @param {string} symbol - Stock symbol
+ * @param {Object} [options] - Additional options
+ * @param {AbortSignal} [options.signal] - AbortController signal for cancellation
  * @returns {Promise<Object>} Stock profile information
  */
-export async function fetchStockInfo(symbol) {
+export async function fetchStockInfo(symbol, { signal } = {}) {
   if (!symbol || !symbol.trim()) {
     throw new Error('Symbol is required');
   }
 
   const symbolUpper = symbol.trim().toUpperCase();
-  
+
   try {
     // Use intraday endpoint to get basic info
     // In a full implementation, this would call a dedicated profile endpoint
     const { data } = await api.post('/api/v1/market-data/intraday/stocks', {
       symbols: [symbolUpper],
       interval: '1min',
-    });
+    }, { signal });
 
     const results = data?.results || {};
     const points = results[symbolUpper];
-    
+
     if (!Array.isArray(points) || points.length === 0) {
       return {
         Symbol: symbolUpper,
@@ -221,6 +239,9 @@ export async function fetchStockInfo(symbol) {
       DividendYield: null,
     };
   } catch (error) {
+    if (error?.name === 'CanceledError' || error?.name === 'AbortError') {
+      throw error; // Let caller handle abort
+    }
     console.error('Error fetching stock info:', error);
     return {
       Symbol: symbolUpper,
@@ -241,40 +262,144 @@ export async function fetchStockInfo(symbol) {
 }
 
 /**
- * Generate mock data for fallback when API fails
+ * Consolidated stock quote — fetches both stockInfo and realTimePrice
+ * from a single API call to the batch intraday endpoint.
+ * Replaces separate fetchStockInfo + fetchRealTimePrice calls.
+ *
  * @param {string} symbol - Stock symbol
- * @returns {Array} Mock chart data
+ * @param {Object} [options] - Additional options
+ * @param {AbortSignal} [options.signal] - AbortController signal for cancellation
+ * @returns {Promise<{stockInfo: Object, realTimePrice: Object|null}>}
  */
-function generateMockData(symbol) {
-  const data = [];
-  const basePrice = 100 + Math.random() * 50;
-  let currentPrice = basePrice;
-  const today = new Date();
-
-  // Generate 90 days of mock data
-  for (let i = 90; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i);
-    const timestamp = Math.floor(date.getTime() / 1000);
-
-    const change = (Math.random() - 0.5) * 4;
-    const open = currentPrice;
-    const close = open + change;
-    const high = Math.max(open, close) + Math.random() * 2;
-    const low = Math.min(open, close) - Math.random() * 2;
-
-    currentPrice = close;
-
-    data.push({
-      time: timestamp,
-      open: parseFloat(open.toFixed(2)),
-      high: parseFloat(high.toFixed(2)),
-      low: parseFloat(low.toFixed(2)),
-      close: parseFloat(close.toFixed(2)),
-    });
+export async function fetchStockQuote(symbol, { signal } = {}) {
+  if (!symbol || !symbol.trim()) {
+    throw new Error('Symbol is required');
   }
 
+  const symbolUpper = symbol.trim().toUpperCase();
+  const fallbackInfo = {
+    Symbol: symbolUpper,
+    Name: `${symbolUpper} Corp`,
+    Exchange: 'NASDAQ',
+    Price: 0,
+    Open: 0,
+    High: 0,
+    Low: 0,
+    '52WeekHigh': null,
+    '52WeekLow': null,
+    AverageVolume: null,
+    SharesOutstanding: null,
+    MarketCapitalization: null,
+    DividendYield: null,
+  };
+
+  try {
+    const { data } = await api.post('/api/v1/market-data/intraday/stocks', {
+      symbols: [symbolUpper],
+      interval: '1min',
+    }, { signal });
+
+    const results = data?.results || {};
+    const points = results[symbolUpper];
+
+    if (!Array.isArray(points) || points.length === 0) {
+      return { stockInfo: fallbackInfo, realTimePrice: null };
+    }
+
+    const first = points[0];
+    const last = points[points.length - 1];
+    const open = parseFloat(first?.open || 0);
+    const close = parseFloat(last?.close || 0);
+    const high = parseFloat(last?.high || close);
+    const low = parseFloat(last?.low || close);
+    const change = close - open;
+    const changePercent = open ? ((change / open) * 100).toFixed(2) + '%' : '0.00%';
+    const totalVolume = points.reduce((sum, p) => sum + (Number(p.volume) || 0), 0);
+    const avgVolume = points.length > 0 ? Math.round(totalVolume / points.length) : null;
+
+    const stockInfo = {
+      Symbol: symbolUpper,
+      Name: `${symbolUpper} Corp`,
+      Exchange: 'NASDAQ',
+      Price: close,
+      Open: open,
+      High: parseFloat(Math.max(...points.map((p) => Number(p.high) || 0)) || 0),
+      Low: parseFloat(Math.min(...points.map((p) => Number(p.low) || 0)) || 0),
+      '52WeekHigh': null,
+      '52WeekLow': null,
+      AverageVolume: avgVolume,
+      SharesOutstanding: null,
+      MarketCapitalization: null,
+      DividendYield: null,
+    };
+
+    const realTimePrice = {
+      symbol: symbolUpper,
+      price: Math.round(close * 100) / 100,
+      open: Math.round(open * 100) / 100,
+      high: Math.round(high * 100) / 100,
+      low: Math.round(low * 100) / 100,
+      change: Math.round(change * 100) / 100,
+      changePercent,
+    };
+
+    return { stockInfo, realTimePrice };
+  } catch (error) {
+    if (error?.name === 'CanceledError' || error?.name === 'AbortError') {
+      throw error;
+    }
+    console.error('Error fetching stock quote:', error);
+    return { stockInfo: fallbackInfo, realTimePrice: null };
+  }
+}
+
+
+/**
+ * Fetch company overview data (fundamentals, analyst ratings, earnings, revenue breakdown).
+ * Uses backend API endpoint: GET /api/v1/market-data/stocks/{symbol}/overview
+ *
+ * @param {string} symbol - Stock symbol
+ * @param {Object} [options] - Additional options
+ * @param {AbortSignal} [options.signal] - AbortController signal for cancellation
+ * @returns {Promise<Object>} Company overview data
+ */
+export async function fetchCompanyOverview(symbol, { signal } = {}) {
+  if (!symbol || !symbol.trim()) {
+    throw new Error('Symbol is required');
+  }
+  const { data } = await api.get(
+    `/api/v1/market-data/stocks/${encodeURIComponent(symbol.trim().toUpperCase())}/overview`,
+    { signal }
+  );
   return data;
+}
+
+/**
+ * Fetch analyst data (price targets + grades) for a stock symbol.
+ * Uses backend API endpoint: GET /api/v1/market-data/stocks/{symbol}/analyst-data
+ *
+ * @param {string} symbol - Stock symbol
+ * @param {Object} [options] - Additional options
+ * @param {AbortSignal} [options.signal] - AbortController signal for cancellation
+ * @returns {Promise<Object>} Analyst data with priceTargets and grades
+ */
+export async function fetchAnalystData(symbol, { signal } = {}) {
+  if (!symbol || !symbol.trim()) {
+    throw new Error('Symbol is required');
+  }
+  try {
+    const { data } = await api.get(
+      `/api/v1/market-data/stocks/${encodeURIComponent(symbol.trim().toUpperCase())}/analyst-data`,
+      { signal }
+    );
+    return data;
+  } catch (error) {
+    if (error?.name === 'CanceledError' || error?.name === 'AbortError') {
+      throw error;
+    }
+    console.error('Error fetching analyst data:', error);
+    return null;
+  }
 }
 
 // --- Flash Mode Chat Streaming ---
@@ -410,7 +535,8 @@ export async function sendFlashChatMessage(
   onEvent = () => {},
   userId = 'test_user_001',
   locale = 'en-US',
-  timezone = 'America/New_York'
+  timezone = 'America/New_York',
+  additionalContext = null
 ) {
   const body = {
     thread_id: threadId,
@@ -421,6 +547,9 @@ export async function sendFlashChatMessage(
     locale,
     timezone,
   };
+  if (additionalContext) {
+    body.additional_context = additionalContext;
+  }
 
   if (process.env.NODE_ENV === 'development') {
     console.log('[TradingCenter API] Sending flash chat message:', {

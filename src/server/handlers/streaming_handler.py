@@ -20,7 +20,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Dict, List, Optional, Set, Tuple, cast
+from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Set, Tuple, cast
 
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, ToolMessage
 from langgraph.types import StateSnapshot
@@ -321,6 +321,14 @@ class WorkflowStreamHandler:
         # Current namespace tuple (for subagent tracking in _process_message_chunk)
         self._current_namespace: tuple = ()
 
+        # Track which completed task results have already been sent (avoid re-sending)
+        self._sent_result_task_ids: set[str] = set()
+
+        # Cursor tracking for old subagent event emission (task_id → index)
+        self._old_subagent_cursors: dict[str, int] = {}
+        # Snapshot of task IDs from previous workflow (set at stream start)
+        self._old_task_ids: set[str] = set()
+
     async def _keepalive_loop(self, keepalive_queue: asyncio.Queue):
         """
         Background task that sends keepalive events to prevent connection timeouts.
@@ -412,6 +420,22 @@ class WorkflowStreamHandler:
             logger.debug(f"[WorkflowStreamHandler] Tool usage tracking ContextVar set for thread_id={self.thread_id}")
 
         try:
+            # Snapshot old task IDs and emit initial batch of captured events.
+            # Events are streamed with accumulate=False so they are NOT persisted
+            # with this (new) response — the collector owns persistence to the
+            # OLD response where the subagent was created.
+            if self._background_registry:
+                old_tasks = list(self._background_registry._tasks.values())
+                self._old_task_ids = {t.task_id for t in old_tasks}
+
+                if any(t.captured_events for t in old_tasks):
+                    # Emit subagent_status first so frontend has context
+                    if status_event := self._maybe_emit_subagent_status():
+                        yield status_event
+
+                    for event_str in self._drain_old_subagent_events():
+                        yield event_str
+
             # Create graph stream
             graph_stream = graph.astream(
                 input_state,
@@ -430,6 +454,12 @@ class WorkflowStreamHandler:
                     # Directly yield keepalive event (already formatted)
                     yield data
                     logger.debug(f"[KEEPALIVE] Yielded for thread_id={self.thread_id}")
+
+                    # Drain any new events from old-workflow subagents during idle periods
+                    for event_str in self._drain_old_subagent_events():
+                        self._last_event_time = time.time()
+                        yield event_str
+
                     continue
 
                 # Unpack graph event data
@@ -649,6 +679,11 @@ class WorkflowStreamHandler:
                     self._last_event_time = time.time()
                     yield event
 
+                # Drain any new events from old-workflow subagents after each graph event
+                for event_str in self._drain_old_subagent_events():
+                    self._last_event_time = time.time()
+                    yield event_str
+
             # After workflow completes, emit credit_usage event
             try:
                 from src.server.services.usage_persistence_service import UsagePersistenceService
@@ -850,14 +885,26 @@ class WorkflowStreamHandler:
                 {
                     "id": task.display_id,
                     "agent_id": task.agent_id,
-                    "description": task.description[:100] if task.description else "",
+                    "description": task.description or "",
                     "type": task.subagent_type,
                     "tool_calls": task.total_tool_calls,
                     "current_tool": task.current_tool,
                 }
                 for task in sorted(pending, key=lambda t: t.display_id)
             ]
-            completed_tasks = sorted([task.display_id for task in completed])
+            completed_tasks = []
+            for task in sorted(completed, key=lambda t: t.display_id):
+                entry: dict[str, Any] = {
+                    "id": task.display_id,
+                    "agent_id": task.agent_id,
+                }
+                # Include result text only the first time a task appears completed
+                if task.task_id not in self._sent_result_task_ids and task.result:
+                    from ptc_agent.agent.middleware.background.tools import extract_result_content
+                    _success, content = extract_result_content(task.result)
+                    entry["result"] = content
+                    self._sent_result_task_ids.add(task.task_id)
+                completed_tasks.append(entry)
 
             payload = {
                 "active_tasks": active_tasks,
@@ -899,6 +946,37 @@ class WorkflowStreamHandler:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
+
+    def _drain_old_subagent_events(self) -> Generator[str, None, None]:
+        """Yield new captured events from old-workflow subagents without accumulating.
+
+        Uses per-task cursors to track which events have already been streamed.
+        Events are formatted with accumulate=False so they are NOT included in
+        the new response's persistence — the collector owns persistence for these.
+        """
+        if not self._background_registry or not self._old_task_ids:
+            return
+
+        for task_id in self._old_task_ids:
+            task = self._background_registry.get_by_id(task_id)
+            if task is None:
+                continue
+
+            cursor = self._old_subagent_cursors.get(task_id, 0)
+            events = task.captured_events  # live reference
+            if len(events) <= cursor:
+                continue
+
+            # Slice creates a snapshot — safe even if collector clears later
+            new_events = events[cursor:]
+            for event in new_events:
+                yield self._format_sse_event(
+                    event["event"],
+                    {"thread_id": self.thread_id, **event["data"]},
+                    accumulate=False,
+                )
+
+            self._old_subagent_cursors[task_id] = cursor + len(new_events)
 
     async def _process_message_chunk(
         self,
@@ -1348,13 +1426,16 @@ class WorkflowStreamHandler:
             },
         )
 
-    def _format_sse_event(self, event_type: str, data: dict[str, Any]) -> str:
+    def _format_sse_event(self, event_type: str, data: dict[str, Any], *, accumulate: bool = True) -> str:
         """
         Format data as SSE (Server-Sent Events) string with sequence numbering.
 
         Args:
             event_type: Type of SSE event
             data: Event data dictionary
+            accumulate: Whether to add to the stream event accumulator for persistence.
+                        Set to False for old subagent events that belong to a previous
+                        response and should not be persisted with the current one.
 
         Returns:
             SSE-formatted string (id: seq\\nevent: type\\ndata: json\\n\\n)
@@ -1364,10 +1445,11 @@ class WorkflowStreamHandler:
             data.pop("content")
 
         # Accumulate merged events for persistence (never break streaming)
-        try:
-            self._stream_event_accumulator.add(event_type, data)
-        except Exception as e:
-            logger.debug(f"[WorkflowStreamHandler] Failed to accumulate stream event: {e}")
+        if accumulate:
+            try:
+                self._stream_event_accumulator.add(event_type, data)
+            except Exception as e:
+                logger.debug(f"[WorkflowStreamHandler] Failed to accumulate stream event: {e}")
 
         # Increment sequence number for this event
         self.event_sequence += 1

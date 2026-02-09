@@ -1,7 +1,7 @@
 .trading-center-container {
   width: 100%;
-  height: calc(100vh - 48px);
-  max-height: calc(100vh - 48px);
+  height: 100vh;
+  max-height: 100vh;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -22,6 +22,13 @@
   min-height: 0;
   background-color: #0f1422;
   min-width: 0;
+  overflow: hidden;
+}
+
+.trading-chart-area {
+  flex: 1;
+  display: flex;
+  min-height: 0;
   overflow: hidden;
 }
 

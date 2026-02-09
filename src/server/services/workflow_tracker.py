@@ -27,6 +27,7 @@ class WorkflowStatus(str, Enum):
     ACTIVE = "active"
     DISCONNECTED = "disconnected"
     COMPLETED = "completed"
+    INTERRUPTED = "interrupted"
     CANCELLED = "cancelled"
     UNKNOWN = "unknown"
 
@@ -254,6 +255,42 @@ class WorkflowTracker:
             logger.info(
                 f"[WorkflowTracker] Marked workflow as completed: {thread_id} "
                 f"(TTL: {self.COMPLETED_TTL}s)"
+            )
+
+        return success
+
+    async def mark_interrupted(
+        self,
+        thread_id: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """
+        Mark workflow as interrupted (paused for human-in-the-loop review).
+
+        The workflow is waiting for user input (e.g., plan approval) and is
+        NOT actively streaming. Uses the same TTL as completed workflows.
+
+        Args:
+            thread_id: Thread/workflow identifier
+            metadata: Optional metadata about the interrupt
+
+        Returns:
+            True if successfully marked, False otherwise
+        """
+        if not self.enabled:
+            return False
+
+        success = await self._update_status_with_metadata(
+            thread_id=thread_id,
+            new_status=WorkflowStatus.INTERRUPTED,
+            timestamp_field="interrupted_at",
+            metadata=metadata,
+            ttl=None  # No TTL - workflow can be resumed at any time
+        )
+
+        if success:
+            logger.info(
+                f"[WorkflowTracker] Marked workflow as interrupted: {thread_id}"
             )
 
         return success

@@ -6,6 +6,7 @@ Each workspace has a 1:1 mapping with a Daytona sandbox.
 """
 
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -14,6 +15,58 @@ from psycopg.rows import dict_row
 from src.server.database.conversation import get_db_connection
 
 logger = logging.getLogger(__name__)
+
+# Deterministic namespace for flash workspace UUIDs
+FLASH_WORKSPACE_NAMESPACE = uuid.UUID("f1a50000-0000-5000-e000-f1a500000000")
+
+
+def get_flash_workspace_id(user_id: str) -> str:
+    """Deterministic UUID v5 — same user always gets the same flash workspace ID."""
+    return str(uuid.uuid5(FLASH_WORKSPACE_NAMESPACE, user_id))
+
+
+async def get_or_create_flash_workspace(
+    user_id: str, conn=None
+) -> Dict[str, Any]:
+    """
+    Upsert the user's shared flash workspace. No lookup needed — ID is computed.
+
+    Uses deterministic UUID v5 so the same user always maps to the same workspace.
+    INSERT ... ON CONFLICT DO UPDATE makes this idempotent and race-condition-free.
+    """
+    from psycopg.types.json import Json
+
+    workspace_id = get_flash_workspace_id(user_id)
+    config_json = Json({"flash_mode": True})
+
+    async def _execute(cur):
+        await cur.execute(
+            """
+            INSERT INTO workspaces (workspace_id, user_id, name, description, config, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (workspace_id) DO UPDATE SET updated_at = NOW()
+            RETURNING workspace_id, user_id, name, description, sandbox_id,
+                      status, created_at, updated_at, last_activity_at, stopped_at, config
+            """,
+            (workspace_id, user_id, "Flash", "Flash mode conversations", config_json, "flash"),
+        )
+        return await cur.fetchone()
+
+    try:
+        if conn:
+            async with conn.cursor(row_factory=dict_row) as cur:
+                result = await _execute(cur)
+        else:
+            async with get_db_connection() as conn:
+                async with conn.cursor(row_factory=dict_row) as cur:
+                    result = await _execute(cur)
+
+        logger.info(f"Upserted flash workspace: {workspace_id} for user: {user_id}")
+        return dict(result)
+
+    except Exception as e:
+        logger.error(f"Error upserting flash workspace for user {user_id}: {e}")
+        raise
 
 
 # =============================================================================

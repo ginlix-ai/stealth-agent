@@ -13,9 +13,9 @@
  * @returns {Object} Message state and handlers
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { getAuthUserId } from '@/api/client';
-import { sendChatMessageStream, replayThreadHistory, DEFAULT_USER_ID } from '../utils/api';
+import { sendChatMessageStream, replayThreadHistory, getWorkflowStatus, reconnectToWorkflowStream, sendHitlResponse, DEFAULT_USER_ID } from '../utils/api';
 import { getStoredThreadId, setStoredThreadId } from './utils/threadStorage';
 export { removeStoredThreadId } from './utils/threadStorage';
 import { createUserMessage, createAssistantMessage, insertMessage, appendMessage, updateMessage } from './utils/messageHelpers';
@@ -68,7 +68,7 @@ function isOnboardingRelatedToolSuccess(resultContent) {
   return !!(parsed.risk_preference || parsed.watchlist_item || parsed.portfolio_holding);
 }
 
-export function useChatMessages(workspaceId, initialThreadId = null, updateTodoListCard = null, updateSubagentCard = null, inactivateAllSubagents = null, minimizeInactiveSubagents = null, onOnboardingRelatedToolComplete = null) {
+export function useChatMessages(workspaceId, initialThreadId = null, updateTodoListCard = null, updateSubagentCard = null, inactivateAllSubagents = null, minimizeInactiveSubagents = null, onOnboardingRelatedToolComplete = null, onFileArtifact = null, agentMode = 'ptc') {
   // State
   const [messages, setMessages] = useState([]);
   const [threadId, setThreadId] = useState(() => {
@@ -81,6 +81,11 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [messageError, setMessageError] = useState(null);
+  // HITL (Human-in-the-Loop) plan mode interrupt state
+  const [pendingInterrupt, setPendingInterrupt] = useState(null);
+  // When user clicks Reject on a plan, this stores the interruptId so the next message
+  // sent via handleSendMessage is routed as rejection feedback via hitl_response.
+  const [pendingRejection, setPendingRejection] = useState(null);
 
   // Refs for streaming state
   const currentMessageRef = useRef(null);
@@ -95,6 +100,11 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
   // Track if streaming is in progress to prevent history loading during streaming
   const isStreamingRef = useRef(false);
+
+  // Track the last received SSE event ID for reconnection
+  const lastEventIdRef = useRef(null);
+  // Track reconnection state for UI indicator
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
   // Track if this is a new conversation (for todo list card management)
   const isNewConversationRef = useRef(false);
@@ -195,6 +205,9 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       // This ensures artifacts get the correct chronological order
       let currentActivePairIndex = null;
       let currentActivePairState = null;
+
+      // Track pending HITL interrupt from history to resolve status on next user_message
+      let pendingHistoryInterrupt = null;
 
       // Track subagent events by task ID for this history load
       // Map<taskId, { messages: Array, events: Array, description?: string, type?: string }>
@@ -336,7 +349,29 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         }
 
         // Handle user_message events from history
-        if (eventType === 'user_message' && event.content && hasPairIndex) {
+        // Note: event.content may be empty for HITL resume pairs (plan approval/rejection)
+        if (eventType === 'user_message' && hasPairIndex) {
+          // Resolve pending plan approval status based on this user message
+          if (pendingHistoryInterrupt) {
+            const hasContent = event.content && event.content.trim();
+            const resolvedStatus = hasContent ? 'rejected' : 'approved';
+            const { assistantMessageId: planMsgId, planApprovalId } = pendingHistoryInterrupt;
+
+            setMessages((prev) =>
+              updateMessage(prev, planMsgId, (msg) => ({
+                ...msg,
+                planApprovals: {
+                  ...(msg.planApprovals || {}),
+                  [planApprovalId]: {
+                    ...(msg.planApprovals?.[planApprovalId] || {}),
+                    status: resolvedStatus,
+                  },
+                },
+              }))
+            );
+            pendingHistoryInterrupt = null;
+          }
+
           const pairIndex = event.pair_index;
           const refs = {
             recentlySentTracker: recentlySentTrackerRef.current,
@@ -507,13 +542,15 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 toolCallIdToTaskIdMapRef.current.set(toolCallIds[i], agentIds[i]);
               }
             } else if (toolCallIds.length > 0) {
-              historyPendingTaskToolCallIdsRef.current = toolCallIds;
+              historyPendingTaskToolCallIdsRef.current = [
+                ...historyPendingTaskToolCallIdsRef.current,
+                ...toolCallIds,
+              ];
             }
             taskToolCalls.forEach((toolCall, i) => {
               const agentId = agentIds[i];
-              const toolCallId = toolCall.id;
-              if (!subagentHistoryByTaskId.has(agentId || toolCallId)) {
-                subagentHistoryByTaskId.set(agentId || toolCallId, {
+              if (agentId && !subagentHistoryByTaskId.has(agentId)) {
+                subagentHistoryByTaskId.set(agentId, {
                   messages: [],
                   events: [],
                   description: toolCall.args?.description || '',
@@ -554,10 +591,54 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               content: event.content,
               content_type: event.content_type,
               tool_call_id: event.tool_call_id,
+              artifact: event.artifact,
             },
             pairState,
             setMessages,
           });
+          return;
+        }
+
+        // Handle interrupt events during history replay — inject plan_approval
+        // segment into the current assistant message. Status will be resolved
+        // when the next user_message arrives (empty = approved, has content = rejected).
+        if (eventType === 'interrupt') {
+          const pairIndex = event.pair_index ?? currentActivePairIndex;
+          const interruptAssistantId = pairIndex != null ? assistantMessagesByPair.get(pairIndex) : null;
+          const pairState = pairIndex != null ? pairStateByPair.get(pairIndex) : null;
+
+          if (interruptAssistantId && pairState) {
+            const planApprovalId = event.interrupt_id || `plan-history-${Date.now()}`;
+            const description =
+              event.action_requests?.[0]?.description ||
+              event.action_requests?.[0]?.args?.plan ||
+              'No plan description provided.';
+            pairState.contentOrderCounter++;
+            const order = pairState.contentOrderCounter;
+
+            setMessages((prev) =>
+              updateMessage(prev, interruptAssistantId, (msg) => ({
+                ...msg,
+                contentSegments: [
+                  ...(msg.contentSegments || []),
+                  { type: 'plan_approval', planApprovalId, order },
+                ],
+                planApprovals: {
+                  ...(msg.planApprovals || {}),
+                  [planApprovalId]: {
+                    description,
+                    interruptId: event.interrupt_id,
+                    status: 'approved', // Default; resolved on next user_message
+                  },
+                },
+              }))
+            );
+
+            pendingHistoryInterrupt = {
+              assistantMessageId: interruptAssistantId,
+              planApprovalId,
+            };
+          }
           return;
         }
 
@@ -670,6 +751,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                     content: event.content,
                     content_type: event.content_type,
                     tool_call_id: event.tool_call_id,
+                    artifact: event.artifact,
                   },
                   refs: tempRefs,
                   updateSubagentCard: historyUpdateSubagentCard,
@@ -727,7 +809,87 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     }
   };
 
-  // Load history when workspace or threadId changes
+  /**
+   * Reconnects to an in-progress workflow stream after page refresh.
+   * Creates an assistant message placeholder and processes live SSE events.
+   */
+  const reconnectToStream = async (lastEventId = null) => {
+    if (!threadId || threadId === '__default__') return;
+
+    console.log('[Reconnect] Starting reconnection for thread:', threadId, 'lastEventId:', lastEventId);
+    setIsLoading(true);
+    setIsReconnecting(true);
+    isStreamingRef.current = true;
+
+    // Create assistant message placeholder for reconnected content
+    const assistantMessageId = `assistant-reconnect-${Date.now()}`;
+    contentOrderCounterRef.current = 0;
+    currentReasoningIdRef.current = null;
+    currentToolCallIdRef.current = null;
+
+    const assistantMessage = createAssistantMessage(assistantMessageId);
+    setMessages((prev) => appendMessage(prev, assistantMessage));
+    currentMessageRef.current = assistantMessageId;
+
+    // Prepare refs for event handlers
+    const subagentStateRefs = {};
+    const refs = {
+      contentOrderCounterRef,
+      currentReasoningIdRef,
+      currentToolCallIdRef,
+      updateTodoListCard,
+      isNewConversation: false,
+      subagentStateRefs,
+      updateSubagentCard: updateSubagentCard || (() => {}),
+      isReconnect: true,
+    };
+
+    const processEvent = createStreamEventProcessor(assistantMessageId, refs, getTaskIdFromEvent);
+
+    try {
+      await reconnectToWorkflowStream(threadId, lastEventId, processEvent);
+
+      // Mark message as complete
+      setMessages((prev) =>
+        updateMessage(prev, assistantMessageId, (msg) => ({
+          ...msg,
+          isStreaming: false,
+        }))
+      );
+    } catch (err) {
+      // 404/410 = workflow no longer available, not a real error
+      const status = err.message?.match(/status:\s*(\d+)/)?.[1];
+      if (status === '404' || status === '410') {
+        console.log('[Reconnect] Workflow no longer available (', status, '), cleaning up');
+      } else {
+        console.error('[Reconnect] Error during reconnection:', err);
+        setMessageError(err.message || 'Failed to reconnect to stream');
+      }
+    } finally {
+      setIsLoading(false);
+      setIsReconnecting(false);
+      isStreamingRef.current = false;
+      currentMessageRef.current = null;
+
+      // Clean up empty reconnect messages (no content segments = nothing was streamed)
+      setMessages((prev) => {
+        const msg = prev.find((m) => m.id === assistantMessageId);
+        if (msg && (!msg.contentSegments || msg.contentSegments.length === 0) && !msg.content) {
+          return prev.filter((m) => m.id !== assistantMessageId);
+        }
+        return prev;
+      });
+
+      if (inactivateAllSubagents) {
+        inactivateAllSubagents();
+      }
+      if (minimizeInactiveSubagents) {
+        minimizeInactiveSubagents();
+      }
+    }
+  };
+
+  // Load history when workspace or threadId changes, then check for reconnection
   useEffect(() => {
     console.log('[History] useEffect triggered, workspaceId:', workspaceId, 'threadId:', threadId, 'isStreaming:', isStreamingRef.current);
 
@@ -749,12 +911,34 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       return;
     }
 
-    console.log('[History] Calling loadConversationHistory for thread:', threadId);
-    loadConversationHistory();
+    let cancelled = false;
+
+    const loadAndMaybeReconnect = async () => {
+      console.log('[History] Calling loadConversationHistory for thread:', threadId);
+
+      // Run history load and workflow status check in parallel to save ~100-300ms
+      const [, status] = await Promise.all([
+        loadConversationHistory(),
+        getWorkflowStatus(threadId).catch((statusErr) => {
+          console.log('[Reconnect] Could not check workflow status:', statusErr.message);
+          return { can_reconnect: false };
+        }),
+      ]);
+
+      if (cancelled) return;
+
+      if (status.can_reconnect) {
+        console.log('[Reconnect] Workflow status:', status.status, 'can_reconnect:', status.can_reconnect);
+        await reconnectToStream(lastEventIdRef.current);
+      }
+    };
+
+    loadAndMaybeReconnect();
 
     // Cleanup: Cancel loading if workspace or thread changes or component unmounts
     return () => {
       console.log('[History] Cleanup: canceling history load for workspace:', workspaceId, 'thread:', threadId);
+      cancelled = true;
       historyLoadingRef.current = false;
     };
     // Note: loadConversationHistory is not in deps because it uses workspaceId and threadId from closure
@@ -762,8 +946,574 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   }, [workspaceId, threadId]);
 
   /**
+   * Helper to get taskId from event.
+   * Routes subagent events to the correct task based on agent ID mapping.
+   * Defined at hook level so it can be shared between handleSendMessage and reconnectToStream.
+   */
+  const getTaskIdFromEvent = (event) => {
+    if (!event.agent) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[Stream] Subagent event without agent field:', event);
+      }
+      return null;
+    }
+
+    const agentId = event.agent;
+
+    // Strategy 1: Direct mapping from agent ID to task ID
+    if (agentToTaskMapRef.current.has(agentId)) {
+      const taskId = agentToTaskMapRef.current.get(agentId);
+      mappedTaskIdsRef.current.add(taskId);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Stream] Found task ID from agent mapping:', { agentId, taskId });
+      }
+      return taskId;
+    }
+
+    // Strategy 2: Map via tool_call_id
+    if (event.tool_call_id && toolCallIdToTaskIdMapRef.current.has(event.tool_call_id)) {
+      const taskId = toolCallIdToTaskIdMapRef.current.get(event.tool_call_id);
+      agentToTaskMapRef.current.set(agentId, taskId);
+      mappedTaskIdsRef.current.add(taskId);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Stream] Found task ID from tool_call_id mapping:', { agentId, toolCallId: event.tool_call_id, taskId });
+      }
+      return taskId;
+    }
+
+    // Strategy 3: Match unmapped agents to unmapped tasks
+    const activeTasks = Array.from(activeSubagentTasksRef.current.keys());
+    const agentIdOrder = agentIdOrderRef.current;
+    const mappedTaskIds = mappedTaskIdsRef.current;
+
+    if (!agentIdOrder.includes(agentId)) {
+      agentIdOrder.push(agentId);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Stream] Added agent ID to order list:', { agentId, order: agentIdOrder.length, totalTasks: activeTasks.length });
+      }
+    }
+
+    const unmappedTasks = activeTasks.filter(taskId => !mappedTaskIds.has(taskId));
+    if (unmappedTasks.length > 0) {
+      const taskId = unmappedTasks[0];
+      agentToTaskMapRef.current.set(agentId, taskId);
+      mappedTaskIds.add(taskId);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Stream] Matched agent to unmapped task:', { agentId, taskId });
+      }
+      return taskId;
+    }
+
+    // Strategy 3b: Order-based fallback
+    const agentIndex = agentIdOrder.indexOf(agentId);
+    if (agentIndex >= 0 && agentIndex < activeTasks.length) {
+      const taskId = activeTasks[agentIndex];
+      agentToTaskMapRef.current.set(agentId, taskId);
+      mappedTaskIds.add(taskId);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Stream] Matched agent to task by order (fallback):', { agentId, agentIndex, taskId });
+      }
+      return taskId;
+    }
+
+    // Strategy 4: Single-task fallback
+    if (activeTasks.length === 1) {
+      const taskId = activeTasks[0];
+      agentToTaskMapRef.current.set(agentId, taskId);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Stream] Using single-task fallback for agent:', { agentId, taskId });
+      }
+      return taskId;
+    }
+
+    // Strategy 5: Cannot route
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[Stream] Cannot route subagent event - no mapping found:', {
+        agentId, activeTasks, agentIndex, agentIdOrder,
+        hasToolCallId: !!event.tool_call_id, toolCallId: event.tool_call_id,
+      });
+    }
+    return null;
+  };
+
+  /**
+   * Creates a stream event processor that handles SSE events from the backend.
+   * Used by both handleSendMessage (live) and reconnectToStream (reconnection).
+   *
+   * @param {string} assistantMessageId - The assistant message ID to update
+   * @param {Object} refs - Refs for event handlers (contentOrderCounterRef, etc.)
+   * @param {Function} getTaskIdFromEvent - Helper to route subagent events
+   * @returns {Function} Event handler: (event) => void
+   */
+  const createStreamEventProcessor = (assistantMessageId, refs, getTaskIdFromEvent) => {
+    return (event) => {
+      const eventType = event.event || 'message_chunk';
+
+      // Track last event ID for reconnection
+      if (event._eventId != null) {
+        lastEventIdRef.current = event._eventId;
+      }
+
+      // Debug: Log all events to see what we're receiving
+      if (event.artifact_type || eventType === 'artifact') {
+        console.log('[Stream] Artifact event detected:', { eventType, event, artifact_type: event.artifact_type });
+      }
+
+      // Update thread_id if provided in the event
+      if (event.thread_id && event.thread_id !== threadId && event.thread_id !== '__default__') {
+        setThreadId(event.thread_id);
+        setStoredThreadId(workspaceId, event.thread_id);
+      }
+
+      // Check if this is a subagent event - filter it out from main chat view
+      const isSubagent = isSubagentEvent(event);
+
+      // Debug: Log subagent event detection
+      if (process.env.NODE_ENV === 'development' && isSubagent) {
+        console.log('[Stream] Subagent event detected:', {
+          eventType,
+          agent: event.agent,
+          id: event.id,
+          content_type: event.content_type,
+        });
+      }
+
+      // Handle subagent_status events
+      if (eventType === 'subagent_status') {
+        const subagentStatus = {
+          active_tasks: event.active_tasks || [],
+          completed_tasks: event.completed_tasks || [],
+          active_subagents: event.active_subagents || [],
+          completed_subagents: event.completed_subagents || [],
+        };
+
+        activeSubagentTasksRef.current.clear();
+
+        // Preferred format: active_tasks with agent_id
+        const activeTasks = subagentStatus.active_tasks;
+        const completedTasks = subagentStatus.completed_tasks;
+        const allTaskObjects = activeTasks.filter((t) => t && (t.agent_id || t.agent));
+
+        // Fallback format: active_subagents (array of agent_id strings)
+        const fallbackActive = subagentStatus.active_subagents;
+        const fallbackCompleted = subagentStatus.completed_subagents;
+        const allTasksForMapping = allTaskObjects.length > 0
+          ? allTaskObjects
+          : [...(Array.isArray(fallbackActive) ? fallbackActive : []), ...(Array.isArray(fallbackCompleted) ? fallbackCompleted : [])].filter(Boolean).map((aid) => ({ agent_id: aid, agent: aid }));
+
+        const pendingCalls = pendingTaskToolCallsRef.current;
+        if (pendingCalls.length > 0 && allTasksForMapping.length > 0) {
+          const minLength = Math.min(pendingCalls.length, allTasksForMapping.length);
+          for (let i = 0; i < minLength; i++) {
+            const toolCallId = pendingCalls[i].toolCallId;
+            const task = allTasksForMapping[i];
+            const agentId = task.agent_id || task.agent;
+            if (toolCallId && agentId) {
+              toolCallIdToTaskIdMapRef.current.set(toolCallId, agentId);
+            }
+          }
+          pendingTaskToolCallsRef.current = [];
+        }
+
+        mappedTaskIdsRef.current.clear();
+
+        allTaskObjects.forEach((task) => {
+          const agentId = task.agent_id || task.agent;
+          if (agentId) {
+            activeSubagentTasksRef.current.set(agentId, task);
+            agentToTaskMapRef.current.set(agentId, agentId);
+            if (task.id) {
+              displayIdToAgentIdMapRef.current.set(task.id, agentId);
+            }
+          }
+        });
+
+        if (updateSubagentCard) {
+          handleSubagentStatus({
+            subagentStatus,
+            updateSubagentCard,
+            displayIdToAgentIdMap: displayIdToAgentIdMapRef.current,
+          });
+        }
+
+        // Also update message-level subagentTasks status for completed tasks.
+        // The Task tool_call_result only means "task was launched", not "task finished".
+        // The real completion signal comes here via completed_tasks in subagent_status.
+        const resolvedCompletedAgentIds = new Set();
+        const agentIdToResult = new Map();
+        completedTasks.forEach((item) => {
+          if (typeof item === 'string') {
+            const aid = displayIdToAgentIdMapRef.current.get(item) || item;
+            resolvedCompletedAgentIds.add(aid);
+          } else if (item && typeof item === 'object') {
+            const aid = item.agent_id || item.agent || (item.id && displayIdToAgentIdMapRef.current.get(item.id));
+            if (aid) {
+              resolvedCompletedAgentIds.add(aid);
+              if (item.result) agentIdToResult.set(aid, item.result);
+            }
+          }
+        });
+
+        if (resolvedCompletedAgentIds.size > 0) {
+          // Build reverse map: agentId → toolCallId
+          const agentIdToToolCallId = new Map();
+          toolCallIdToTaskIdMapRef.current.forEach((agentId, toolCallId) => {
+            agentIdToToolCallId.set(agentId, toolCallId);
+          });
+
+          setMessages((prev) =>
+            prev.map((msg) => {
+              if (!msg.subagentTasks || Object.keys(msg.subagentTasks).length === 0) return msg;
+              let changed = false;
+              const updatedSubagentTasks = { ...msg.subagentTasks };
+              resolvedCompletedAgentIds.forEach((agentId) => {
+                const toolCallId = agentIdToToolCallId.get(agentId);
+                if (toolCallId && updatedSubagentTasks[toolCallId]) {
+                  const existing = updatedSubagentTasks[toolCallId];
+                  const result = agentIdToResult.get(agentId) || existing.result || null;
+                  if (existing.status !== 'completed' || (result && !existing.result)) {
+                    updatedSubagentTasks[toolCallId] = { ...existing, status: 'completed', result };
+                    changed = true;
+                  }
+                }
+              });
+              return changed ? { ...msg, subagentTasks: updatedSubagentTasks } : msg;
+            })
+          );
+        }
+
+        return;
+      }
+
+      // Handle subagent message events (filter them out from main chat view)
+      if (isSubagent) {
+        let taskId = getTaskIdFromEvent(event);
+
+        // Debug logging for routing
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Stream] Routing subagent event:', {
+            eventType,
+            agent: event.agent,
+            toolCallId: event.tool_call_id,
+            initialTaskId: taskId,
+            activeTasks: Array.from(activeSubagentTasksRef.current.keys()),
+            agentOrder: agentIdOrderRef.current,
+            agentToTaskMap: Array.from(agentToTaskMapRef.current.entries()),
+            toolCallToTaskMap: Array.from(toolCallIdToTaskIdMapRef.current.entries()),
+          });
+        }
+
+        // If we couldn't determine taskId, try to build mapping from available info
+        if (!taskId && event.agent) {
+          const agentId = event.agent;
+
+          // Strategy: If we have tool_call_id, try to find the corresponding task
+          if (event.tool_call_id && toolCallIdToTaskIdMapRef.current.has(event.tool_call_id)) {
+            const mappedTaskId = toolCallIdToTaskIdMapRef.current.get(event.tool_call_id);
+            // Cache the agent-to-task mapping for future events
+            agentToTaskMapRef.current.set(agentId, mappedTaskId);
+            taskId = mappedTaskId; // Use the mapped task ID
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[Stream] Built agent-to-task mapping from tool_call_id:', {
+                agentId,
+                toolCallId: event.tool_call_id,
+                taskId: mappedTaskId,
+              });
+            }
+          }
+        }
+
+        // If we still don't have a taskId, log and skip this event
+        if (!taskId) {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('[Stream] Cannot route subagent event - no task ID found:', {
+              agent: event.agent,
+              eventType,
+              toolCallId: event.tool_call_id,
+              activeTasks: Array.from(activeSubagentTasksRef.current.keys()),
+              pendingToolCalls: pendingTaskToolCallsRef.current.length,
+              agentOrder: agentIdOrderRef.current,
+              agentToTaskMap: Array.from(agentToTaskMapRef.current.entries()),
+            });
+          }
+          return; // Don't process in main chat view
+        }
+
+        // Log successful routing
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[Stream] Successfully routed subagent event to task:', {
+            agent: event.agent,
+            taskId,
+            eventType,
+          });
+        }
+
+        // Process the event with the correct taskId
+        if (updateSubagentCard) {
+          // Build agent-to-task mapping if not already present
+          if (!agentToTaskMapRef.current.has(event.agent)) {
+            agentToTaskMapRef.current.set(event.agent, taskId);
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[Stream] Built agent-to-task mapping from event:', {
+                agent: event.agent,
+                taskId,
+                eventType,
+              });
+            }
+          }
+
+          const subagentAssistantMessageId = event.id || `subagent-${Date.now()}`;
+
+          if (eventType === 'message_chunk') {
+            const contentType = event.content_type || 'text';
+            handleSubagentMessageChunk({
+              taskId,
+              assistantMessageId: subagentAssistantMessageId,
+              contentType,
+              content: event.content,
+              finishReason: event.finish_reason,
+              refs,
+              updateSubagentCard,
+            });
+          } else if (eventType === 'tool_calls') {
+            handleSubagentToolCalls({
+              taskId,
+              assistantMessageId: subagentAssistantMessageId,
+              toolCalls: event.tool_calls,
+              refs,
+              updateSubagentCard,
+            });
+          } else if (eventType === 'tool_call_result') {
+            const toolCallId = event.tool_call_id;
+
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[Stream] Subagent tool_call_result event:', {
+                taskId,
+                assistantMessageId: subagentAssistantMessageId,
+                toolCallId,
+                eventId: event.id,
+                hasContent: !!event.content,
+              });
+            }
+
+            handleSubagentToolCallResult({
+              taskId,
+              assistantMessageId: subagentAssistantMessageId,
+              toolCallId: toolCallId,
+              result: {
+                content: event.content,
+                content_type: event.content_type,
+                tool_call_id: toolCallId,
+                artifact: event.artifact,
+              },
+              refs,
+              updateSubagentCard,
+            });
+          } else if (eventType === 'artifact') {
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[Stream] Filtering out subagent artifact event:', {
+                artifactType: event.artifact_type,
+                taskId,
+                agent: event.agent,
+              });
+            }
+          }
+        }
+        return; // Don't process subagent events in main chat view
+      }
+
+      // Handle different event types (main agent only)
+      if (isSubagent) {
+        console.warn('[Stream] Subagent event reached main agent handler - this should not happen:', {
+          eventType,
+          agent: event.agent,
+        });
+        return;
+      }
+
+      if (eventType === 'message_chunk') {
+        const contentType = event.content_type || 'text';
+
+        // Handle reasoning_signal events
+        if (contentType === 'reasoning_signal') {
+          const signalContent = event.content || '';
+          if (handleReasoningSignal({
+            assistantMessageId,
+            signalContent,
+            refs,
+            setMessages,
+          })) {
+            return;
+          }
+        }
+
+        // Handle reasoning content chunks
+        if (contentType === 'reasoning' && event.content) {
+          if (handleReasoningContent({
+            assistantMessageId,
+            content: event.content,
+            refs,
+            setMessages,
+          })) {
+            return;
+          }
+        }
+
+        // Handle text content chunks
+        if (contentType === 'text') {
+          if (handleTextContent({
+            assistantMessageId,
+            content: event.content,
+            finishReason: event.finish_reason,
+            refs,
+            setMessages,
+          })) {
+            return;
+          }
+        }
+
+        // Skip other content types
+        return;
+      } else if (eventType === 'error' || event.error) {
+        const errorMessage = event.error || event.message || 'An error occurred while processing your request.';
+        setMessageError(errorMessage);
+        setMessages((prev) =>
+          updateMessage(prev, assistantMessageId, (msg) => ({
+            ...msg,
+            content: msg.content || errorMessage,
+            contentType: 'text',
+            isStreaming: false,
+            error: true,
+          }))
+        );
+      } else if (eventType === 'tool_call_chunks') {
+        return;
+      } else if (eventType === 'artifact') {
+        if (isSubagent) {
+          return;
+        }
+
+        const artifactType = event.artifact_type;
+        console.log('[Stream] Received artifact event:', { artifactType, artifactId: event.artifact_id, payload: event.payload });
+        if (artifactType === 'todo_update') {
+          console.log('[Stream] Processing todo_update artifact for assistant message:', assistantMessageId);
+          const result = handleTodoUpdate({
+            assistantMessageId,
+            artifactType,
+            artifactId: event.artifact_id,
+            payload: event.payload || {},
+            refs,
+            setMessages,
+          });
+          console.log('[Stream] handleTodoUpdate result:', result);
+        } else if (artifactType === 'file_operation' && onFileArtifact) {
+          onFileArtifact(event);
+        }
+        return;
+      } else if (eventType === 'tool_calls') {
+        // Track 'task' tool calls for mapping to task IDs
+        if (event.tool_calls && Array.isArray(event.tool_calls)) {
+          event.tool_calls.forEach((toolCall) => {
+            if ((toolCall.name === 'task' || toolCall.name === 'Task') && toolCall.id) {
+              pendingTaskToolCallsRef.current.push({
+                toolCallId: toolCall.id,
+                timestamp: Date.now(),
+              });
+              if (process.env.NODE_ENV === 'development') {
+                console.log('[Stream] Tracked task tool call for mapping:', {
+                  toolCallId: toolCall.id,
+                  description: toolCall.args?.description,
+                  pendingCount: pendingTaskToolCallsRef.current.length,
+                });
+              }
+            }
+          });
+        }
+
+        handleToolCalls({
+          assistantMessageId,
+          toolCalls: event.tool_calls,
+          finishReason: event.finish_reason,
+          refs,
+          setMessages,
+        });
+      } else if (eventType === 'tool_call_result') {
+        const toolCallId = event.tool_call_id;
+        if (toolCallId && !toolCallIdToTaskIdMapRef.current.has(toolCallId)) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[Stream] Received tool_call_result for task tool:', {
+              toolCallId,
+              agent: event.agent,
+            });
+          }
+        }
+
+        handleToolCallResult({
+          assistantMessageId,
+          toolCallId: event.tool_call_id,
+          result: {
+            content: event.content,
+            content_type: event.content_type,
+            tool_call_id: event.tool_call_id,
+            artifact: event.artifact,
+          },
+          refs,
+          setMessages,
+        });
+
+        // When onboarding-related tools succeed, sync onboarding_completed via PUT
+        if (onOnboardingRelatedToolComplete && isOnboardingRelatedToolSuccess(event.content)) {
+          onOnboardingRelatedToolComplete();
+        }
+      } else if (eventType === 'interrupt') {
+        // HITL plan mode interrupt — agent is paused, waiting for user approval.
+        // Inject a plan_approval content segment into the assistant message so
+        // the plan card renders inline in the message list.
+        const planApprovalId = event.interrupt_id || `plan-${Date.now()}`;
+        const description =
+          event.action_requests?.[0]?.description ||
+          event.action_requests?.[0]?.args?.plan ||
+          'No plan description provided.';
+
+        const order = refs.contentOrderCounterRef.current++;
+
+        setMessages((prev) =>
+          updateMessage(prev, assistantMessageId, (msg) => ({
+            ...msg,
+            contentSegments: [
+              ...(msg.contentSegments || []),
+              { type: 'plan_approval', planApprovalId, order },
+            ],
+            planApprovals: {
+              ...(msg.planApprovals || {}),
+              [planApprovalId]: {
+                description,
+                interruptId: event.interrupt_id,
+                status: 'pending',
+              },
+            },
+            isStreaming: false,
+          }))
+        );
+
+        setPendingInterrupt({
+          interruptId: event.interrupt_id,
+          actionRequests: event.action_requests || [],
+          threadId: event.thread_id,
+          assistantMessageId,
+          planApprovalId,
+        });
+
+        setIsLoading(false);
+        isStreamingRef.current = false;
+        currentMessageRef.current = null;
+      }
+    };
+  };
+
+  /**
    * Handles sending a message and streaming the response
-   * 
+   *
    * @param {string} message - The user's message
    * @param {boolean} planMode - Whether to use plan mode
    * @param {Array|null} additionalContext - Optional additional context for skill loading
@@ -771,6 +1521,25 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   const handleSendMessage = async (message, planMode = false, additionalContext = null) => {
     if (!workspaceId || !message.trim() || isLoading) {
       return;
+    }
+
+    // Intercept: if a plan was rejected, route this message as rejection feedback
+    if (pendingRejection) {
+      const { interruptId } = pendingRejection;
+      setPendingRejection(null);
+
+      // Show user message in chat
+      const userMsg = createUserMessage(message);
+      recentlySentTrackerRef.current.track(message.trim(), userMsg.timestamp, userMsg.id);
+      setMessages((prev) => appendMessage(prev, userMsg));
+
+      // Send as rejection feedback via hitl_response
+      const hitlResponse = {
+        [interruptId]: {
+          decisions: [{ type: 'reject', message: message.trim() }],
+        },
+      };
+      return resumeWithHitlResponse(hitlResponse);
     }
 
     // Create and add user message
@@ -842,144 +1611,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         updateSubagentCard: updateSubagentCard || (() => {}),
       };
 
-      /**
-       * Helper to get taskId from event
-       * Routes subagent events to the correct task based on agent ID mapping
-       * 
-       * Strategy:
-       * 1. Check if we have a direct mapping from agent ID to task ID
-       * 2. If not, try to infer from tool_call_id (for tool_call_result events)
-       * 3. If still not found and only one active task, use it (single-task fallback)
-       * 4. Otherwise, return null (event will be skipped)
-       * 
-       * @param {Object} event - The subagent event
-       * @returns {string|null} - The task ID or null if cannot be determined
-       */
-      const getTaskIdFromEvent = (event) => {
-        if (!event.agent) {
-          if (process.env.NODE_ENV === 'development') {
-            console.warn('[Stream] Subagent event without agent field:', event);
-          }
-          return null;
-        }
-        
-        const agentId = event.agent;
-        
-        // Strategy 1: Check if we have a direct mapping from agent ID to task ID
-        if (agentToTaskMapRef.current.has(agentId)) {
-          const taskId = agentToTaskMapRef.current.get(agentId);
-          // Ensure task is marked as mapped
-          mappedTaskIdsRef.current.add(taskId);
-          if (process.env.NODE_ENV === 'development') {
-            console.log('[Stream] Found task ID from agent mapping:', { agentId, taskId });
-          }
-          return taskId;
-        }
-        
-        // Strategy 2: For tool_call_result events, try to map via tool_call_id
-        // The tool_call_id from task tool calls maps to task IDs
-        if (event.tool_call_id && toolCallIdToTaskIdMapRef.current.has(event.tool_call_id)) {
-          const taskId = toolCallIdToTaskIdMapRef.current.get(event.tool_call_id);
-          // Cache the agent-to-task mapping for future events
-          agentToTaskMapRef.current.set(agentId, taskId);
-          // Mark task as mapped
-          mappedTaskIdsRef.current.add(taskId);
-          if (process.env.NODE_ENV === 'development') {
-            console.log('[Stream] Found task ID from tool_call_id mapping:', {
-              agentId,
-              toolCallId: event.tool_call_id,
-              taskId,
-            });
-          }
-          return taskId;
-        }
-        
-        // Strategy 3: Match agent ID to task ID
-        // When multiple subagents run in parallel, match unmapped agents to unmapped tasks
-        const activeTasks = Array.from(activeSubagentTasksRef.current.keys());
-        const agentIdOrder = agentIdOrderRef.current;
-        const mappedTaskIds = mappedTaskIdsRef.current;
-        
-        // If this is the first time we see this agent ID, add it to the order list
-        if (!agentIdOrder.includes(agentId)) {
-          agentIdOrder.push(agentId);
-          if (process.env.NODE_ENV === 'development') {
-            console.log('[Stream] Added agent ID to order list:', {
-              agentId,
-              order: agentIdOrder.length,
-              totalAgents: agentIdOrder.length,
-              totalTasks: activeTasks.length,
-              mappedTasks: Array.from(mappedTaskIds),
-            });
-          }
-        }
-        
-        // Find unmapped tasks (tasks that haven't been assigned to any agent yet)
-        const unmappedTasks = activeTasks.filter(taskId => !mappedTaskIds.has(taskId));
-        
-        // Strategy 3a: If we have unmapped tasks, assign this agent to the first unmapped task
-        // This handles cases where events arrive out of order
-        if (unmappedTasks.length > 0) {
-          const taskId = unmappedTasks[0]; // Assign to first unmapped task
-          // Cache the mapping for future events
-          agentToTaskMapRef.current.set(agentId, taskId);
-          mappedTaskIds.add(taskId); // Mark this task as mapped
-          if (process.env.NODE_ENV === 'development') {
-            console.log('[Stream] Matched agent to unmapped task:', {
-              agentId,
-              taskId,
-              unmappedTasksCount: unmappedTasks.length,
-              totalTasks: activeTasks.length,
-            });
-          }
-          return taskId;
-        }
-        
-        // Strategy 3b: Fallback to order-based matching if all tasks are mapped
-        // This handles edge cases where we need to remap
-        const agentIndex = agentIdOrder.indexOf(agentId);
-        if (agentIndex >= 0 && agentIndex < activeTasks.length) {
-          const taskId = activeTasks[agentIndex];
-          // Cache the mapping for future events
-          agentToTaskMapRef.current.set(agentId, taskId);
-          mappedTaskIds.add(taskId); // Mark this task as mapped
-          if (process.env.NODE_ENV === 'development') {
-            console.log('[Stream] Matched agent to task by order (fallback):', {
-              agentId,
-              agentIndex,
-              taskId,
-              totalAgents: agentIdOrder.length,
-              totalTasks: activeTasks.length,
-            });
-          }
-          return taskId;
-        }
-        
-        // Strategy 4: Single-task fallback (only if exactly one active task)
-        // This handles cases where mapping hasn't been established yet
-        if (activeTasks.length === 1) {
-          const taskId = activeTasks[0];
-          // Cache the mapping for future events
-          agentToTaskMapRef.current.set(agentId, taskId);
-          if (process.env.NODE_ENV === 'development') {
-            console.log('[Stream] Using single-task fallback for agent:', { agentId, taskId });
-          }
-          return taskId;
-        }
-        
-        // Strategy 5: Multiple active tasks but no mapping - cannot route event
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('[Stream] Cannot route subagent event - no mapping found:', {
-            agentId,
-            activeTasks: activeTasks,
-            agentIndex,
-            agentIdOrder: agentIdOrder,
-            hasToolCallId: !!event.tool_call_id,
-            toolCallId: event.tool_call_id,
-          });
-        }
-        return null;
-      };
+      // Create the event processor using the shared factory
+      const processEvent = createStreamEventProcessor(assistantMessageId, refs, getTaskIdFromEvent);
 
       await sendChatMessageStream(
         message,
@@ -987,396 +1620,10 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         threadId,
         messageHistory,
         planMode,
-        (event) => {
-          const eventType = event.event || 'message_chunk';
-          
-          // Debug: Log all events to see what we're receiving
-          if (event.artifact_type || eventType === 'artifact') {
-            console.log('[Stream] Artifact event detected:', { eventType, event, artifact_type: event.artifact_type });
-          }
-
-          // Update thread_id if provided in the event
-          // Note: We don't trigger history loading here because isStreamingRef is still true
-          // History will be loaded after streaming completes (in the finally block)
-          if (event.thread_id && event.thread_id !== threadId && event.thread_id !== '__default__') {
-            setThreadId(event.thread_id);
-            setStoredThreadId(workspaceId, event.thread_id);
-          }
-
-          // Check if this is a subagent event - filter it out from main chat view
-          const isSubagent = isSubagentEvent(event);
-          
-          // Debug: Log subagent event detection
-          if (process.env.NODE_ENV === 'development' && isSubagent) {
-            console.log('[Stream] Subagent event detected:', {
-              eventType,
-              agent: event.agent,
-              id: event.id,
-              content_type: event.content_type,
-            });
-          }
-          
-          // Handle subagent_status events
-          if (eventType === 'subagent_status') {
-            const subagentStatus = {
-              active_tasks: event.active_tasks || [],
-              completed_tasks: event.completed_tasks || [],
-              active_subagents: event.active_subagents || [],
-              completed_subagents: event.completed_subagents || [],
-            };
-
-            activeSubagentTasksRef.current.clear();
-
-            // Preferred format: active_tasks with agent_id
-            const activeTasks = subagentStatus.active_tasks;
-            const completedTasks = subagentStatus.completed_tasks;
-            const allTaskObjects = activeTasks.filter((t) => t && (t.agent_id || t.agent));
-
-            // Fallback format: active_subagents (array of agent_id strings)
-            const fallbackActive = subagentStatus.active_subagents;
-            const fallbackCompleted = subagentStatus.completed_subagents;
-            const allTasksForMapping = allTaskObjects.length > 0
-              ? allTaskObjects
-              : [...(Array.isArray(fallbackActive) ? fallbackActive : []), ...(Array.isArray(fallbackCompleted) ? fallbackCompleted : [])].filter(Boolean).map((aid) => ({ agent_id: aid, agent: aid }));
-
-            const pendingCalls = pendingTaskToolCallsRef.current;
-            if (pendingCalls.length > 0 && allTasksForMapping.length > 0) {
-              const minLength = Math.min(pendingCalls.length, allTasksForMapping.length);
-              for (let i = 0; i < minLength; i++) {
-                const toolCallId = pendingCalls[i].toolCallId;
-                const task = allTasksForMapping[i];
-                const agentId = task.agent_id || task.agent;
-                if (toolCallId && agentId) {
-                  toolCallIdToTaskIdMapRef.current.set(toolCallId, agentId);
-                }
-              }
-              pendingTaskToolCallsRef.current = [];
-            }
-
-            mappedTaskIdsRef.current.clear();
-
-            allTaskObjects.forEach((task) => {
-              const agentId = task.agent_id || task.agent;
-              if (agentId) {
-                activeSubagentTasksRef.current.set(agentId, task);
-                agentToTaskMapRef.current.set(agentId, agentId);
-                if (task.id) {
-                  displayIdToAgentIdMapRef.current.set(task.id, agentId);
-                }
-              }
-            });
-
-            if (updateSubagentCard) {
-              handleSubagentStatus({
-                subagentStatus,
-                updateSubagentCard,
-                displayIdToAgentIdMap: displayIdToAgentIdMapRef.current,
-              });
-            }
-            return;
-          }
-
-          // Handle subagent message events (filter them out from main chat view)
-          if (isSubagent) {
-            let taskId = getTaskIdFromEvent(event);
-            
-            // Debug logging for routing
-            if (process.env.NODE_ENV === 'development') {
-              console.log('[Stream] Routing subagent event:', {
-                eventType,
-                agent: event.agent,
-                toolCallId: event.tool_call_id,
-                initialTaskId: taskId,
-                activeTasks: Array.from(activeSubagentTasksRef.current.keys()),
-                agentOrder: agentIdOrderRef.current,
-                agentToTaskMap: Array.from(agentToTaskMapRef.current.entries()),
-                toolCallToTaskMap: Array.from(toolCallIdToTaskIdMapRef.current.entries()),
-              });
-            }
-            
-            // If we couldn't determine taskId, try to build mapping from available info
-            if (!taskId && event.agent) {
-              const agentId = event.agent;
-              
-              // Strategy: If we have tool_call_id, try to find the corresponding task
-              if (event.tool_call_id && toolCallIdToTaskIdMapRef.current.has(event.tool_call_id)) {
-                const mappedTaskId = toolCallIdToTaskIdMapRef.current.get(event.tool_call_id);
-                // Cache the agent-to-task mapping for future events
-                agentToTaskMapRef.current.set(agentId, mappedTaskId);
-                taskId = mappedTaskId; // Use the mapped task ID
-                if (process.env.NODE_ENV === 'development') {
-                  console.log('[Stream] Built agent-to-task mapping from tool_call_id:', {
-                    agentId,
-                    toolCallId: event.tool_call_id,
-                    taskId: mappedTaskId,
-                  });
-                }
-              }
-            }
-            
-            // If we still don't have a taskId, log and skip this event
-            if (!taskId) {
-              if (process.env.NODE_ENV === 'development') {
-                console.warn('[Stream] Cannot route subagent event - no task ID found:', {
-                  agent: event.agent,
-                  eventType,
-                  toolCallId: event.tool_call_id,
-                  activeTasks: Array.from(activeSubagentTasksRef.current.keys()),
-                  pendingToolCalls: pendingTaskToolCallsRef.current.length,
-                  agentOrder: agentIdOrderRef.current,
-                  agentToTaskMap: Array.from(agentToTaskMapRef.current.entries()),
-                });
-              }
-              return; // Don't process in main chat view
-            }
-            
-            // Log successful routing
-            if (process.env.NODE_ENV === 'development') {
-              console.log('[Stream] Successfully routed subagent event to task:', {
-                agent: event.agent,
-                taskId,
-                eventType,
-              });
-            }
-            
-            // Process the event with the correct taskId
-            if (updateSubagentCard) {
-              // Build agent-to-task mapping if not already present
-              // This ensures future events from the same agent are routed correctly
-              if (!agentToTaskMapRef.current.has(event.agent)) {
-                agentToTaskMapRef.current.set(event.agent, taskId);
-                if (process.env.NODE_ENV === 'development') {
-                  console.log('[Stream] Built agent-to-task mapping from event:', {
-                    agent: event.agent,
-                    taskId,
-                    eventType,
-                  });
-                }
-              }
-              
-              const subagentAssistantMessageId = event.id || `subagent-${Date.now()}`;
-              
-              if (eventType === 'message_chunk') {
-                const contentType = event.content_type || 'text';
-                handleSubagentMessageChunk({
-                  taskId,
-                  assistantMessageId: subagentAssistantMessageId,
-                  contentType,
-                  content: event.content,
-                  finishReason: event.finish_reason,
-                  refs,
-                  updateSubagentCard,
-                });
-              } else if (eventType === 'tool_calls') {
-                handleSubagentToolCalls({
-                  taskId,
-                  assistantMessageId: subagentAssistantMessageId,
-                  toolCalls: event.tool_calls,
-                  refs,
-                  updateSubagentCard,
-                });
-              } else if (eventType === 'tool_call_result') {
-                // Extract tool_call_id from event
-                const toolCallId = event.tool_call_id;
-                
-                if (process.env.NODE_ENV === 'development') {
-                  console.log('[Stream] Subagent tool_call_result event:', {
-                    taskId,
-                    assistantMessageId: subagentAssistantMessageId,
-                    toolCallId,
-                    eventId: event.id,
-                    hasContent: !!event.content,
-                  });
-                }
-                
-                handleSubagentToolCallResult({
-                  taskId,
-                  assistantMessageId: subagentAssistantMessageId,
-                  toolCallId: toolCallId,
-                  result: {
-                    content: event.content,
-                    content_type: event.content_type,
-                    tool_call_id: toolCallId,
-                  },
-                  refs,
-                  updateSubagentCard,
-                });
-              } else if (eventType === 'artifact') {
-                // Subagent artifact events (e.g., todo_update) - skip them
-                // They should be handled by the subagent's own message processing
-                // For now, we just filter them out to prevent duplication
-                if (process.env.NODE_ENV === 'development') {
-                  console.log('[Stream] Filtering out subagent artifact event:', {
-                    artifactType: event.artifact_type,
-                    taskId,
-                    agent: event.agent,
-                  });
-                }
-              }
-            }
-            return; // Don't process subagent events in main chat view
-          }
-
-          // Handle different event types (main agent only)
-          // Double-check that this is NOT a subagent event (safety check)
-          if (isSubagent) {
-            // This shouldn't happen if the code above is correct, but add safety check
-            console.warn('[Stream] Subagent event reached main agent handler - this should not happen:', {
-              eventType,
-              agent: event.agent,
-            });
-            return;
-          }
-          
-          if (eventType === 'message_chunk') {
-            const contentType = event.content_type || 'text';
-
-            // Handle reasoning_signal events
-            if (contentType === 'reasoning_signal') {
-              const signalContent = event.content || '';
-              if (handleReasoningSignal({
-                assistantMessageId,
-                signalContent,
-                refs,
-                setMessages,
-              })) {
-                return;
-              }
-            }
-
-            // Handle reasoning content chunks
-            if (contentType === 'reasoning' && event.content) {
-              if (handleReasoningContent({
-                assistantMessageId,
-                content: event.content,
-                refs,
-                setMessages,
-              })) {
-                return;
-              }
-            }
-
-            // Handle text content chunks
-            if (contentType === 'text') {
-              if (handleTextContent({
-                assistantMessageId,
-                content: event.content,
-                finishReason: event.finish_reason,
-                refs,
-                setMessages,
-              })) {
-                return;
-              }
-            }
-
-            // Skip other content types
-            return;
-          } else if (eventType === 'error' || event.error) {
-            // Handle errors
-            const errorMessage = event.error || event.message || 'An error occurred while processing your request.';
-            setMessageError(errorMessage);
-            setMessages((prev) =>
-              updateMessage(prev, assistantMessageId, (msg) => ({
-                ...msg,
-                content: msg.content || errorMessage,
-                contentType: 'text',
-                isStreaming: false,
-                error: true,
-              }))
-            );
-          } else if (eventType === 'tool_call_chunks') {
-            // Filter out tool_call_chunks events
-            return;
-          } else if (eventType === 'artifact') {
-            // Check if artifact is from subagent - if so, skip it (subagent artifacts are handled separately)
-            if (isSubagent) {
-              return; // Don't process subagent artifacts in main chat view
-            }
-            
-            // Handle artifact events (e.g., todo_update) - main agent only
-            const artifactType = event.artifact_type;
-            console.log('[Stream] Received artifact event:', { artifactType, artifactId: event.artifact_id, payload: event.payload });
-            if (artifactType === 'todo_update') {
-              console.log('[Stream] Processing todo_update artifact for assistant message:', assistantMessageId);
-              const result = handleTodoUpdate({
-                assistantMessageId,
-                artifactType,
-                artifactId: event.artifact_id,
-                payload: event.payload || {},
-                refs,
-                setMessages,
-              });
-              console.log('[Stream] handleTodoUpdate result:', result);
-            }
-            return;
-          } else if (eventType === 'tool_calls') {
-            // Before handling tool calls, check if any are 'task' tool calls
-            // and track them for mapping to task IDs when subagent_status is received
-            if (event.tool_calls && Array.isArray(event.tool_calls)) {
-              event.tool_calls.forEach((toolCall) => {
-                if ((toolCall.name === 'task' || toolCall.name === 'Task') && toolCall.id) {
-                  // Track this tool call ID - it will be mapped to a task ID
-                  // when we receive the subagent_status event
-                  pendingTaskToolCallsRef.current.push({
-                    toolCallId: toolCall.id,
-                    timestamp: Date.now(),
-                  });
-                  if (process.env.NODE_ENV === 'development') {
-                    console.log('[Stream] Tracked task tool call for mapping:', {
-                      toolCallId: toolCall.id,
-                      description: toolCall.args?.description,
-                      pendingCount: pendingTaskToolCallsRef.current.length,
-                    });
-                  }
-                }
-              });
-            }
-            
-            handleToolCalls({
-              assistantMessageId,
-              toolCalls: event.tool_calls,
-              finishReason: event.finish_reason,
-              refs,
-              setMessages,
-            });
-          } else if (eventType === 'tool_call_result') {
-            // Check if this is a tool_call_result for a 'task' tool call
-            // The tool_call_id maps to a task ID, and we can use this to build
-            // the agent-to-task mapping when we see the first subagent event
-            const toolCallId = event.tool_call_id;
-            if (toolCallId && !toolCallIdToTaskIdMapRef.current.has(toolCallId)) {
-              // Try to find the corresponding task ID from active tasks
-              // The task ID should match the tool call ID pattern or be in subagent_status
-              // For now, we'll wait for subagent_status to establish the mapping
-              // But we can store the tool call ID for later use
-              if (process.env.NODE_ENV === 'development') {
-                console.log('[Stream] Received tool_call_result for task tool:', {
-                  toolCallId,
-                  agent: event.agent,
-                });
-              }
-            }
-            
-            handleToolCallResult({
-              assistantMessageId,
-              toolCallId: event.tool_call_id,
-              result: {
-                content: event.content,
-                content_type: event.content_type,
-                tool_call_id: event.tool_call_id,
-              },
-              refs,
-              setMessages,
-            });
-
-            // When onboarding-related tools succeed, sync onboarding_completed via PUT
-            if (onOnboardingRelatedToolComplete && isOnboardingRelatedToolSuccess(event.content)) {
-              onOnboardingRelatedToolComplete();
-            }
-          }
-        },
+        processEvent,
         getAuthUserId() || DEFAULT_USER_ID,
-        additionalContext
+        additionalContext,
+        agentMode
       );
 
       // Mark message as complete
@@ -1423,13 +1670,142 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         }
       };
 
+  /**
+   * Resumes an interrupted workflow with an HITL response (approve or reject).
+   * Follows the same pattern as handleSendMessage but sends messages: [] with hitl_response.
+   */
+  const resumeWithHitlResponse = useCallback(async (hitlResponse) => {
+    setPendingInterrupt(null);
+
+    // Create assistant message placeholder
+    const assistantMessageId = `assistant-hitl-${Date.now()}`;
+    contentOrderCounterRef.current = 0;
+    currentReasoningIdRef.current = null;
+    currentToolCallIdRef.current = null;
+
+    const assistantMessage = createAssistantMessage(assistantMessageId);
+    setMessages((prev) => appendMessage(prev, assistantMessage));
+    currentMessageRef.current = assistantMessageId;
+
+    setIsLoading(true);
+    setMessageError(null);
+    isStreamingRef.current = true;
+
+    // Prepare refs for event handlers
+    const subagentStateRefs = {};
+    const refs = {
+      contentOrderCounterRef,
+      currentReasoningIdRef,
+      currentToolCallIdRef,
+      updateTodoListCard,
+      isNewConversation: false,
+      subagentStateRefs,
+      updateSubagentCard: updateSubagentCard || (() => {}),
+    };
+
+    const processEvent = createStreamEventProcessor(assistantMessageId, refs, getTaskIdFromEvent);
+
+    try {
+      await sendHitlResponse(
+        workspaceId,
+        threadId,
+        hitlResponse,
+        processEvent,
+        getAuthUserId() || DEFAULT_USER_ID
+      );
+
+      // Mark message as complete
+      setMessages((prev) =>
+        updateMessage(prev, assistantMessageId, (msg) => ({
+          ...msg,
+          isStreaming: false,
+        }))
+      );
+    } catch (err) {
+      console.error('[HITL] Error resuming workflow:', err);
+      setMessageError(err.message || 'Failed to resume workflow');
+      setMessages((prev) =>
+        updateMessage(prev, assistantMessageId, (msg) => ({
+          ...msg,
+          content: msg.content || 'Failed to resume workflow. Please try again.',
+          isStreaming: false,
+          error: true,
+        }))
+      );
+    } finally {
+      setIsLoading(false);
+      currentMessageRef.current = null;
+      isStreamingRef.current = false;
+
+      if (inactivateAllSubagents) {
+        inactivateAllSubagents();
+      }
+      if (minimizeInactiveSubagents) {
+        minimizeInactiveSubagents();
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, minimizeInactiveSubagents]);
+
+  const handleApproveInterrupt = useCallback(() => {
+    if (!pendingInterrupt) return;
+    const { interruptId, assistantMessageId, planApprovalId } = pendingInterrupt;
+
+    // Update plan card status to "approved"
+    setMessages((prev) =>
+      updateMessage(prev, assistantMessageId, (msg) => ({
+        ...msg,
+        planApprovals: {
+          ...(msg.planApprovals || {}),
+          [planApprovalId]: {
+            ...(msg.planApprovals?.[planApprovalId] || {}),
+            status: 'approved',
+          },
+        },
+      }))
+    );
+
+    const hitlResponse = {
+      [interruptId]: { decisions: [{ type: 'approve' }] },
+    };
+    resumeWithHitlResponse(hitlResponse);
+  }, [pendingInterrupt, resumeWithHitlResponse]);
+
+  const handleRejectInterrupt = useCallback(() => {
+    if (!pendingInterrupt) return;
+    const { interruptId, assistantMessageId, planApprovalId } = pendingInterrupt;
+
+    // Update plan card status to "rejected"
+    setMessages((prev) =>
+      updateMessage(prev, assistantMessageId, (msg) => ({
+        ...msg,
+        planApprovals: {
+          ...(msg.planApprovals || {}),
+          [planApprovalId]: {
+            ...(msg.planApprovals?.[planApprovalId] || {}),
+            status: 'rejected',
+          },
+        },
+      }))
+    );
+
+    // Store interruptId so next handleSendMessage routes as rejection feedback
+    setPendingRejection({ interruptId });
+    setPendingInterrupt(null);
+  }, [pendingInterrupt]);
+
   return {
     messages,
     threadId,
     isLoading,
     isLoadingHistory,
+    isReconnecting,
     messageError,
     handleSendMessage,
+    pendingInterrupt,
+    pendingRejection,
+    handleApproveInterrupt,
+    handleRejectInterrupt,
     // Resolve subagentId (e.g. toolCallId from segment) to stable agent_id for card operations.
     resolveSubagentIdToAgentId: (subagentId) =>
       toolCallIdToTaskIdMapRef.current.get(subagentId) || subagentId,

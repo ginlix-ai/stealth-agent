@@ -30,6 +30,27 @@ export async function deleteWorkspace(workspaceId) {
   await api.delete(`/api/v1/workspaces/${id}`);
 }
 
+export async function getWorkspace(workspaceId, userId = DEFAULT_USER_ID) {
+  if (!workspaceId) throw new Error('Workspace ID is required');
+  const { data } = await api.get(`/api/v1/workspaces/${workspaceId}`, {
+    headers: headers(userId),
+  });
+  return data;
+}
+
+/**
+ * Ensure the shared flash workspace exists for the current user.
+ * Idempotent — safe to call on every app load.
+ * @param {string} userId
+ * @returns {Promise<Object>} Flash workspace record
+ */
+export async function getFlashWorkspace(userId = DEFAULT_USER_ID) {
+  const { data } = await api.post('/api/v1/workspaces/flash', null, {
+    headers: headers(userId),
+  });
+  return data;
+}
+
 // --- Conversations ---
 
 export async function getConversations(userId = DEFAULT_USER_ID, limit = 50, offset = 0) {
@@ -110,6 +131,7 @@ async function streamFetch(url, opts, onEvent) {
       try {
         const d = JSON.parse(line.slice(6));
         if (ev.event) d.event = ev.event;
+        if (ev.id != null) d._eventId = parseInt(ev.id, 10) || ev.id;
         onEvent(d);
       } catch (e) {
         console.warn('[api] SSE parse error', e, line);
@@ -187,6 +209,47 @@ export async function sendChatMessageStream(
 }
 
 /**
+ * Get the current status of a workflow for a thread
+ * @param {string} threadId - The thread ID to check
+ * @returns {Promise<Object>} Workflow status with can_reconnect, status, etc.
+ */
+export async function getWorkflowStatus(threadId) {
+  if (!threadId) throw new Error('Thread ID is required');
+  const { data } = await api.get(`/api/v1/workflow/${threadId}/status`);
+  return data;
+}
+
+/**
+ * Reconnect to an in-progress workflow stream (replays buffered events, then live stream)
+ * @param {string} threadId - The thread ID to reconnect to
+ * @param {number|null} lastEventId - Last received event ID for deduplication
+ * @param {Function} onEvent - Callback for each SSE event
+ */
+export async function reconnectToWorkflowStream(threadId, lastEventId = null, onEvent = () => {}) {
+  if (!threadId) throw new Error('Thread ID is required');
+  const queryParam = lastEventId != null ? `?last_event_id=${lastEventId}` : '';
+  await streamFetch(
+    `/api/v1/chat/stream/${threadId}/reconnect${queryParam}`,
+    { method: 'GET' },
+    onEvent
+  );
+}
+
+/**
+ * Soft-interrupt the workflow for a thread (pauses main agent, keeps subagents running)
+ * @param {string} threadId - The thread ID to interrupt
+ * @param {string} userId - User ID (defaults to DEFAULT_USER_ID)
+ * @returns {Promise<Object>} Response data
+ */
+export async function softInterruptWorkflow(threadId, userId = DEFAULT_USER_ID) {
+  if (!threadId) throw new Error('Thread ID is required');
+  const { data } = await api.post(`/api/v1/workflow/${threadId}/soft-interrupt`, null, {
+    headers: headers(userId),
+  });
+  return data;
+}
+
+/**
  * List files in a workspace sandbox
  * @param {string} workspaceId
  * @param {string} dirPath - e.g. "results"
@@ -228,6 +291,21 @@ export async function downloadWorkspaceFile(workspaceId, filePath) {
 }
 
 /**
+ * Download a file from workspace sandbox as ArrayBuffer (for client-side parsing)
+ * @param {string} workspaceId
+ * @param {string} filePath
+ * @returns {Promise<ArrayBuffer>}
+ */
+export async function downloadWorkspaceFileAsArrayBuffer(workspaceId, filePath) {
+  const response = await api.get(`/api/v1/workspaces/${workspaceId}/files/download`, {
+    params: { path: filePath },
+    headers: headers(getAuthUserId() || DEFAULT_USER_ID),
+    responseType: 'arraybuffer',
+  });
+  return response.data;
+}
+
+/**
  * Trigger file download in browser
  * @param {string} workspaceId
  * @param {string} filePath
@@ -242,4 +320,65 @@ export async function triggerFileDownload(workspaceId, filePath) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(blobUrl);
+}
+
+/**
+ * Upload a file to workspace sandbox
+ * @param {string} workspaceId
+ * @param {File} file - Browser File object
+ * @param {string|null} destPath - Destination path in sandbox (optional)
+ * @param {Function|null} onProgress - Progress callback: (percent: number) => void
+ * @returns {Promise<Object>} Upload response data
+ */
+/**
+ * Send an HITL (Human-in-the-Loop) resume response to continue an interrupted workflow.
+ * Used after the agent triggers a plan-mode interrupt and the user approves or rejects.
+ *
+ * @param {string} workspaceId - The workspace ID
+ * @param {string} threadId - The thread ID of the interrupted workflow
+ * @param {Object} hitlResponse - The HITL response payload, e.g. { [interruptId]: { decisions: [{ type: "approve" }] } }
+ * @param {Function} onEvent - Callback for each SSE event
+ * @param {string} userId - User ID (defaults to DEFAULT_USER_ID)
+ */
+export async function sendHitlResponse(workspaceId, threadId, hitlResponse, onEvent = () => {}, userId = DEFAULT_USER_ID) {
+  const body = {
+    workspace_id: workspaceId,
+    thread_id: threadId,
+    messages: [],
+    hitl_response: hitlResponse,
+  };
+  await streamFetch(
+    '/api/v1/chat/stream',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        ...headers(userId),
+      },
+      body: JSON.stringify(body),
+    },
+    onEvent
+  );
+}
+
+export async function uploadWorkspaceFile(workspaceId, file, destPath = null, onProgress = null) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const params = destPath ? { path: destPath } : {};
+  const { data } = await api.post(
+    `/api/v1/workspaces/${workspaceId}/files/upload`,
+    formData,
+    {
+      params,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        ...headers(getAuthUserId() || DEFAULT_USER_ID),
+      },
+      onUploadProgress: onProgress
+        ? (e) => onProgress(Math.round((e.loaded * 100) / (e.total || 1)))
+        : undefined,
+    }
+  );
+  return data;
 }
