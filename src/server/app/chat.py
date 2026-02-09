@@ -68,6 +68,7 @@ from src.server.utils.skill_context import (
     parse_skill_contexts,
     build_skill_prefix_message,
 )
+from src.server.utils.image_context import parse_image_contexts, inject_image_context
 from src.server.utils.api import CurrentUserId
 
 # Locale/timezone configuration
@@ -315,6 +316,12 @@ async def _astream_flash_workflow(
                 messages.append(
                     {"role": msg.role, "content": content_items or str(msg.content)}
                 )
+
+        # Image Context Injection
+        image_contexts = parse_image_contexts(request.additional_context)
+        if image_contexts:
+            messages = inject_image_context(messages, image_contexts)
+            logger.info(f"[FLASH_CHAT] Image context injected: {len(image_contexts)} image(s)")
 
         input_state = {"messages": messages}
 
@@ -663,6 +670,12 @@ async def _astream_workflow(
                 logger.info(
                     f"[PTC_CHAT] Skill context injected: {[s.name for s in skill_contexts]}"
                 )
+
+        # Image Context Injection
+        image_contexts = parse_image_contexts(request.additional_context)
+        if image_contexts and not request.hitl_response:
+            messages = inject_image_context(messages, image_contexts)
+            logger.info(f"[PTC_CHAT] Image context injected: {len(image_contexts)} image(s)")
 
         # Build input state or resume command
         if request.hitl_response:
