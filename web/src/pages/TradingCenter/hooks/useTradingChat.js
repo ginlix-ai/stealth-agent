@@ -10,7 +10,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { sendFlashChatMessage, deleteTradingThread, deleteFlashWorkspaces } from '../utils/api';
+import { sendFlashChatMessage, deleteTradingThread } from '../utils/api';
 
 const DEFAULT_USER_ID = 'test_user_001';
 
@@ -567,7 +567,7 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
     }
   };
 
-  // Cleanup: Delete thread and flash workspaces on unmount, clear flush timer
+  // Cleanup: Delete thread on unmount, clear flush timer
   useEffect(() => {
     return () => {
       // Clear batch flush timer
@@ -578,10 +578,6 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
           console.warn('[TradingChat] Error deleting thread on unmount:', err);
         });
       }
-      // Delete all flash workspaces
-      deleteFlashWorkspaces(userId).catch((err) => {
-        console.warn('[TradingChat] Error deleting flash workspaces on unmount:', err);
-      });
     };
   }, [userId]);
 

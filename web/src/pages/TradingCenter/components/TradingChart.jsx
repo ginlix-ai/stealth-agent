@@ -12,6 +12,7 @@ import {
   OVERLAY_COLORS, OVERLAY_LABELS,
 } from '../utils/chartConstants';
 import CrosshairTooltip from './CrosshairTooltip';
+import TradingViewWidget from './TradingViewWidget';
 import { useChartAnnotations } from '../hooks/useChartAnnotations';
 import { useChartOverlays } from '../hooks/useChartOverlays';
 
@@ -28,6 +29,7 @@ const TradingChart = React.memo(forwardRef(({
 }, ref) => {
   const chartContainerRef = useRef();
   const rsiChartContainerRef = useRef();
+  const lightWrapperRef = useRef();
   const chartRef = useRef();
   const rsiChartRef = useRef();
   const candlestickSeriesRef = useRef();
@@ -45,6 +47,9 @@ const TradingChart = React.memo(forwardRef(({
   const [enabledMaPeriods, setEnabledMaPeriods] = useState(DEFAULT_ENABLED_MA);
   const [rsiPeriod, setRsiPeriod] = useState(14);
   const [maValues, setMaValues] = useState({});
+
+  // Chart mode: 'custom' (our lightweight-charts) or 'tradingview' (full TV widget)
+  const [chartMode, setChartMode] = useState('custom');
 
   // Chart feature toggles
   const [priceScaleMode, setPriceScaleMode] = useState(PriceScaleMode.Normal);
@@ -85,6 +90,19 @@ const TradingChart = React.memo(forwardRef(({
   // --- Series markers via hook ---
   useChartOverlays(candlestickSeriesRef, chartDataForHooks, earningsData, overlayData, overlayVisibility, symbol);
 
+  // Temporarily reveal the hidden Light chart for capture, then restore.
+  // Since it's behind the TV widget (z-index: -1), no visual flash occurs.
+  const revealForCapture = useCallback(async (fn) => {
+    const wrapper = lightWrapperRef.current;
+    const needsReveal = wrapper && wrapper.classList.contains('light-chart-hidden');
+    if (needsReveal) wrapper.style.visibility = 'visible';
+    try {
+      return await fn();
+    } finally {
+      if (needsReveal) wrapper.style.visibility = '';
+    }
+  }, []);
+
   useImperativeHandle(ref, () => ({
     captureChart: async () => {
       // Use native takeScreenshot for main chart download
@@ -100,37 +118,42 @@ const TradingChart = React.memo(forwardRef(({
           console.warn('Native takeScreenshot failed, falling back to html2canvas:', err);
         }
       }
-      // Fallback to html2canvas
+      // Fallback to html2canvas (temporarily reveal if hidden)
       if (!chartContainerRef.current) return null;
-      try {
-        const canvas = await html2canvas(chartContainerRef.current, {
-          backgroundColor: CHART_BG,
-          scale: 2,
-          logging: false,
-        });
-        return new Promise((resolve) => {
-          canvas.toBlob((blob) => resolve(blob), 'image/png');
-        });
-      } catch (err) {
-        console.error('Chart capture failed:', err);
-        return null;
-      }
+      return revealForCapture(async () => {
+        try {
+          const canvas = await html2canvas(chartContainerRef.current, {
+            backgroundColor: CHART_BG,
+            scale: 2,
+            logging: false,
+          });
+          return new Promise((resolve) => {
+            canvas.toBlob((blob) => resolve(blob), 'image/png');
+          });
+        } catch (err) {
+          console.error('Chart capture failed:', err);
+          return null;
+        }
+      });
     },
     captureChartAsDataUrl: async () => {
-      // Keep html2canvas for combined main+RSI for LLM context
+      // Capture the Light chart (main + RSI) for LLM context.
+      // Temporarily reveal the hidden wrapper so html2canvas can render it.
       const container = chartContainerRef.current?.parentElement; // .charts-container
       if (!container) return null;
-      try {
-        const canvas = await html2canvas(container, {
-          backgroundColor: CHART_BG,
-          scale: 1,
-          logging: false,
-        });
-        return canvas.toDataURL('image/jpeg', 0.85);
-      } catch (err) {
-        console.error('Chart capture failed:', err);
-        return null;
-      }
+      return revealForCapture(async () => {
+        try {
+          const canvas = await html2canvas(container, {
+            backgroundColor: CHART_BG,
+            scale: 1,
+            logging: false,
+          });
+          return canvas.toDataURL('image/jpeg', 0.85);
+        } catch (err) {
+          console.error('Chart capture failed:', err);
+          return null;
+        }
+      });
     },
     getChartMetadata: () => {
       const data = allDataRef.current;
@@ -148,6 +171,7 @@ const TradingChart = React.memo(forwardRef(({
       const lastCandle = data[data.length - 1];
 
       return {
+        chartMode: chartMode === 'tradingview' ? 'Advanced (TradingView)' : 'Light',
         dateRange: { from: formatDate(firstTime), to: formatDate(lastTime) },
         dataPoints: data.length,
         enabledMAs,
@@ -747,30 +771,11 @@ const TradingChart = React.memo(forwardRef(({
     setPriceScaleMode((prev) => prev === mode ? PriceScaleMode.Normal : mode);
   }, []);
 
+  const isTV = chartMode === 'tradingview';
+
   return (
     <div className="trading-chart-container">
-      <div className="chart-header">
-        <div className="chart-info">
-          <span className="chart-label">{interval === '1day' ? 'Daily' : INTERVALS.find(i => i.key === interval)?.label} Summary & Indicators</span>
-          {lastUpdateTime && (
-            <span className="update-time">
-              Last update: {lastUpdateTime.toLocaleTimeString()}
-            </span>
-          )}
-        </div>
-        <div className="chart-indicators">
-          {MA_CONFIGS.filter(({ period }) => enabledMaPeriods.includes(period)).map(({ period, color, label }) => (
-            <span className="indicator-item" key={period}>
-              <span className="indicator-color" style={{ backgroundColor: color }} />
-              {label}: {maValues[period] ?? '\u2014'}
-            </span>
-          ))}
-          <span className="indicator-item">
-            <span className="indicator-color" style={{ backgroundColor: '#667eea' }} />
-            RSI ({rsiPeriod}): {rsiValue ?? '\u2014'}
-          </span>
-        </div>
-      </div>
+      {/* ---- Single toolbar: intervals, toggles, indicator values, tool buttons, mode switcher ---- */}
       <div className="chart-tools">
         <div className="chart-tools-left">
           <div className="interval-selector">
@@ -785,134 +790,192 @@ const TradingChart = React.memo(forwardRef(({
               </button>
             ))}
           </div>
-          <div className="indicator-toggles">
-            <span className="indicator-toggles-label">MA</span>
-            {MA_CONFIGS.map(({ period, color, label }) => (
-              <button
-                key={period}
-                type="button"
-                className={`indicator-toggle-btn${enabledMaPeriods.includes(period) ? ' indicator-toggle-active' : ''}`}
-                style={enabledMaPeriods.includes(period) ? { color, borderColor: color } : undefined}
-                onClick={() => handleToggleMa(period)}
-              >
-                {period}
-              </button>
-            ))}
-          </div>
-          <div className="indicator-toggles">
-            <span className="indicator-toggles-label">RSI</span>
-            {RSI_PERIODS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                className={`indicator-toggle-btn${rsiPeriod === p ? ' indicator-toggle-active' : ''}`}
-                style={rsiPeriod === p ? { color: '#667eea', borderColor: '#667eea' } : undefined}
-                onClick={() => handleChangeRsiPeriod(p)}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-          <div className="indicator-toggles">
-            <span className="indicator-toggles-label">Overlay</span>
-            {Object.entries(OVERLAY_LABELS).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                className={`indicator-toggle-btn${overlayVisibility[key] ? ' indicator-toggle-active' : ''}`}
-                style={overlayVisibility[key] ? { color: OVERLAY_COLORS[key], borderColor: OVERLAY_COLORS[key] } : undefined}
-                onClick={() => handleToggleOverlay(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {!isTV && (
+            <>
+              <div className="indicator-toggles">
+                <span className="indicator-toggles-label">MA</span>
+                {MA_CONFIGS.map(({ period, color, label }) => (
+                  <button
+                    key={period}
+                    type="button"
+                    className={`indicator-toggle-btn${enabledMaPeriods.includes(period) ? ' indicator-toggle-active' : ''}`}
+                    style={enabledMaPeriods.includes(period) ? { color, borderColor: color } : undefined}
+                    onClick={() => handleToggleMa(period)}
+                  >
+                    {period}
+                  </button>
+                ))}
+              </div>
+              <div className="indicator-toggles">
+                <span className="indicator-toggles-label">RSI</span>
+                {RSI_PERIODS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className={`indicator-toggle-btn${rsiPeriod === p ? ' indicator-toggle-active' : ''}`}
+                    style={rsiPeriod === p ? { color: '#667eea', borderColor: '#667eea' } : undefined}
+                    onClick={() => handleChangeRsiPeriod(p)}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <div className="indicator-toggles">
+                <span className="indicator-toggles-label">Overlay</span>
+                {Object.entries(OVERLAY_LABELS).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`indicator-toggle-btn${overlayVisibility[key] ? ' indicator-toggle-active' : ''}`}
+                    style={overlayVisibility[key] ? { color: OVERLAY_COLORS[key], borderColor: OVERLAY_COLORS[key] } : undefined}
+                    onClick={() => handleToggleOverlay(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
-        <div className="chart-tool-buttons">
-          <button
-            type="button"
-            className={`chart-tool-btn${priceScaleMode === PriceScaleMode.Logarithmic ? ' chart-tool-btn-active' : ''}`}
-            onClick={() => handleTogglePriceScale(PriceScaleMode.Logarithmic)}
-            title="Log Scale"
-          >
-            Log
-          </button>
-          <button
-            type="button"
-            className={`chart-tool-btn${priceScaleMode === PriceScaleMode.Percentage ? ' chart-tool-btn-active' : ''}`}
-            onClick={() => handleTogglePriceScale(PriceScaleMode.Percentage)}
-            title="Percentage Scale"
-          >
-            %
-          </button>
-          <button
-            type="button"
-            className={`chart-tool-btn${magnetMode ? ' chart-tool-btn-active' : ''}`}
-            onClick={() => setMagnetMode((v) => !v)}
-            title="Magnet Mode"
-          >
-            M
-          </button>
-          <button
-            type="button"
-            className={`chart-tool-btn${showBaseline ? ' chart-tool-btn-active' : ''}`}
-            onClick={() => setShowBaseline((v) => !v)}
-            title="Baseline vs Previous Close"
-          >
-            B
-          </button>
-          <button type="button" className="chart-tool-btn" onClick={handleZoomIn} title="Zoom In">+</button>
-          <button type="button" className="chart-tool-btn" onClick={handleZoomOut} title="Zoom Out">&minus;</button>
-          <button
-            type="button"
-            className={`chart-tool-btn${annotationsVisible ? ' chart-tool-btn-active' : ''}`}
-            onClick={handleToggleAnnotations}
-            title="Toggle Annotations"
-          >
-            T
-          </button>
-          <button type="button" className="chart-tool-btn" onClick={handleScrollToRealTime} title="Scroll to Latest">&#8635;</button>
+        <div className="chart-tools-right">
+          {!isTV && (
+            <div className="chart-indicators">
+              {MA_CONFIGS.filter(({ period }) => enabledMaPeriods.includes(period)).map(({ period, color, label }) => (
+                <span className="indicator-item" key={period}>
+                  <span className="indicator-color" style={{ backgroundColor: color }} />
+                  {label}: {maValues[period] ?? '\u2014'}
+                </span>
+              ))}
+              <span className="indicator-item">
+                <span className="indicator-color" style={{ backgroundColor: '#667eea' }} />
+                RSI ({rsiPeriod}): {rsiValue ?? '\u2014'}
+              </span>
+            </div>
+          )}
+          {!isTV && (
+            <div className="chart-tool-buttons">
+              <button
+                type="button"
+                className={`chart-tool-btn${priceScaleMode === PriceScaleMode.Logarithmic ? ' chart-tool-btn-active' : ''}`}
+                onClick={() => handleTogglePriceScale(PriceScaleMode.Logarithmic)}
+                title="Log Scale"
+              >
+                Log
+              </button>
+              <button
+                type="button"
+                className={`chart-tool-btn${priceScaleMode === PriceScaleMode.Percentage ? ' chart-tool-btn-active' : ''}`}
+                onClick={() => handleTogglePriceScale(PriceScaleMode.Percentage)}
+                title="Percentage Scale"
+              >
+                %
+              </button>
+              <button
+                type="button"
+                className={`chart-tool-btn${magnetMode ? ' chart-tool-btn-active' : ''}`}
+                onClick={() => setMagnetMode((v) => !v)}
+                title="Magnet Mode"
+              >
+                M
+              </button>
+              <button
+                type="button"
+                className={`chart-tool-btn${showBaseline ? ' chart-tool-btn-active' : ''}`}
+                onClick={() => setShowBaseline((v) => !v)}
+                title="Baseline vs Previous Close"
+              >
+                B
+              </button>
+              <button type="button" className="chart-tool-btn" onClick={handleZoomIn} title="Zoom In">+</button>
+              <button type="button" className="chart-tool-btn" onClick={handleZoomOut} title="Zoom Out">&minus;</button>
+              <button
+                type="button"
+                className={`chart-tool-btn${annotationsVisible ? ' chart-tool-btn-active' : ''}`}
+                onClick={handleToggleAnnotations}
+                title="Toggle Annotations"
+              >
+                T
+              </button>
+              <button type="button" className="chart-tool-btn" onClick={handleScrollToRealTime} title="Scroll to Latest">&#8635;</button>
+            </div>
+          )}
+          <div className="chart-mode-switcher">
+            <div className="interval-selector">
+              <button
+                type="button"
+                className={`interval-btn${!isTV ? ' interval-btn-active' : ''}`}
+                onClick={() => setChartMode('custom')}
+              >
+                Light
+              </button>
+              <button
+                type="button"
+                className={`interval-btn${isTV ? ' interval-btn-active' : ''}`}
+                onClick={() => setChartMode('tradingview')}
+              >
+                Advanced
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-      <div
-        className="charts-container chart-wheel-capture"
-        onWheel={(e) => e.stopPropagation()}
-        role="region"
-        aria-label="K-line chart"
-      >
+
+      {/* ---- Charts area: shared flex container for both modes ---- */}
+      <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {/* Light chart: always in DOM with layout preserved for screenshot capture.
+            When Advanced is active, positioned absolutely behind TV widget (invisible). */}
         <div
-          ref={chartContainerRef}
-          className="chart-wrapper"
+          ref={lightWrapperRef}
+          className={isTV ? 'light-chart-hidden' : 'light-chart-visible'}
         >
-          <CrosshairTooltip
-            visible={tooltipState.visible}
-            x={tooltipState.x}
-            y={tooltipState.y}
-            data={tooltipState.data}
-            enabledMaPeriods={enabledMaPeriods}
-            containerWidth={chartContainerRef.current?.clientWidth}
-            containerHeight={chartContainerRef.current?.clientHeight}
-          />
-        </div>
-        <div className="rsi-container">
-          <div className="rsi-label">RSI ({rsiPeriod}): {rsiValue ?? '\u2014'}</div>
-          <div className="rsi-chart-wrapper" ref={rsiChartContainerRef}></div>
-        </div>
-      </div>
-      {loading && (
-        <div className="chart-loading">
-          <div>Loading...</div>
-          <div className="chart-loading-hint">
-            If there is no response for a long time, it may be due to API rate limiting. Please wait 1 second and refresh.
+          <div
+            className="charts-container chart-wheel-capture"
+            onWheel={(e) => e.stopPropagation()}
+            role="region"
+            aria-label="K-line chart"
+          >
+            <div
+              ref={chartContainerRef}
+              className="chart-wrapper"
+            >
+              <CrosshairTooltip
+                visible={tooltipState.visible}
+                x={tooltipState.x}
+                y={tooltipState.y}
+                data={tooltipState.data}
+                enabledMaPeriods={enabledMaPeriods}
+                containerWidth={chartContainerRef.current?.clientWidth}
+                containerHeight={chartContainerRef.current?.clientHeight}
+              />
+            </div>
+            <div className="rsi-container">
+              <div className="rsi-label">RSI ({rsiPeriod}): {rsiValue ?? '\u2014'}</div>
+              <div className="rsi-chart-wrapper" ref={rsiChartContainerRef}></div>
+            </div>
           </div>
+          {loading && (
+            <div className="chart-loading">
+              <div>Loading...</div>
+              <div className="chart-loading-hint">
+                If there is no response for a long time, it may be due to API rate limiting. Please wait 1 second and refresh.
+              </div>
+            </div>
+          )}
+          {error && (
+            <div className="chart-error">
+              <div className="chart-error-title">Data Loading Failed</div>
+              <div>{error}</div>
+            </div>
+          )}
         </div>
-      )}
-      {error && (
-        <div className="chart-error">
-          <div className="chart-error-title">Data Loading Failed</div>
-          <div>{error}</div>
-        </div>
-      )}
+
+        {/* TradingView Advanced Chart (only mounted when active) */}
+        {isTV && (
+          <div className="charts-container" style={{ flex: 1, minHeight: 0 }}>
+            <TradingViewWidget symbol={symbol} interval={interval} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }));

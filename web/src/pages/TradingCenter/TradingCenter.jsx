@@ -12,7 +12,6 @@ import { getAuthUserId } from '@/api/client';
 import { DEFAULT_USER_ID } from '@/api/client';
 import { fetchStockQuote, fetchCompanyOverview, fetchAnalystData } from './utils/api';
 import { useTradingChat } from './hooks/useTradingChat';
-import { deleteFlashWorkspaces } from './utils/api';
 import { findOrCreateDefaultWorkspace } from '../Dashboard/utils/workspace';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
 import { Loader2, ArrowLeft } from 'lucide-react';
@@ -63,15 +62,6 @@ function TradingCenter() {
       setSearchParams({});
     }
   }, [searchParams, selectedStock, setSearchParams]);
-
-  // Cleanup: Delete flash workspaces when component unmounts (navigation away or refresh)
-  useEffect(() => {
-    return () => {
-      deleteFlashWorkspaces(userId).catch((err) => {
-        console.warn('[TradingCenter] Error deleting flash workspaces on unmount:', err);
-      });
-    };
-  }, [userId]);
 
   const handleStockSearch = useCallback((symbol, searchResult) => {
     setSelectedStock(symbol);
@@ -202,6 +192,7 @@ function TradingCenter() {
     const exchange = stockInfo?.Exchange || selectedStockDisplay?.exchange || '';
 
     const parts = [`Chart: ${selectedStock} (${companyName})${exchange ? ` — ${exchange}` : ''}`];
+    if (meta?.chartMode) parts.push(`Chart mode: ${meta.chartMode}`);
     parts.push(`Interval: ${intervalLabel}`);
 
     if (meta) {

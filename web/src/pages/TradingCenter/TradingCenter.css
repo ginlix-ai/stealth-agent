@@ -1,7 +1,7 @@
 .trading-center-container {
   width: 100%;
-  height: calc(100vh - 48px);
-  max-height: calc(100vh - 48px);
+  height: 100vh;
+  max-height: 100vh;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
