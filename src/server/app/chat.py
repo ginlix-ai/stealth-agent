@@ -100,7 +100,7 @@ async def chat_stream(request: ChatRequest, user_id: CurrentUserId):
         request: ChatRequest with messages and configuration
             - workspace_id required for 'ptc' mode, optional for 'flash' mode
             - agent_mode: 'ptc' (default) or 'flash'
-        user_id: User ID from X-User-Id header
+        user_id: User ID from Bearer token
 
     Returns:
         StreamingResponse with SSE events

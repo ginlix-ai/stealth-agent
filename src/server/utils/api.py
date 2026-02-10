@@ -9,24 +9,36 @@ import inspect
 import logging
 from typing import Annotated, Callable, Optional, TypeVar
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from src.server.auth.jwt_bearer import _decode_token
 
 # Type variable for generic return type preservation
 T = TypeVar("T")
 
+_optional_bearer = HTTPBearer(auto_error=False)
 
-def get_current_user_id(
-    x_user_id: str = Header(..., alias="X-User-Id", description="User ID from auth"),
+
+async def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
 ) -> str:
     """
-    FastAPI dependency to extract user ID from X-User-Id header.
+    FastAPI dependency to extract user ID.
 
-    Usage:
-        @router.get("/endpoint")
-        async def endpoint(user_id: CurrentUserId):
-            ...
+    Checks for a Bearer JWT first (Supabase auth). Falls back to the legacy
+    X-User-Id header during the transition period.  Once all clients send
+    Bearer tokens the fallback can be removed.
     """
-    return x_user_id
+    if credentials is not None:
+        return _decode_token(credentials.credentials)
+
+    # Fallback: legacy X-User-Id header
+    if x_user_id:
+        return x_user_id
+
+    raise HTTPException(status_code=401, detail="Missing authentication")
 
 
 # Annotated type for cleaner endpoint signatures
