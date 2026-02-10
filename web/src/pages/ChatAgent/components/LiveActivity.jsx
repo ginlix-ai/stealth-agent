@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Brain, Loader2, CheckCircle2 } from 'lucide-react';
-import { getDisplayName, getToolIcon, getInProgressText } from './toolDisplayConfig';
+import { Brain, CheckCircle2, Wrench } from 'lucide-react';
+import { getDisplayName, getToolIcon, getInProgressText, getPreparingText } from './toolDisplayConfig';
+import { TextShimmer } from '@/components/ui/text-shimmer';
+import { DotLoader } from '@/components/ui/dot-loader';
 import Markdown from './Markdown';
 
 const MIN_EXPOSURE_MS = 5000; // minimum total time visible (active + hold)
@@ -12,7 +14,7 @@ const FADE_MS = 500;          // animating out
  * Shows currently active items with streaming/progress indicators.
  * Completed items hold for HOLD_MS, then fade out over FADE_MS before removal.
  */
-function LiveActivity({ activeReasoning, activeToolCalls }) {
+function LiveActivity({ activeReasoning, activeToolCalls, preparingToolCall }) {
   // --- Reasoning hold ---
   // phase: null | 'hold' | 'exit'
   const [reasoningPhase, setReasoningPhase] = useState(null);
@@ -130,8 +132,9 @@ function LiveActivity({ activeReasoning, activeToolCalls }) {
   const isReasoningStreaming = displayReasoning?.isReasoning;
   const hasActiveTools = activeToolCalls && activeToolCalls.length > 0;
   const hasFadingTools = fadingToolCalls.length > 0;
+  const hasPreparingTools = !!preparingToolCall;
 
-  if (!showReasoning && !hasActiveTools && !hasFadingTools) return null;
+  if (!showReasoning && !hasActiveTools && !hasFadingTools && !hasPreparingTools) return null;
 
   // Reasoning opacity: streaming=1, hold=0.6, exit=0
   const reasoningOpacity = isReasoningStreaming ? 1 : reasoningPhase === 'exit' ? 0 : 0.6;
@@ -155,22 +158,20 @@ function LiveActivity({ activeReasoning, activeToolCalls }) {
             className="flex items-center gap-2 mb-1"
             style={{ fontSize: '13px', color: 'var(--Labels-Secondary)' }}
           >
-            <div className="relative flex-shrink-0">
-              <Brain className="h-4 w-4" />
-              {isReasoningStreaming && (
-                <Loader2
-                  className="h-3 w-3 absolute -top-0.5 -right-0.5 animate-spin"
-                  style={{ color: 'var(--Labels-Secondary)' }}
-                />
-              )}
-            </div>
-            <span className="font-medium truncate">
-              {isReasoningStreaming
-                ? (displayReasoning.title
-                    ? `Reasoning: ${displayReasoning.title}`
-                    : 'Reasoning...')
-                : 'Reasoning complete'}
-            </span>
+            <Brain className="h-4 w-4 flex-shrink-0" />
+            {isReasoningStreaming ? (
+              <TextShimmer
+                as="span"
+                className="font-medium truncate text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:#ffffff]"
+                duration={1.5}
+              >
+                {displayReasoning.title
+                  ? `Reasoning: ${displayReasoning.title}`
+                  : 'Reasoning...'}
+              </TextShimmer>
+            ) : (
+              <span className="font-medium truncate">Reasoning complete</span>
+            )}
           </div>
 
           {displayReasoning.content && (
@@ -182,6 +183,11 @@ function LiveActivity({ activeReasoning, activeToolCalls }) {
             />
           )}
         </div>
+      )}
+
+      {/* Preparing tool call (chunk streaming in progress) */}
+      {hasPreparingTools && (
+        <PreparingToolCallRow tc={preparingToolCall} />
       )}
 
       {/* In-progress tool calls */}
@@ -228,24 +234,55 @@ function ToolCallLiveRow({ tc, phase }) {
     >
       <div className="relative flex-shrink-0">
         <IconComponent className="h-4 w-4" />
-        {isInProgress ? (
-          <Loader2
-            className="h-3 w-3 absolute -top-0.5 -right-0.5 animate-spin"
-            style={{ color: 'var(--Labels-Secondary)' }}
-          />
-        ) : (
+        {!isInProgress && (
           <CheckCircle2
             className="h-3 w-3 absolute -top-0.5 -right-0.5"
             style={{ color: 'rgba(34, 197, 94, 0.7)' }}
           />
         )}
       </div>
-      <span className="font-medium">{displayName}</span>
       {isInProgress ? (
-        <span style={{ opacity: 0.55 }}>{progressText}</span>
+        <TextShimmer
+          as="span"
+          className="font-medium text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:#ffffff]"
+          duration={1.5}
+        >
+          {`${displayName} ${progressText || ''}`}
+        </TextShimmer>
       ) : (
-        <span style={{ opacity: 0.55 }}>done</span>
+        <>
+          <span className="font-medium">{displayName}</span>
+          <span style={{ opacity: 0.55 }}>done</span>
+        </>
       )}
+    </div>
+  );
+}
+
+/** Preparing row — shown while tool_call_chunks are still streaming */
+function PreparingToolCallRow({ tc }) {
+  const toolName = tc.toolName || '';
+  const displayName = toolName ? getDisplayName(toolName) : 'Tool Call';
+  const IconComponent = toolName ? getToolIcon(toolName) : Wrench;
+  const prepText = getPreparingText(toolName, tc.argsLength);
+
+  return (
+    <div
+      className="flex items-center gap-2 px-3"
+      style={{
+        fontSize: '13px',
+        color: 'var(--Labels-Secondary)',
+        padding: '6px 12px',
+        opacity: 0.85,
+      }}
+    >
+      <DotLoader
+        className="flex-shrink-0 gap-px"
+        dotClassName="bg-white/15 [&.active]:bg-white size-[1.5px]"
+      />
+      <IconComponent className="h-4 w-4 flex-shrink-0" />
+      <span className="font-medium">{displayName}</span>
+      <span style={{ opacity: 0.55 }}>{prepText}</span>
     </div>
   );
 }

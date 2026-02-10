@@ -110,6 +110,34 @@ export function getInProgressText(rawToolName, toolCall) {
   }
 }
 
+function formatByteSize(bytes) {
+  if (bytes < 100) return null;
+  if (bytes < 1000) return `~${bytes} chars`;
+  return `~${(bytes / 1000).toFixed(1)} KB`;
+}
+
+export function getPreparingText(toolName, argsLength) {
+  const size = formatByteSize(argsLength);
+  const sizeLabel = size ? ` (${size})` : '';
+
+  switch (toolName) {
+    case 'Write':
+      return `writing code${sizeLabel}...`;
+    case 'Edit':
+      return `composing edits${sizeLabel}...`;
+    case 'ExecuteCode':
+      return `composing code${sizeLabel}...`;
+    case 'WebSearch':
+      return 'crafting search...';
+    case 'WebFetch':
+      return 'preparing request...';
+    case 'Grep':
+      return 'building search pattern...';
+    default:
+      return `generating${sizeLabel}...`;
+  }
+}
+
 /**
  * Detects if a tool result was truncated due to size and saved to filesystem.
  * Returns { isTruncated, filePath, preview } or { isTruncated: false }.

@@ -8,3 +8,29 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Morph loading animation keyframes (compact — 3-5px travel for inline use) */
+@keyframes morph-0 {
+  0%, 100% { transform: translate(0, 0) scale(1); border-radius: 0%; }
+  25% { transform: translate(3px, -3px) scale(1.2); border-radius: 50%; }
+  50% { transform: translate(5px, 0) scale(0.8); border-radius: 25%; }
+  75% { transform: translate(3px, 3px) scale(1.1); border-radius: 75%; }
+}
+@keyframes morph-1 {
+  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); border-radius: 0%; }
+  25% { transform: translate(-3px, -3px) scale(1.3) rotate(90deg); border-radius: 50%; }
+  50% { transform: translate(-5px, 0) scale(0.7) rotate(180deg); border-radius: 25%; }
+  75% { transform: translate(-3px, 3px) scale(1.2) rotate(270deg); border-radius: 75%; }
+}
+@keyframes morph-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); border-radius: 0%; }
+  25% { transform: translate(-3px, 3px) scale(0.9); border-radius: 100%; }
+  50% { transform: translate(0, 5px) scale(1.4); border-radius: 0%; }
+  75% { transform: translate(3px, 3px) scale(0.8); border-radius: 50%; }
+}
+@keyframes morph-3 {
+  0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); border-radius: 0%; }
+  25% { transform: translate(3px, 3px) scale(1.1) rotate(-90deg); border-radius: 25%; }
+  50% { transform: translate(0, -5px) scale(1.3) rotate(-180deg); border-radius: 100%; }
+  75% { transform: translate(-3px, -3px) scale(0.9) rotate(-270deg); border-radius: 75%; }
+}

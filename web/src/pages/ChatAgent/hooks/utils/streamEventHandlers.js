@@ -309,6 +309,7 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
             contentSegments,
             toolCallProcesses,
             subagentTasks,
+            pendingToolCallChunks: {},
           };
         })
       );
@@ -649,6 +650,57 @@ export function handleSubagentStatus({ subagentStatus, updateSubagentCard, displ
     });
   });
   return true;
+}
+
+/**
+ * Handles tool_call_chunks events during streaming.
+ * Tracks pending tool call chunks so the UI can show a "preparing" indicator
+ * while the LLM is still generating tool call arguments.
+ * @param {Object} params - Handler parameters
+ * @param {string} params.assistantMessageId - ID of the assistant message being updated
+ * @param {Array} params.chunks - Array of tool_call_chunk objects
+ * @param {string} params.agentName - Agent name from the event
+ * @param {Function} params.setMessages - State setter for messages
+ */
+export function handleToolCallChunks({ assistantMessageId, chunks, setMessages }) {
+  if (!chunks || !Array.isArray(chunks)) return;
+
+  chunks.forEach((chunk) => {
+    const key = `${chunk.index ?? 0}`;
+
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.id !== assistantMessageId) return msg;
+        const pending = { ...(msg.pendingToolCallChunks || {}) };
+        const existing = pending[key] || { toolName: null, chunkCount: 0, argsLength: 0, firstSeenAt: Date.now() };
+
+        pending[key] = {
+          toolName: chunk.name || existing.toolName,
+          chunkCount: existing.chunkCount + 1,
+          argsLength: existing.argsLength + (chunk.args?.length || 0),
+          firstSeenAt: existing.firstSeenAt,
+        };
+
+        return { ...msg, pendingToolCallChunks: pending };
+      })
+    );
+  });
+}
+
+/**
+ * Clears pending tool call chunks for a message.
+ * Called when the final tool_calls event arrives — React batches
+ * the clear and the handleToolCalls update into one render.
+ * @param {Object} params - Handler parameters
+ * @param {string} params.assistantMessageId - ID of the assistant message being updated
+ * @param {Function} params.setMessages - State setter for messages
+ */
+export function clearPendingToolCallChunks({ assistantMessageId, setMessages }) {
+  setMessages((prev) =>
+    prev.map((msg) =>
+      msg.id === assistantMessageId ? { ...msg, pendingToolCallChunks: {} } : msg
+    )
+  );
 }
 
 /**

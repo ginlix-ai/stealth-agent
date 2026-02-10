@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bot, Loader2, User } from 'lucide-react';
+import { Bot, User } from 'lucide-react';
 import logo from '../../../assets/img/logo.svg';
+import MorphLoading from '@/components/ui/morph-loading';
 import ActivityAccordion from './ActivityAccordion';
 import { extractFilePaths, FileMentionCards } from './FileCard';
 import LiveActivity from './LiveActivity';
@@ -98,6 +99,7 @@ function MessageBubble({ message, onOpenSubagentTask, onOpenFile, onOpenDir, onT
             todoListProcesses={message.todoListProcesses || {}}
             subagentTasks={message.subagentTasks || {}}
             planApprovals={message.planApprovals || {}}
+            pendingToolCallChunks={message.pendingToolCallChunks || {}}
             isStreaming={message.isStreaming}
             hasError={message.error}
             isAssistant={isAssistant}
@@ -121,9 +123,9 @@ function MessageBubble({ message, onOpenSubagentTask, onOpenFile, onOpenDir, onT
           )
         )}
 
-        {/* Streaming indicator */}
-        {message.isStreaming && (
-          <Loader2 className="h-3 w-3 animate-spin mt-2" style={{ color: '#6155F5' }} />
+        {/* Streaming indicator — hidden when dot-loader is already showing for pending chunks */}
+        {message.isStreaming && !Object.keys(message.pendingToolCallChunks || {}).length && (
+          <MorphLoading size="sm" className="mt-2" style={{ color: '#6155F5' }} />
         )}
       </div>
 
@@ -160,9 +162,10 @@ function MessageBubble({ message, onOpenSubagentTask, onOpenFile, onOpenDir, onT
  * @param {Function} props.onToolCallDetailClick - Callback to open detail panel for a tool call
  */
 const MIN_LIVE_EXPOSURE_MS = 5000; // minimum time a tool call stays in LiveActivity
+const MAX_IN_PROGRESS_MS = 15000; // max time a tool call can stay in-progress in live view before archiving
 const FADE_MS = 500; // matches LiveActivity fade duration
 
-function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, todoListProcesses, subagentTasks, planApprovals = {}, isStreaming, hasError, isAssistant = false, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, textOnly = false }) {
+function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, todoListProcesses, subagentTasks, planApprovals = {}, pendingToolCallChunks = {}, isStreaming, hasError, isAssistant = false, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, textOnly = false }) {
   // Force re-render timer for recently-completed tool calls that need minimum exposure
   const [, setTick] = useState(0);
   const expiryTimerRef = useRef(null);
@@ -310,13 +313,19 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
         const createdAt = proc._createdAt;
         const age = createdAt ? now - createdAt : Infinity;
 
-        if (proc.isInProgress) {
+        if (proc.isInProgress && isStreaming && age < MAX_IN_PROGRESS_MS) {
+          // Keep in live view while streaming, but archive if stuck too long
           flushBeforeLive();
           activeToolCalls.push({
             ...proc,
             id: seg.toolCallId,
             toolCallId: seg.toolCallId,
           });
+          // Schedule re-render at max age so stale items get archived
+          const expiry = createdAt + MAX_IN_PROGRESS_MS;
+          if (nextExpiryRef.current === null || expiry < nextExpiryRef.current) {
+            nextExpiryRef.current = expiry;
+          }
         } else if (age < MIN_LIVE_EXPOSURE_MS) {
           flushBeforeLive();
           activeToolCalls.push({
@@ -419,7 +428,16 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
       </div>
     );
 
-    const hasLiveContent = !!(activeReasoning || activeToolCalls.length > 0);
+    // Aggregate all pending chunks into a single preparing indicator
+    const chunkEntries = Object.values(pendingToolCallChunks);
+    const preparingToolCall = chunkEntries.length > 0 ? {
+      // Pick the first non-null tool name across all indices
+      toolName: chunkEntries.find((c) => c.toolName)?.toolName || null,
+      chunkCount: chunkEntries.reduce((sum, c) => sum + c.chunkCount, 0),
+      argsLength: chunkEntries.reduce((sum, c) => sum + c.argsLength, 0),
+    } : null;
+
+    const hasLiveContent = !!(activeReasoning || activeToolCalls.length > 0 || preparingToolCall);
 
     return (
       <div className="space-y-1">
@@ -429,6 +447,7 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
         <LiveActivity
           activeReasoning={activeReasoning}
           activeToolCalls={activeToolCalls}
+          preparingToolCall={preparingToolCall}
         />
         {episodesAfter.map((episode, idx) =>
           renderEpisode(episode, `ep-after-${idx}`, idx === episodesAfter.length - 1)

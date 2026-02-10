@@ -1,4 +1,5 @@
-import { ChevronDown, ChevronUp, Loader2, FileText } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText } from 'lucide-react';
+import { TextShimmer } from '@/components/ui/text-shimmer';
 import { useState } from 'react';
 import { getDisplayName, getToolIcon, getInProgressText, stripLineNumbers, parseTruncatedResult } from './toolDisplayConfig';
 import Markdown from './Markdown';
@@ -241,17 +242,11 @@ function ToolCallMessageContent({
           }}
         >
           {/* Icon */}
-          <div className="relative flex-shrink-0" style={{ marginTop: '2px' }}>
+          <div className="flex-shrink-0" style={{ marginTop: '2px' }}>
             <IconComponent
               className="h-4 w-4"
               style={{ color: displayProcess.isFailed ? '#FF383C' : 'var(--Labels-Secondary)' }}
             />
-            {displayProcess.isInProgress && (
-              <Loader2
-                className="h-3 w-3 absolute -top-0.5 -right-0.5 animate-spin"
-                style={{ color: 'var(--Labels-Secondary)' }}
-              />
-            )}
           </div>
 
           {/* Tool name + inline summary */}
@@ -263,15 +258,16 @@ function ToolCallMessageContent({
                   <span style={{ opacity: 0.55, marginLeft: '6px' }}>{summary}</span>
                 </div>
               ))
+            ) : displayProcess.isInProgress ? (
+              <TextShimmer
+                as="span"
+                className="font-medium text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:#ffffff]"
+                duration={1.5}
+              >
+                {`${displayName} ${getInProgressText(rawToolName, displayProcess.toolCall) || ''}`}
+              </TextShimmer>
             ) : (
-              <span>
-                <span style={{ fontWeight: 500 }}>{displayName}</span>
-                {displayProcess.isInProgress && (
-                  <span style={{ opacity: 0.55, marginLeft: '6px' }}>
-                    {getInProgressText(rawToolName, displayProcess.toolCall)}
-                  </span>
-                )}
-              </span>
+              <span style={{ fontWeight: 500 }}>{displayName}</span>
             )}
           </div>
         </Tag>
@@ -321,28 +317,25 @@ function ToolCallMessageContent({
         title={displayProcess.isInProgress ? 'Tool call in progress...' : 'View tool call details'}
       >
         {/* Icon */}
-        <div className="relative flex-shrink-0">
+        <div className="flex-shrink-0">
           <IconComponent
             className="h-4 w-4"
             style={{ color: displayProcess.isFailed ? '#FF383C' : 'var(--Labels-Secondary)' }}
           />
-          {displayProcess.isInProgress && (
-            <Loader2
-              className="h-3 w-3 absolute -top-0.5 -right-0.5 animate-spin"
-              style={{ color: 'var(--Labels-Secondary)' }}
-            />
-          )}
         </div>
 
         {/* Tool name label + in-progress text or summary */}
-        <span style={{ color: 'inherit' }}>
-          {displayName}
-          {displayProcess.isInProgress && (
-            <span style={{ opacity: 0.55, marginLeft: '6px' }}>
-              {getInProgressText(rawToolName, displayProcess.toolCall)}
-            </span>
-          )}
-        </span>
+        {displayProcess.isInProgress ? (
+          <TextShimmer
+            as="span"
+            className="font-medium text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:#ffffff]"
+            duration={1.5}
+          >
+            {`${displayName} ${getInProgressText(rawToolName, displayProcess.toolCall) || ''}`}
+          </TextShimmer>
+        ) : (
+          <span style={{ color: 'inherit' }}>{displayName}</span>
+        )}
 
         {/* Status indicator */}
         {displayProcess.isComplete && !displayProcess.isInProgress && (

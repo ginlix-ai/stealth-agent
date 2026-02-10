@@ -13,12 +13,12 @@ import Markdown from './Markdown';
  * @param {boolean} props.hasError - Whether the message has an error
  */
 function TextMessageContent({ content, isStreaming, hasError }) {
-  if (!content && !isStreaming) {
+  if (!content) {
     return null;
   }
 
   return (
-    <Markdown variant="chat" content={content || (isStreaming ? '...' : '')} className="text-base" />
+    <Markdown variant="chat" content={content || ''} className="text-base" />
   );
 }
 
