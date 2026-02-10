@@ -79,9 +79,11 @@ async def sync_user(
     existing = await db_get_user(user_id)
     if existing:
         result = await get_user_with_preferences(user_id)
+        if not result:
+            raise_not_found("User")
         user_resp = UserResponse.model_validate(result["user"])
         pref_resp = None
-        if result and result.get("preferences"):
+        if result.get("preferences"):
             pref_resp = UserPreferencesResponse.model_validate(result["preferences"])
         return UserWithPreferencesResponse(user=user_resp, preferences=pref_resp)
 
@@ -93,9 +95,11 @@ async def sync_user(
             if migrated:
                 logger.info(f"Migrated legacy user {legacy['user_id']} -> {user_id}")
                 result = await get_user_with_preferences(user_id)
+                if not result:
+                    raise_not_found("User")
                 user_resp = UserResponse.model_validate(result["user"])
                 pref_resp = None
-                if result and result.get("preferences"):
+                if result.get("preferences"):
                     pref_resp = UserPreferencesResponse.model_validate(result["preferences"])
                 return UserWithPreferencesResponse(user=user_resp, preferences=pref_resp)
 
