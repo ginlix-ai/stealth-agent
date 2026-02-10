@@ -5,6 +5,7 @@ Provides PostgreSQL, SQLite, and in-memory checkpointers for LangGraph workflows
 This module is standalone and does not depend on deep_research.
 """
 
+import asyncio
 import logging
 import os
 from typing import Any, Optional
@@ -17,6 +18,14 @@ logger = logging.getLogger(__name__)
 
 # Module-level connection pool cache to reuse connections across graph compilations
 _postgres_pool_cache: dict[str, AsyncConnectionPool] = {}
+
+
+def _on_reconnect_failed(pool):
+    """Callback when pool fails to reconnect after reconnect_timeout."""
+    logger.critical(
+        f"[Checkpointer] Connection pool failed to reconnect after "
+        f"reconnect_timeout. Pool stats: {pool.get_stats()}"
+    )
 
 
 async def _configure_postgres_connection(conn) -> None:
@@ -79,6 +88,14 @@ def get_checkpointer(memory_type: str = "memory", **kwargs) -> Optional[Any]:
                 configure=_configure_postgres_connection,
                 check=AsyncConnectionPool.check_connection,
                 open=False,  # Defer opening until async context is available
+                reconnect_failed=_on_reconnect_failed,
+                kwargs={
+                    "connect_timeout": 10,
+                    "keepalives": 1,
+                    "keepalives_idle": 60,
+                    "keepalives_interval": 10,
+                    "keepalives_count": 5,
+                },
             )
 
         pool = _postgres_pool_cache[db_uri]
@@ -134,3 +151,53 @@ async def close_checkpointer_pool(checkpointer: Any) -> bool:
             else:
                 logger.debug("Checkpointer PostgreSQL pool already closed")
     return False
+
+
+async def get_checkpointer_health(checkpointer: Any) -> dict:
+    """
+    Get checkpointer connection pool health stats.
+
+    Returns pool statistics and runs a quick SELECT 1 connectivity test.
+
+    Args:
+        checkpointer: Checkpointer instance (from get_checkpointer)
+
+    Returns:
+        Dict with status, pool stats, and connectivity info
+    """
+    if not checkpointer or not hasattr(checkpointer, "conn"):
+        return {"status": "not_configured"}
+
+    pool = checkpointer.conn
+
+    # Get pool statistics
+    if not hasattr(pool, "get_stats"):
+        return {"status": "not_configured", "reason": "not_a_pool"}
+
+    stats = pool.get_stats()
+
+    # Run a quick connection test
+    healthy = False
+    error_msg = None
+    try:
+        async with asyncio.timeout(5.0):
+            async with pool.connection() as conn:
+                await conn.execute("SELECT 1")
+                healthy = True
+    except TimeoutError:
+        error_msg = "connection test timed out (5s)"
+    except Exception as e:
+        error_msg = str(e)
+
+    result = {
+        "status": "healthy" if healthy else "unhealthy",
+        "pool_size": stats.get("pool_size", 0),
+        "pool_available": stats.get("pool_available", 0),
+        "requests_waiting": stats.get("requests_waiting", 0),
+        "pool_min": stats.get("pool_min", 0),
+        "pool_max": stats.get("pool_max", 0),
+    }
+    if error_msg:
+        result["error"] = error_msg
+
+    return result

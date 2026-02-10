@@ -49,6 +49,14 @@ def get_db_connection_string() -> str:
     return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode={sslmode}"
 
 
+def _on_reconnect_failed(pool):
+    """Callback when conversation DB pool fails to reconnect after reconnect_timeout."""
+    logger.critical(
+        f"[ConversationDB] Connection pool failed to reconnect after "
+        f"reconnect_timeout. Pool stats: {pool.get_stats()}"
+    )
+
+
 async def _configure_postgres_connection(conn):
     """
     Configure PostgreSQL connection for Supabase compatibility.
@@ -81,7 +89,15 @@ def get_or_create_pool() -> AsyncConnectionPool:
             max_size=10,
             configure=_configure_postgres_connection,
             check=AsyncConnectionPool.check_connection,
-            open=False
+            open=False,
+            reconnect_failed=_on_reconnect_failed,
+            kwargs={
+                "connect_timeout": 10,
+                "keepalives": 1,
+                "keepalives_idle": 60,
+                "keepalives_interval": 10,
+                "keepalives_count": 5,
+            },
         )
 
     return _conversation_db_pool_cache[db_uri]
@@ -178,32 +194,33 @@ async def calculate_next_thread_index(workspace_id: str, conn=None) -> int:
     """
     Calculate the next thread_index for a workspace (0-based).
 
+    Uses MAX(thread_index) + 1 instead of COUNT(*) to correctly handle
+    gaps from deleted threads and avoid unique constraint violations.
+
     Args:
         workspace_id: Workspace ID
         conn: Optional database connection to reuse
     """
     try:
         if conn:
-            # Reuse provided connection
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute("""
-                    SELECT COUNT(*) as count
+                    SELECT COALESCE(MAX(thread_index), -1) + 1 as next_index
                     FROM conversation_thread
                     WHERE workspace_id = %s
                 """, (workspace_id,))
                 result = await cur.fetchone()
-                return result['count']
+                return result['next_index']
         else:
-            # Acquire new connection (backward compatibility)
             async with get_db_connection() as conn:
                 async with conn.cursor(row_factory=dict_row) as cur:
                     await cur.execute("""
-                        SELECT COUNT(*) as count
+                        SELECT COALESCE(MAX(thread_index), -1) + 1 as next_index
                         FROM conversation_thread
                         WHERE workspace_id = %s
                     """, (workspace_id,))
                     result = await cur.fetchone()
-                    return result['count']
+                    return result['next_index']
 
     except Exception as e:
         logger.error(f"Error calculating thread index: {e}")
@@ -231,25 +248,14 @@ async def create_thread(
         title: Optional thread title
         conn: Optional database connection to reuse
     """
-    # Calculate thread_index if not provided
-    if thread_index is None:
-        thread_index = await calculate_next_thread_index(workspace_id, conn=conn)
+    max_retries = 3
+    for attempt in range(max_retries):
+        # Calculate thread_index if not provided, or recalculate on retry
+        if thread_index is None or attempt > 0:
+            thread_index = await calculate_next_thread_index(workspace_id, conn=conn)
 
-    try:
-        if conn:
-            # Reuse provided connection
-            async with conn.cursor(row_factory=dict_row) as cur:
-                await cur.execute("""
-                    INSERT INTO conversation_thread (thread_id, workspace_id, current_status, msg_type, thread_index, title)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    RETURNING thread_id, workspace_id, current_status, msg_type, thread_index, title, created_at, updated_at
-                """, (thread_id, workspace_id, current_status, msg_type, thread_index, title))
-                result = await cur.fetchone()
-                logger.info(f"[conversation_db] create_thread thread_id={thread_id} thread_index={thread_index} workspace_id={workspace_id}")
-                return dict(result)
-        else:
-            # Acquire new connection (backward compatibility)
-            async with get_db_connection() as conn:
+        try:
+            if conn:
                 async with conn.cursor(row_factory=dict_row) as cur:
                     await cur.execute("""
                         INSERT INTO conversation_thread (thread_id, workspace_id, current_status, msg_type, thread_index, title)
@@ -257,11 +263,29 @@ async def create_thread(
                         RETURNING thread_id, workspace_id, current_status, msg_type, thread_index, title, created_at, updated_at
                     """, (thread_id, workspace_id, current_status, msg_type, thread_index, title))
                     result = await cur.fetchone()
+                    logger.info(f"[conversation_db] create_thread thread_id={thread_id} thread_index={thread_index} workspace_id={workspace_id}")
                     return dict(result)
+            else:
+                async with get_db_connection() as conn_new:
+                    async with conn_new.cursor(row_factory=dict_row) as cur:
+                        await cur.execute("""
+                            INSERT INTO conversation_thread (thread_id, workspace_id, current_status, msg_type, thread_index, title)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            RETURNING thread_id, workspace_id, current_status, msg_type, thread_index, title, created_at, updated_at
+                        """, (thread_id, workspace_id, current_status, msg_type, thread_index, title))
+                        result = await cur.fetchone()
+                        return dict(result)
 
-    except Exception as e:
-        logger.error(f"Error creating thread: {e}")
-        raise
+        except psycopg.errors.UniqueViolation:
+            if attempt == max_retries - 1:
+                logger.error(f"thread_index conflict after {max_retries} attempts for workspace {workspace_id}")
+                raise
+            logger.warning(f"thread_index conflict (attempt {attempt + 1}/{max_retries}), retrying for workspace {workspace_id}")
+            continue
+
+        except Exception as e:
+            logger.error(f"Error creating thread: {e}")
+            raise
 
 
 async def update_thread_status(thread_id: str, status: str, conn=None) -> bool:

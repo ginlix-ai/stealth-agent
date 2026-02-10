@@ -845,11 +845,18 @@ async def _astream_workflow(
 
                 state_snapshot = None
                 try:
-                    snapshot = await ptc_graph.aget_state(
-                        {"configurable": {"thread_id": thread_id}}
+                    snapshot = await asyncio.wait_for(
+                        ptc_graph.aget_state(
+                            {"configurable": {"thread_id": thread_id}}
+                        ),
+                        timeout=10.0,
                     )
                     if snapshot and snapshot.values:
                         state_snapshot = serialize_state_snapshot(snapshot.values)
+                except asyncio.TimeoutError:
+                    logger.error(
+                        f"[PTC_COMPLETE] aget_state timed out for {thread_id}"
+                    )
                 except Exception as state_error:
                     logger.warning(
                         f"[PTC_COMPLETE] Failed to get state snapshot: {state_error}"
@@ -964,11 +971,18 @@ async def _astream_workflow(
 
                 state_snapshot = None
                 try:
-                    snapshot = await ptc_graph.aget_state(
-                        {"configurable": {"thread_id": thread_id}}
+                    snapshot = await asyncio.wait_for(
+                        ptc_graph.aget_state(
+                            {"configurable": {"thread_id": thread_id}}
+                        ),
+                        timeout=10.0,
                     )
                     if snapshot and snapshot.values:
                         state_snapshot = serialize_state_snapshot(snapshot.values)
+                except asyncio.TimeoutError:
+                    logger.error(
+                        f"[PTC_CHAT] aget_state timed out during cancellation for {thread_id}"
+                    )
                 except Exception as state_error:
                     logger.warning(
                         f"[PTC_CHAT] Failed to get state snapshot for cancellation: {state_error}"
@@ -1036,11 +1050,18 @@ async def _astream_workflow(
 
         state_snapshot = None
         try:
-            snapshot = await ptc_graph.aget_state(
-                {"configurable": {"thread_id": thread_id}}
+            snapshot = await asyncio.wait_for(
+                ptc_graph.aget_state(
+                    {"configurable": {"thread_id": thread_id}}
+                ),
+                timeout=10.0,
             )
             if snapshot and snapshot.values:
                 state_snapshot = serialize_state_snapshot(snapshot.values)
+        except asyncio.TimeoutError:
+            logger.error(
+                f"[PTC_CHAT] aget_state timed out after error for {thread_id}"
+            )
         except Exception as state_error:
             logger.warning(
                 f"[PTC_CHAT] Failed to get state snapshot after error: {state_error}"

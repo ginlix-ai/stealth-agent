@@ -4,6 +4,7 @@ This module provides an orchestrator that wraps the agent and handles
 re-invocation when background subagent tasks complete.
 """
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -228,7 +229,13 @@ class BackgroundSubagentOrchestrator:
                     iteration=iteration,
                 )
 
-                state_snapshot = await self.agent.aget_state(config)
+                try:
+                    state_snapshot = await asyncio.wait_for(
+                        self.agent.aget_state(config), timeout=10.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("aget_state timed out after stream completion")
+                    return
                 state_values = state_snapshot.values
                 messages = state_values.get("messages", [])
 
@@ -265,7 +272,13 @@ class BackgroundSubagentOrchestrator:
                 iteration=iteration,
             )
 
-            state_snapshot = await self.agent.aget_state(config)
+            try:
+                state_snapshot = await asyncio.wait_for(
+                    self.agent.aget_state(config), timeout=10.0
+                )
+            except asyncio.TimeoutError:
+                logger.error("aget_state timed out after wait_for_all")
+                return
             state_values = state_snapshot.values
             messages = state_values.get("messages", [])
 

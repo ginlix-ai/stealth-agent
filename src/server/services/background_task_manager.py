@@ -544,13 +544,21 @@ class BackgroundTaskManager:
         try:
             graph_any: Any = graph
 
-            snapshot = await graph_any.aget_state(config)
+            snapshot = await asyncio.wait_for(
+                graph_any.aget_state(config), timeout=10.0
+            )
             values = getattr(snapshot, "values", None)
             if not values:
                 return
 
-            await graph_any.aupdate_state(config, values)
+            await asyncio.wait_for(
+                graph_any.aupdate_state(config, values), timeout=10.0
+            )
             logger.info(f"[BackgroundTaskManager] Flushed checkpoint for {thread_id}")
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"[BackgroundTaskManager] Checkpoint flush timed out for {thread_id}"
+            )
         except Exception as e:
             logger.warning(
                 f"[BackgroundTaskManager] Failed to flush checkpoint for {thread_id}: {e}"
@@ -753,229 +761,265 @@ class BackgroundTaskManager:
     # ========== Workflow Completion & Error Handlers ==========
 
     async def _mark_completed(self, thread_id: str):
-        """Mark workflow as completed and notify live subscribers."""
+        """Mark workflow as completed and notify live subscribers.
+
+        Split into two phases to avoid holding the lock during heavy async I/O:
+        - Phase 1 (under lock): status update, sentinels, copy refs
+        - Phase 2 (outside lock): aget_state, persistence, callbacks
+        """
+        # Phase 1: Quick state update under lock
         async with self.task_lock:
             task_info = self.tasks.get(thread_id)
-            if task_info:
-                task_info.status = TaskStatus.COMPLETED
-                task_info.completed_at = datetime.now()
+            if not task_info:
+                return
 
-                # Send completion sentinel to all live subscribers
-                for queue in task_info.live_queues:
-                    try:
-                        queue.put_nowait(None)  # None signals completion
-                    except Exception as e:
-                        logger.error(f"Error sending completion signal: {e}")
+            task_info.status = TaskStatus.COMPLETED
+            task_info.completed_at = datetime.now()
 
-                # Check if workflow is truly completed or interrupted
-                # by examining LangGraph state (using per-task graph reference)
-                is_interrupted = False
+            # Send completion sentinel to all live subscribers
+            for queue in task_info.live_queues:
                 try:
-                    if task_info.graph:
-                        snapshot = await task_info.graph.aget_state({"configurable": {"thread_id": thread_id}})
-                        if snapshot and snapshot.next:
-                            # Workflow has pending nodes = interrupted, not completed
-                            is_interrupted = True
-                except Exception as state_error:
-                    logger.warning(
-                        f"[BackgroundTaskManager] Could not check workflow state for {thread_id}: {state_error}"
+                    queue.put_nowait(None)  # None signals completion
+                except Exception as e:
+                    logger.error(f"Error sending completion signal: {e}")
+
+            # Copy refs needed for persistence phase
+            graph = task_info.graph
+            metadata = task_info.metadata
+            completion_callback = task_info.completion_callback
+
+        # Phase 2: Heavy I/O outside lock (with timeout protection)
+        is_interrupted = False
+        try:
+            if graph:
+                snapshot = await asyncio.wait_for(
+                    graph.aget_state({"configurable": {"thread_id": thread_id}}),
+                    timeout=10.0,
+                )
+                if snapshot and snapshot.next:
+                    # Workflow has pending nodes = interrupted, not completed
+                    is_interrupted = True
+        except asyncio.TimeoutError:
+            logger.error(
+                f"[BackgroundTaskManager] aget_state timed out for {thread_id} in _mark_completed"
+            )
+        except Exception as state_error:
+            logger.warning(
+                f"[BackgroundTaskManager] Could not check workflow state for {thread_id}: {state_error}"
+            )
+
+        # Database status will be updated by persistence service in transaction
+        workspace_id = metadata.get("workspace_id")
+        user_id = metadata.get("user_id")
+
+        # Persist workflow state based on completion vs interrupt
+        if is_interrupted:
+            # Workflow interrupted - persist interrupt state with all required fields
+            if workspace_id and user_id:
+                try:
+                    from src.server.services.conversation_persistence_service import ConversationPersistenceService
+                    from src.utils.tracking import ExecutionTracker
+                    from src.server.models.workflow import serialize_state_snapshot
+
+                    persistence_service = ConversationPersistenceService.get_instance(thread_id)
+                    persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
+
+                    # Get tracking context for partial data
+                    tracking_context = ExecutionTracker.get_context()
+                    raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
+                    agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
+
+                    agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
+
+                    # Get state snapshot and serialize
+                    state_snapshot = None
+                    try:
+                        if graph:
+                            snapshot = await asyncio.wait_for(
+                                graph.aget_state({"configurable": {"thread_id": thread_id}}),
+                                timeout=10.0,
+                            )
+                            if snapshot and snapshot.values:
+                                state_snapshot = serialize_state_snapshot(snapshot.values)
+                    except asyncio.TimeoutError:
+                        logger.warning(f"[WorkflowPersistence] aget_state timed out getting snapshot for {thread_id}")
+                    except Exception as state_error:
+                        logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
+
+                    # Get token usage and per_call_records from token_callback
+                    _, per_call_records = get_token_usage_from_callback(
+                        metadata, "interrupt", thread_id
                     )
 
-                # Database status will be updated by persistence service in transaction
-                # (removed duplicate status update - service handles it atomically)
-                metadata = task_info.metadata
-                workspace_id = metadata.get("workspace_id")
-                user_id = metadata.get("user_id")
+                    # Get tool usage from handler (has cached result from SSE emission)
+                    tool_usage = get_tool_usage_from_handler(
+                        metadata, "interrupt", thread_id
+                    )
 
-                # Persist workflow state based on completion vs interrupt
-                if is_interrupted:
-                    # Workflow interrupted - persist interrupt state with all required fields
-                    if workspace_id and user_id:
-                        try:
-                            from src.server.services.conversation_persistence_service import ConversationPersistenceService
-                            from src.utils.tracking import ExecutionTracker
-                            from src.server.models.workflow import serialize_state_snapshot
+                    # Get streaming chunks for persistence (plan description, reasoning, etc.)
+                    streaming_chunks = get_streaming_chunks_from_handler(
+                        metadata, "interrupt", thread_id
+                    )
 
-                            persistence_service = ConversationPersistenceService.get_instance(thread_id)
-                            persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
+                    # Calculate execution time from start_time
+                    execution_time = calculate_execution_time(metadata)
 
-                            # Get tracking context for partial data
-                            tracking_context = ExecutionTracker.get_context()
-                            raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
-                            agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
+                    # Build metadata with all context
+                    persist_metadata = {
+                        "msg_type": metadata.get("msg_type"),
+                        "stock_code": metadata.get("stock_code"),
+                        "deepthinking": metadata.get("deepthinking", False)
+                    }
 
-                            agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
+                    await persistence_service.persist_interrupt(
+                        interrupt_reason="plan_review_required",
+                        state_snapshot=state_snapshot,
+                        agent_messages=agent_messages,
+                        execution_time=execution_time,
+                        metadata=persist_metadata,
+                        per_call_records=per_call_records,
+                        tool_usage=tool_usage,
+                        streaming_chunks=streaming_chunks
+                    )
+                    logger.info(f"[WorkflowPersistence] Workflow {thread_id} paused for human feedback")
 
-                            # Get state snapshot and serialize
-                            snapshot = None
-                            state_snapshot = None
-                            try:
-                                if task_info.graph:
-                                    snapshot = await task_info.graph.aget_state({"configurable": {"thread_id": thread_id}})
-                                    if snapshot and snapshot.values:
-                                        state_snapshot = serialize_state_snapshot(snapshot.values)
-                            except Exception as state_error:
-                                logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
-
-
-                            # Get token usage and per_call_records from token_callback
-                            _, per_call_records = get_token_usage_from_callback(
-                                metadata, "interrupt", thread_id
-                            )
-
-                            # Get tool usage from handler (has cached result from SSE emission)
-                            tool_usage = get_tool_usage_from_handler(
-                                metadata, "interrupt", thread_id
-                            )
-
-                            # Get streaming chunks for persistence (plan description, reasoning, etc.)
-                            streaming_chunks = get_streaming_chunks_from_handler(
-                                metadata, "interrupt", thread_id
-                            )
-
-                            # Calculate execution time from start_time
-                            execution_time = calculate_execution_time(metadata)
-
-                            # Build metadata with all context
-                            persist_metadata = {
-                                "msg_type": metadata.get("msg_type"),
-                                "stock_code": metadata.get("stock_code"),
-                                "deepthinking": metadata.get("deepthinking", False)
-                            }
-
-                            await persistence_service.persist_interrupt(
-                                interrupt_reason="plan_review_required",
-                                state_snapshot=state_snapshot,
-                                agent_messages=agent_messages,
-                                execution_time=execution_time,
-                                metadata=persist_metadata,
-                                per_call_records=per_call_records,
-                                tool_usage=tool_usage,
-                                streaming_chunks=streaming_chunks
-                            )
-                            logger.info(f"[WorkflowPersistence] Workflow {thread_id} paused for human feedback")
-
-                            # Update Redis workflow tracker to interrupted
-                            # (prevents frontend from reconnecting to a paused workflow)
-                            from src.server.services.workflow_tracker import WorkflowTracker
-                            tracker = WorkflowTracker.get_instance()
-                            await tracker.mark_interrupted(
-                                thread_id=thread_id,
-                                metadata={"interrupt_reason": "plan_review_required"},
-                            )
-                        except Exception as persist_error:
-                            logger.error(
-                                f"[WorkflowPersistence] Failed to persist interrupt for thread_id={thread_id}: {persist_error}",
-                                exc_info=True
-                            )
-                else:
-                    # Workflow completed - invoke completion callback for full persistence
-                    completion_callback = task_info.completion_callback
-                    if completion_callback:
-                        try:
-                            await completion_callback()
-                        except Exception as e:
-                            logger.error(
-                                f"[BackgroundTaskManager] Completion callback failed for {thread_id}: {e}",
-                                exc_info=True
-                            )
-                            # Update workflow status to error when callback fails
-                            await self._mark_failed(thread_id, f"Completion callback failed: {str(e)}")
+                    # Update Redis workflow tracker to interrupted
+                    # (prevents frontend from reconnecting to a paused workflow)
+                    from src.server.services.workflow_tracker import WorkflowTracker
+                    tracker = WorkflowTracker.get_instance()
+                    await tracker.mark_interrupted(
+                        thread_id=thread_id,
+                        metadata={"interrupt_reason": "plan_review_required"},
+                    )
+                except Exception as persist_error:
+                    logger.error(
+                        f"[WorkflowPersistence] Failed to persist interrupt for thread_id={thread_id}: {persist_error}",
+                        exc_info=True
+                    )
+        else:
+            # Workflow completed - invoke completion callback for full persistence
+            if completion_callback:
+                try:
+                    await completion_callback()
+                except Exception as e:
+                    logger.error(
+                        f"[BackgroundTaskManager] Completion callback failed for {thread_id}: {e}",
+                        exc_info=True
+                    )
+                    # Update workflow status to error when callback fails
+                    await self._mark_failed(thread_id, f"Completion callback failed: {str(e)}")
 
     async def _mark_failed(self, thread_id: str, error: str):
-        """Mark workflow as failed and notify live subscribers."""
+        """Mark workflow as failed and notify live subscribers.
+
+        Split into two phases to avoid holding the lock during heavy async I/O:
+        - Phase 1 (under lock): status update, sentinels, copy refs
+        - Phase 2 (outside lock): aget_state, persistence
+        """
+        # Phase 1: Quick state update under lock
         async with self.task_lock:
             task_info = self.tasks.get(thread_id)
-            if task_info:
-                task_info.status = TaskStatus.FAILED
-                task_info.completed_at = datetime.now()
-                task_info.error = error
+            if not task_info:
+                return
 
-                # Send completion sentinel to all live subscribers
-                for queue in task_info.live_queues:
-                    try:
-                        queue.put_nowait(None)  # None signals completion
-                    except Exception as e:
-                        logger.error(f"Error sending completion signal: {e}")
+            task_info.status = TaskStatus.FAILED
+            task_info.completed_at = datetime.now()
+            task_info.error = error
 
-                logger.error(
-                    f"[BackgroundTaskManager] Workflow {thread_id} failed: {error}"
+            # Send completion sentinel to all live subscribers
+            for queue in task_info.live_queues:
+                try:
+                    queue.put_nowait(None)  # None signals completion
+                except Exception as e:
+                    logger.error(f"Error sending completion signal: {e}")
+
+            # Copy refs needed for persistence phase
+            graph = task_info.graph
+            metadata = task_info.metadata
+
+        # Phase 2: Heavy I/O outside lock
+        logger.error(
+            f"[BackgroundTaskManager] Workflow {thread_id} failed: {error}"
+        )
+
+        # Persist error with full details
+        workspace_id = metadata.get("workspace_id")
+        user_id = metadata.get("user_id")
+
+        if workspace_id and user_id:
+            try:
+                from src.server.services.conversation_persistence_service import ConversationPersistenceService
+                from src.utils.tracking import ExecutionTracker
+                from src.server.models.workflow import serialize_state_snapshot
+
+                persistence_service = ConversationPersistenceService.get_instance(thread_id)
+                persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
+
+                # Get partial data before failure
+                tracking_context = ExecutionTracker.get_context()
+                raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
+                agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
+
+                # Serialize agent messages with agent_index
+                agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
+
+                # Get state snapshot with timeout protection
+                state_snapshot = None
+                try:
+                    if graph:
+                        snapshot = await asyncio.wait_for(
+                            graph.aget_state({"configurable": {"thread_id": thread_id}}),
+                            timeout=10.0,
+                        )
+                        if snapshot and snapshot.values:
+                            state_snapshot = serialize_state_snapshot(snapshot.values)
+                except asyncio.TimeoutError:
+                    logger.warning(f"[WorkflowPersistence] aget_state timed out getting snapshot for {thread_id}")
+                except Exception as state_error:
+                    logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
+
+                # Calculate execution time
+                execution_time = calculate_execution_time(metadata)
+
+                # Get token usage and per_call_records from token_callback
+                _, per_call_records = get_token_usage_from_callback(
+                    metadata, "error", thread_id
                 )
 
-                # Persist error with full details
-                metadata = task_info.metadata
-                workspace_id = metadata.get("workspace_id")
-                user_id = metadata.get("user_id")
+                # Get tool usage from handler (has cached result from SSE emission)
+                tool_usage = get_tool_usage_from_handler(
+                    metadata, "error", thread_id
+                )
 
-                if workspace_id and user_id:
-                    try:
-                        from src.server.services.conversation_persistence_service import ConversationPersistenceService
-                        from src.utils.tracking import ExecutionTracker
-                        from src.server.models.workflow import serialize_state_snapshot
+                streaming_chunks = get_streaming_chunks_from_handler(
+                    metadata, "error", thread_id
+                )
 
-                        persistence_service = ConversationPersistenceService.get_instance(thread_id)
-                        persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
+                # Build metadata with all context
+                persist_metadata = {
+                    "msg_type": metadata.get("msg_type"),
+                    "stock_code": metadata.get("stock_code"),
+                    "agent_llm_preset": metadata.get("agent_llm_preset", "default"),
+                    "deepthinking": metadata.get("deepthinking", False)
+                }
 
-                        # Get partial data before failure
-                        tracking_context = ExecutionTracker.get_context()
-                        raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
-                        agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
-
-                        # Serialize agent messages with agent_index
-                        agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
-
-                        # Get state snapshot (using per-task graph reference)
-                        state_snapshot = None
-                        try:
-                            if task_info.graph:
-                                snapshot = await task_info.graph.aget_state({"configurable": {"thread_id": thread_id}})
-                                if snapshot and snapshot.values:
-                                    state_snapshot = serialize_state_snapshot(snapshot.values)
-                        except Exception as state_error:
-                            logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
-
-                        # Calculate execution time
-                        execution_time = calculate_execution_time(metadata)
-
-                        # Get token usage and per_call_records from token_callback
-                        _, per_call_records = get_token_usage_from_callback(
-                            metadata, "error", thread_id
-                        )
-
-                        # Get tool usage from handler (has cached result from SSE emission)
-                        tool_usage = get_tool_usage_from_handler(
-                            metadata, "error", thread_id
-                        )
-
-                        streaming_chunks = get_streaming_chunks_from_handler(
-                            metadata, "error", thread_id
-                        )
-
-                        # Build metadata with all context
-                        persist_metadata = {
-                            "msg_type": metadata.get("msg_type"),
-                            "stock_code": metadata.get("stock_code"),
-                            "agent_llm_preset": metadata.get("agent_llm_preset", "default"),
-                            "deepthinking": metadata.get("deepthinking", False)
-                        }
-
-                        await persistence_service.persist_error(
-                            error_message=error,
-                            errors=[error],
-                            state_snapshot=state_snapshot,
-                            agent_messages=agent_messages,
-                            execution_time=execution_time,
-                            per_call_records=per_call_records,
-                            tool_usage=tool_usage,
-                            streaming_chunks=streaming_chunks,
-                            metadata=persist_metadata
-                        )
-                        logger.info(f"[WorkflowPersistence] Error persisted for thread_id={thread_id}")
-                    except Exception as persist_error:
-                        logger.error(
-                            f"[WorkflowPersistence] Failed to persist error for {thread_id}: {persist_error}",
-                            exc_info=True
-                        )
+                await persistence_service.persist_error(
+                    error_message=error,
+                    errors=[error],
+                    state_snapshot=state_snapshot,
+                    agent_messages=agent_messages,
+                    execution_time=execution_time,
+                    per_call_records=per_call_records,
+                    tool_usage=tool_usage,
+                    streaming_chunks=streaming_chunks,
+                    metadata=persist_metadata
+                )
+                logger.info(f"[WorkflowPersistence] Error persisted for thread_id={thread_id}")
+            except Exception as persist_error:
+                logger.error(
+                    f"[WorkflowPersistence] Failed to persist error for {thread_id}: {persist_error}",
+                    exc_info=True
+                )
 
     async def _mark_soft_interrupted(self, thread_id: str) -> None:
         """Mark workflow as soft-interrupted (ESC).
@@ -984,8 +1028,11 @@ class BackgroundTaskManager:
         send a follow-up message on the same `thread_id`, while leaving any
         independently running background subagent tasks alone.
 
-        Unlike `_mark_cancelled`, this does not persist a user cancellation.
+        Split into two phases to avoid holding the lock during heavy async I/O:
+        - Phase 1 (under lock): status update, sentinels, copy refs
+        - Phase 2 (outside lock): aget_state, persistence, subagent collector
         """
+        # Phase 1: Quick state update under lock
         async with self.task_lock:
             task_info = self.tasks.get(thread_id)
             if not task_info:
@@ -999,102 +1046,111 @@ class BackgroundTaskManager:
                 with suppress(Exception):
                     queue.put_nowait(None)
 
-            logger.info(f"[BackgroundTaskManager] Marked as soft-interrupted: {thread_id}")
-
-            # Persist soft interrupt so query/response pair is saved
+            # Copy refs needed for persistence phase
+            graph = task_info.graph
             metadata = task_info.metadata
-            workspace_id = metadata.get("workspace_id")
-            user_id = metadata.get("user_id")
 
-            if workspace_id and user_id:
+        # Phase 2: Heavy I/O outside lock
+        logger.info(f"[BackgroundTaskManager] Marked as soft-interrupted: {thread_id}")
+
+        # Persist soft interrupt so query/response pair is saved
+        workspace_id = metadata.get("workspace_id")
+        user_id = metadata.get("user_id")
+
+        if workspace_id and user_id:
+            try:
+                from src.server.services.conversation_persistence_service import ConversationPersistenceService
+                from src.utils.tracking import ExecutionTracker
+                from src.server.models.workflow import serialize_state_snapshot
+
+                persistence_service = ConversationPersistenceService.get_instance(
+                    thread_id,
+                    workspace_id=workspace_id,
+                    user_id=user_id
+                )
+                persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
+
+                tracking_context = ExecutionTracker.get_context()
+                raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
+                agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
+
+                agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
+
+                state_snapshot = None
                 try:
-                    from src.server.services.conversation_persistence_service import ConversationPersistenceService
-                    from src.utils.tracking import ExecutionTracker
-                    from src.server.models.workflow import serialize_state_snapshot
-
-                    persistence_service = ConversationPersistenceService.get_instance(
-                        thread_id,
-                        workspace_id=workspace_id,
-                        user_id=user_id
-                    )
-                    persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
-
-                    tracking_context = ExecutionTracker.get_context()
-                    raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
-                    agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
-
-                    agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
-
-                    state_snapshot = None
-                    try:
-                        if task_info.graph:
-                            snapshot = await task_info.graph.aget_state({"configurable": {"thread_id": thread_id}})
-                            if snapshot and snapshot.values:
-                                state_snapshot = serialize_state_snapshot(snapshot.values)
-                    except Exception as state_error:
-                        logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
-
-                    _, per_call_records = get_token_usage_from_callback(
-                        metadata, "interrupt", thread_id
-                    )
-
-                    tool_usage = get_tool_usage_from_handler(
-                        metadata, "interrupt", thread_id
-                    )
-
-                    streaming_chunks = get_streaming_chunks_from_handler(
-                        metadata, "interrupt", thread_id
-                    )
-
-                    execution_time = calculate_execution_time(metadata)
-
-                    persist_metadata = {
-                        "msg_type": metadata.get("msg_type"),
-                        "stock_code": metadata.get("stock_code"),
-                        "agent_llm_preset": metadata.get("agent_llm_preset", "default"),
-                        "deepthinking": metadata.get("deepthinking", False),
-                        "soft_interrupted": True
-                    }
-
-                    response_id = await persistence_service.persist_interrupt(
-                        interrupt_reason="soft_interrupt",
-                        state_snapshot=state_snapshot,
-                        agent_messages=agent_messages,
-                        execution_time=execution_time,
-                        metadata=persist_metadata,
-                        per_call_records=per_call_records,
-                        tool_usage=tool_usage,
-                        streaming_chunks=streaming_chunks
-                    )
-                    logger.info(f"[WorkflowPersistence] Soft interrupt persisted for thread_id={thread_id}")
-
-                    # Spawn collector if subagents are still running
-                    from src.server.services.background_registry_store import BackgroundRegistryStore
-                    bg_store = BackgroundRegistryStore.get_instance()
-                    bg_registry = await bg_store.get_registry(thread_id)
-
-                    if bg_registry and bg_registry.has_pending_tasks():
-                        logger.info(
-                            f"[WorkflowPersistence] {bg_registry.pending_count} subagents still running, "
-                            f"spawning result collector for thread_id={thread_id}"
+                    if graph:
+                        snapshot = await asyncio.wait_for(
+                            graph.aget_state({"configurable": {"thread_id": thread_id}}),
+                            timeout=10.0,
                         )
-                        asyncio.create_task(
-                            self._collect_subagent_results_after_interrupt(
-                                thread_id=thread_id,
-                                response_id=response_id,
-                                original_chunks=streaming_chunks or [],
-                                bg_registry=bg_registry,
-                                workspace_id=workspace_id,
-                                user_id=user_id,
-                                timeout=120.0,
-                            ),
-                            name=f"subagent-collector-{thread_id}",
-                        )
-                except Exception as persist_error:
-                    logger.error(
-                        f"[WorkflowPersistence] Failed to persist soft interrupt for {thread_id}: {persist_error}",
-                        exc_info=True
+                        if snapshot and snapshot.values:
+                            state_snapshot = serialize_state_snapshot(snapshot.values)
+                except asyncio.TimeoutError:
+                    logger.warning(f"[WorkflowPersistence] aget_state timed out getting snapshot for {thread_id}")
+                except Exception as state_error:
+                    logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
+
+                _, per_call_records = get_token_usage_from_callback(
+                    metadata, "interrupt", thread_id
+                )
+
+                tool_usage = get_tool_usage_from_handler(
+                    metadata, "interrupt", thread_id
+                )
+
+                streaming_chunks = get_streaming_chunks_from_handler(
+                    metadata, "interrupt", thread_id
+                )
+
+                execution_time = calculate_execution_time(metadata)
+
+                persist_metadata = {
+                    "msg_type": metadata.get("msg_type"),
+                    "stock_code": metadata.get("stock_code"),
+                    "agent_llm_preset": metadata.get("agent_llm_preset", "default"),
+                    "deepthinking": metadata.get("deepthinking", False),
+                    "soft_interrupted": True
+                }
+
+                response_id = await persistence_service.persist_interrupt(
+                    interrupt_reason="soft_interrupt",
+                    state_snapshot=state_snapshot,
+                    agent_messages=agent_messages,
+                    execution_time=execution_time,
+                    metadata=persist_metadata,
+                    per_call_records=per_call_records,
+                    tool_usage=tool_usage,
+                    streaming_chunks=streaming_chunks
+                )
+                logger.info(f"[WorkflowPersistence] Soft interrupt persisted for thread_id={thread_id}")
+
+                # Spawn collector if subagents are still running
+                from src.server.services.background_registry_store import BackgroundRegistryStore
+                bg_store = BackgroundRegistryStore.get_instance()
+                bg_registry = await bg_store.get_registry(thread_id)
+
+                if bg_registry and bg_registry.has_pending_tasks():
+                    logger.info(
+                        f"[WorkflowPersistence] {bg_registry.pending_count} subagents still running, "
+                        f"spawning result collector for thread_id={thread_id}"
                     )
+                    asyncio.create_task(
+                        self._collect_subagent_results_after_interrupt(
+                            thread_id=thread_id,
+                            response_id=response_id,
+                            original_chunks=streaming_chunks or [],
+                            bg_registry=bg_registry,
+                            workspace_id=workspace_id,
+                            user_id=user_id,
+                            timeout=120.0,
+                        ),
+                        name=f"subagent-collector-{thread_id}",
+                    )
+            except Exception as persist_error:
+                logger.error(
+                    f"[WorkflowPersistence] Failed to persist soft interrupt for {thread_id}: {persist_error}",
+                    exc_info=True
+                )
 
     async def _collect_subagent_results_after_interrupt(
         self,
@@ -1256,93 +1312,111 @@ class BackgroundTaskManager:
         )
 
     async def _mark_cancelled(self, thread_id: str):
+        """Mark workflow as cancelled and notify live subscribers.
+
+        Split into two phases to avoid holding the lock during heavy async I/O:
+        - Phase 1 (under lock): status update, sentinels, copy refs
+        - Phase 2 (outside lock): aget_state, persistence
+        """
+        # Phase 1: Quick state update under lock
         async with self.task_lock:
             task_info = self.tasks.get(thread_id)
-            if task_info:
-                task_info.status = TaskStatus.CANCELLED
-                task_info.completed_at = datetime.now()
+            if not task_info:
+                return
 
-                for queue in task_info.live_queues:
-                    try:
-                        queue.put_nowait(None)
-                    except Exception as e:
-                        logger.error(f"Error sending completion signal: {e}")
+            task_info.status = TaskStatus.CANCELLED
+            task_info.completed_at = datetime.now()
 
-                logger.debug(f"[BackgroundTaskManager] Marked as cancelled: {thread_id}")
+            for queue in task_info.live_queues:
+                try:
+                    queue.put_nowait(None)
+                except Exception as e:
+                    logger.error(f"Error sending completion signal: {e}")
 
-                # Persist cancellation with full details
-                metadata = task_info.metadata
-                workspace_id = metadata.get("workspace_id")
-                user_id = metadata.get("user_id")
+            # Copy refs needed for persistence phase
+            graph = task_info.graph
+            metadata = task_info.metadata
 
-                if workspace_id and user_id:
-                    try:
-                        from src.server.services.conversation_persistence_service import ConversationPersistenceService
-                        from src.utils.tracking import ExecutionTracker
-                        from src.server.models.workflow import serialize_state_snapshot
+        # Phase 2: Heavy I/O outside lock
+        logger.debug(f"[BackgroundTaskManager] Marked as cancelled: {thread_id}")
 
-                        persistence_service = ConversationPersistenceService.get_instance(thread_id)
-                        persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
+        # Persist cancellation with full details
+        workspace_id = metadata.get("workspace_id")
+        user_id = metadata.get("user_id")
 
-                        # Get partial data before cancellation
-                        tracking_context = ExecutionTracker.get_context()
-                        raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
-                        agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
+        if workspace_id and user_id:
+            try:
+                from src.server.services.conversation_persistence_service import ConversationPersistenceService
+                from src.utils.tracking import ExecutionTracker
+                from src.server.models.workflow import serialize_state_snapshot
 
-                        # Serialize agent messages with agent_index
-                        agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
+                persistence_service = ConversationPersistenceService.get_instance(thread_id)
+                persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
 
-                        # Get state snapshot (using per-task graph reference)
-                        state_snapshot = None
-                        try:
-                            if task_info.graph:
-                                snapshot = await task_info.graph.aget_state({"configurable": {"thread_id": thread_id}})
-                                if snapshot and snapshot.values:
-                                    state_snapshot = serialize_state_snapshot(snapshot.values)
-                        except Exception as state_error:
-                            logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
+                # Get partial data before cancellation
+                tracking_context = ExecutionTracker.get_context()
+                raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
+                agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
 
-                        # Calculate token usage AND keep per_call_records
-                        _, per_call_records = get_token_usage_from_callback(
-                            metadata, "cancellation", thread_id
+                # Serialize agent messages with agent_index
+                agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
+
+                # Get state snapshot with timeout protection
+                state_snapshot = None
+                try:
+                    if graph:
+                        snapshot = await asyncio.wait_for(
+                            graph.aget_state({"configurable": {"thread_id": thread_id}}),
+                            timeout=10.0,
                         )
+                        if snapshot and snapshot.values:
+                            state_snapshot = serialize_state_snapshot(snapshot.values)
+                except asyncio.TimeoutError:
+                    logger.warning(f"[WorkflowPersistence] aget_state timed out getting snapshot for {thread_id}")
+                except Exception as state_error:
+                    logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
 
-                        # Get tool usage from handler (has cached result from SSE emission)
-                        tool_usage = get_tool_usage_from_handler(
-                            metadata, "cancellation", thread_id
-                        )
+                # Calculate token usage AND keep per_call_records
+                _, per_call_records = get_token_usage_from_callback(
+                    metadata, "cancellation", thread_id
+                )
 
-                        streaming_chunks = get_streaming_chunks_from_handler(
-                            metadata, "cancellation", thread_id
-                        )
+                # Get tool usage from handler (has cached result from SSE emission)
+                tool_usage = get_tool_usage_from_handler(
+                    metadata, "cancellation", thread_id
+                )
 
-                        # Calculate execution time
-                        execution_time = calculate_execution_time(metadata)
+                streaming_chunks = get_streaming_chunks_from_handler(
+                    metadata, "cancellation", thread_id
+                )
 
-                        # Build persist metadata (include deepthinking for usage tracking)
-                        persist_metadata = {
-                            "msg_type": metadata.get("msg_type"),
-                            "stock_code": metadata.get("stock_code"),
-                            "agent_llm_preset": metadata.get("agent_llm_preset", "default"),
-                            "deepthinking": metadata.get("deepthinking", False),
-                            "cancelled_by_user": True
-                        }
+                # Calculate execution time
+                execution_time = calculate_execution_time(metadata)
 
-                        await persistence_service.persist_cancelled(
-                            state_snapshot=state_snapshot,
-                            agent_messages=agent_messages,
-                            execution_time=execution_time,
-                            metadata=persist_metadata,
-                            per_call_records=per_call_records,
-                            tool_usage=tool_usage,
-                            streaming_chunks=streaming_chunks
-                        )
-                        logger.info(f"[WorkflowPersistence] Cancellation persisted for thread_id={thread_id}")
-                    except Exception as persist_error:
-                        logger.error(
-                            f"[WorkflowPersistence] Failed to persist cancellation for {thread_id}: {persist_error}",
-                            exc_info=True
-                        )
+                # Build persist metadata (include deepthinking for usage tracking)
+                persist_metadata = {
+                    "msg_type": metadata.get("msg_type"),
+                    "stock_code": metadata.get("stock_code"),
+                    "agent_llm_preset": metadata.get("agent_llm_preset", "default"),
+                    "deepthinking": metadata.get("deepthinking", False),
+                    "cancelled_by_user": True
+                }
+
+                await persistence_service.persist_cancelled(
+                    state_snapshot=state_snapshot,
+                    agent_messages=agent_messages,
+                    execution_time=execution_time,
+                    metadata=persist_metadata,
+                    per_call_records=per_call_records,
+                    tool_usage=tool_usage,
+                    streaming_chunks=streaming_chunks
+                )
+                logger.info(f"[WorkflowPersistence] Cancellation persisted for thread_id={thread_id}")
+            except Exception as persist_error:
+                logger.error(
+                    f"[WorkflowPersistence] Failed to persist cancellation for {thread_id}: {persist_error}",
+                    exc_info=True
+                )
 
     async def get_task_status(self, thread_id: str) -> Optional[TaskStatus]:
         """

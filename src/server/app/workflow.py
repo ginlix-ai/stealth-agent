@@ -8,6 +8,7 @@ This module handles:
 - Workflow status checking
 """
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException, Query
@@ -679,7 +680,16 @@ async def trigger_summarization(
 
         # 5. Get current state
         config = build_checkpoint_config(thread_id)
-        state = await graph.aget_state(config)
+        try:
+            state = await asyncio.wait_for(
+                graph.aget_state(config), timeout=10.0
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"aget_state timed out for thread {thread_id} during summarization")
+            raise HTTPException(
+                status_code=504,
+                detail=f"Timed out retrieving state for thread: {thread_id}"
+            )
 
         if not state or not state.values:
             raise HTTPException(
@@ -710,10 +720,20 @@ async def trigger_summarization(
             raise HTTPException(status_code=400, detail=str(e))
 
         # 7. Update state with summarized messages
-        await graph.aupdate_state(
-            config,
-            {"messages": result["messages"]},
-        )
+        try:
+            await asyncio.wait_for(
+                graph.aupdate_state(
+                    config,
+                    {"messages": result["messages"]},
+                ),
+                timeout=10.0,
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"aupdate_state timed out for thread {thread_id} during summarization")
+            raise HTTPException(
+                status_code=504,
+                detail=f"Timed out updating state for thread: {thread_id}"
+            )
 
         logger.info(
             f"Manual summarization completed for thread {thread_id}: "
