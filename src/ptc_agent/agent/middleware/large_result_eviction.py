@@ -180,11 +180,15 @@ class LargeResultEvictionMiddleware(AgentMiddleware):
         )
 
         # Always return as plain string after eviction
-        processed_message = ToolMessage(
+        # Preserve artifact from content_and_artifact tools
+        kwargs = dict(
             content=replacement_text,
             tool_call_id=message.tool_call_id,
             name=message.name,
         )
+        if hasattr(message, 'artifact') and message.artifact is not None:
+            kwargs['artifact'] = message.artifact
+        processed_message = ToolMessage(**kwargs)
         return processed_message, result.files_update
 
     async def _aprocess_large_message(
@@ -234,11 +238,15 @@ class LargeResultEvictionMiddleware(AgentMiddleware):
             content_sample=content_sample,
         )
 
-        processed_message = ToolMessage(
+        # Preserve artifact from content_and_artifact tools
+        kwargs = dict(
             content=replacement_text,
             tool_call_id=message.tool_call_id,
             name=message.name,
         )
+        if hasattr(message, 'artifact') and message.artifact is not None:
+            kwargs['artifact'] = message.artifact
+        processed_message = ToolMessage(**kwargs)
         return processed_message, result.files_update
 
     def _intercept_large_tool_result(

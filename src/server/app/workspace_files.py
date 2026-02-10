@@ -75,6 +75,10 @@ def _require_workspace_owner(
         raise HTTPException(status_code=404, detail="Workspace not found")
 
 
+def _is_flash_workspace(workspace: dict[str, Any]) -> bool:
+    return workspace.get("status") == "flash"
+
+
 def _to_client_path(sandbox: Any, absolute_path: str) -> str:
     """Convert an absolute sandbox path into a virtual client path.
 
@@ -178,6 +182,9 @@ async def list_workspace_files(
     workspace = await db_get_workspace(workspace_id)
     _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
 
+    if _is_flash_workspace(workspace):
+        return {"files": [], "sandbox_ready": False, "flash_workspace": True}
+
     manager = WorkspaceManager.get_instance()
     session = await manager.get_session_for_workspace(workspace_id, user_id=x_user_id)
 
@@ -241,6 +248,9 @@ async def read_workspace_file(
 
     workspace = await db_get_workspace(workspace_id)
     _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
+
+    if _is_flash_workspace(workspace):
+        raise HTTPException(status_code=400, detail="Flash workspaces do not have a sandbox")
 
     manager = WorkspaceManager.get_instance()
     session = await manager.get_session_for_workspace(workspace_id, user_id=x_user_id)
@@ -306,6 +316,9 @@ async def download_workspace_file(
     workspace = await db_get_workspace(workspace_id)
     _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
 
+    if _is_flash_workspace(workspace):
+        raise HTTPException(status_code=400, detail="Flash workspaces do not have a sandbox")
+
     manager = WorkspaceManager.get_instance()
     session = await manager.get_session_for_workspace(workspace_id, user_id=x_user_id)
 
@@ -349,6 +362,9 @@ async def upload_workspace_file(
 
     workspace = await db_get_workspace(workspace_id)
     _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
+
+    if _is_flash_workspace(workspace):
+        raise HTTPException(status_code=400, detail="Flash workspaces do not have a sandbox")
 
     manager = WorkspaceManager.get_instance()
     session = await manager.get_session_for_workspace(workspace_id, user_id=x_user_id)

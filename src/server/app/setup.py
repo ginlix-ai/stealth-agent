@@ -147,6 +147,11 @@ async def lifespan(app: FastAPI):
             memory_type=os.getenv("MEMORY_DB_TYPE", "postgres")
         )
         await open_checkpointer_pool(checkpointer)
+        # Validate checkpointer pool is ready with a health check
+        if checkpointer and hasattr(checkpointer, "conn"):
+            pool = checkpointer.conn
+            async with pool.connection() as conn:
+                await conn.execute("SELECT 1")
         logger.info("PTC Agent checkpointer initialized")
 
     except FileNotFoundError as e:
@@ -308,6 +313,7 @@ from src.server.app.users import router as users_router
 from src.server.app.watchlist import router as watchlist_router
 from src.server.app.portfolio import router as portfolio_router
 from src.server.app.infoflow import router as infoflow_router
+from src.server.app.sec_proxy import router as sec_proxy_router
 
 # Include all routers
 app.include_router(chat_router)  # /api/v1/chat/* - Main chat endpoint
@@ -324,4 +330,5 @@ app.include_router(users_router)  # /api/v1/users/* - User management
 app.include_router(watchlist_router)  # /api/v1/users/me/watchlist/* - Watchlist management
 app.include_router(portfolio_router)  # /api/v1/users/me/portfolio/* - Portfolio management
 app.include_router(infoflow_router)  # /api/v1/infoflow/* - InfoFlow content feed
+app.include_router(sec_proxy_router)  # /api/v1/sec-proxy/* - SEC EDGAR document proxy
 app.include_router(health_router)  # /health - Health check

@@ -176,7 +176,17 @@ class EdgarToolsParser(BaseSECParser):
 
             # Convert to markdown if requested
             if output_format == "markdown":
-                return self._format_as_markdown(result)
+                markdown = self._format_as_markdown(result)
+                metadata = {
+                    "symbol": result["symbol"],
+                    "filing_type": result["filing_type"],
+                    "filing_date": result["filing_date"],
+                    "period_end": result["period_end"],
+                    "cik": result["cik"],
+                    "source_url": result["source_url"],
+                    "sections_extracted": result["sections_extracted"],
+                }
+                return {"content": markdown, "metadata": metadata}
 
             return result
 
@@ -186,7 +196,7 @@ class EdgarToolsParser(BaseSECParser):
             logger.warning(f"edgartools parsing failed: {e}")
             raise ParsingFailedError(f"edgartools parsing failed: {e}")
 
-    def _format_as_markdown(self, result: Dict[str, Any]) -> Dict[str, Any]:
+    def _format_as_markdown(self, result: Dict[str, Any]) -> str:
         """Format the result as markdown string."""
         md_parts = []
 
