@@ -12,7 +12,7 @@ from typing import Annotated, Callable, Optional, TypeVar
 from fastapi import Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from src.server.auth.jwt_bearer import _decode_token
+from src.server.auth.jwt_bearer import _AUTH_ENABLED, LOCAL_DEV_USER_ID, _decode_token
 
 # Type variable for generic return type preservation
 T = TypeVar("T")
@@ -27,10 +27,16 @@ async def get_current_user_id(
     """
     FastAPI dependency to extract user ID.
 
-    Checks for a Bearer JWT first (Supabase auth). Falls back to the legacy
-    X-User-Id header during the transition period.  Once all clients send
-    Bearer tokens the fallback can be removed.
+    When Supabase auth is disabled (``SUPABASE_URL`` unset), returns a
+    static local-dev user ID immediately.
+
+    Otherwise checks for a Bearer JWT first (Supabase auth). Falls back to
+    the legacy X-User-Id header during the transition period.  Once all
+    clients send Bearer tokens the fallback can be removed.
     """
+    if not _AUTH_ENABLED:
+        return LOCAL_DEV_USER_ID
+
     if credentials is not None:
         return _decode_token(credentials.credentials)
 

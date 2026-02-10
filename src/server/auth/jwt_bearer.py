@@ -3,6 +3,10 @@ Supabase JWT verification.
 
 Decodes asymmetric JWTs (RS256/ES256) using JWKS public keys fetched from the
 Supabase project endpoint. Returns the user UUID from the `sub` claim.
+
+When ``SUPABASE_URL`` is **not set**, authentication is bypassed and all
+requests are attributed to a default local-dev identity.  This lets
+contributors run the stack locally without a Supabase project.
 """
 
 import os
@@ -11,6 +15,9 @@ import jwt
 from jwt import PyJWKClient
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+_AUTH_ENABLED = bool(os.getenv("SUPABASE_URL", ""))
+LOCAL_DEV_USER_ID = "local-dev-user"
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -56,7 +63,12 @@ async def verify_jwt_token(
 
     Returns the Supabase user UUID (``sub`` claim) which is used directly
     as ``user_id`` across all database tables.
+
+    When Supabase auth is disabled (``SUPABASE_URL`` unset), returns a
+    static local-dev user ID without requiring a token.
     """
+    if not _AUTH_ENABLED:
+        return LOCAL_DEV_USER_ID
     if credentials is None:
         raise HTTPException(status_code=401, detail="Missing Bearer token")
     return _decode_token(credentials.credentials)

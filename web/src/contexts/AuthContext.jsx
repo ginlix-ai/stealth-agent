@@ -4,9 +4,38 @@ import { setTokenGetter } from '../api/client';
 
 const AuthContext = createContext(null);
 
+const _SUPABASE_AUTH_ENABLED = !!import.meta.env.VITE_SUPABASE_URL;
+const _LOCAL_DEV_USER_ID = 'local-dev-user';
+
 const baseURL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
+/**
+ * Static provider value used when Supabase auth is disabled.
+ * Presents the app as permanently logged-in with a local-dev identity.
+ */
+const _localDevValue = {
+  userId: _LOCAL_DEV_USER_ID,
+  user: { id: _LOCAL_DEV_USER_ID, name: 'Local User' },
+  isInitialized: true,
+  isLoggedIn: true,
+  loginWithEmail: () => Promise.resolve(),
+  signupWithEmail: () => Promise.resolve(),
+  loginWithProvider: () => Promise.resolve(),
+  logout: () => Promise.resolve(),
+  refreshUser: () => {},
+};
+
 export function AuthProvider({ children }) {
+  // Skip all Supabase logic when auth is disabled.
+  if (!_SUPABASE_AUTH_ENABLED) {
+    return <AuthContext.Provider value={_localDevValue}>{children}</AuthContext.Provider>;
+  }
+
+  return <SupabaseAuthProvider>{children}</SupabaseAuthProvider>;
+}
+
+/** Inner provider that uses hooks — only rendered when Supabase auth is enabled. */
+function SupabaseAuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [localUser, setLocalUser] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);

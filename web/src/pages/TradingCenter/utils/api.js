@@ -9,6 +9,7 @@ const baseURL = api.defaults.baseURL;
 
 /** Get Bearer auth headers for raw fetch() calls (SSE streams). */
 async function getAuthHeaders() {
+  if (!supabase) return {};
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   return token ? { Authorization: `Bearer ${token}` } : {};
