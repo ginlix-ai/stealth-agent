@@ -46,7 +46,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
   const initialMessageSentRef = useRef(false);
   // Determine agent mode: flash workspaces use flash mode, otherwise ptc
   const [agentMode, setAgentMode] = useState(location.state?.agentMode || 'ptc');
-  const isFlashMode = agentMode === 'flash';
+  const isFlashMode = agentMode === 'flash' || location.state?.workspaceStatus === 'flash';
   const [filePanelTargetFile, setFilePanelTargetFile] = useState(null);
   const [filePanelTargetDir, setFilePanelTargetDir] = useState(null);
   const isDraggingRef = useRef(false);
@@ -646,11 +646,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
             <h1 className="text-base font-semibold whitespace-nowrap dashboard-title-font" style={{ color: '#FFFFFF' }}>
               LangAlpha
             </h1>
-            {isReconnecting ? (
-              <span className="text-xs whitespace-nowrap" style={{ color: '#FFFFFF', opacity: 0.5 }}>
-                Reconnecting...
-              </span>
-            ) : isLoadingHistory ? (
+            {isLoadingHistory ? (
               <span className="text-xs whitespace-nowrap" style={{ color: '#FFFFFF', opacity: 0.5 }}>
                 Loading history...
               </span>

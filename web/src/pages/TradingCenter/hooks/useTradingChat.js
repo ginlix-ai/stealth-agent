@@ -5,12 +5,12 @@
  * Features:
  * - Flash mode only (agent_mode: "flash")
  * - No history loading (always starts fresh)
- * - Thread cleanup on unmount
+ * - Threads persist across navigation (stored in flash workspace)
  * - Simplified message parsing (no subagents, no todo lists)
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { sendFlashChatMessage, deleteTradingThread } from '../utils/api';
+import { sendFlashChatMessage } from '../utils/api';
 
 const DEFAULT_USER_ID = 'test_user_001';
 
@@ -567,19 +567,12 @@ export function useTradingChat(userId = DEFAULT_USER_ID) {
     }
   };
 
-  // Cleanup: Delete thread on unmount, clear flush timer
+  // Cleanup: clear flush timer on unmount
   useEffect(() => {
     return () => {
-      // Clear batch flush timer
       clearTimeout(flushTimerRef.current);
-      // Delete thread
-      if (threadIdRef.current && threadIdRef.current !== '__default__') {
-        deleteTradingThread(threadIdRef.current, userId).catch((err) => {
-          console.warn('[TradingChat] Error deleting thread on unmount:', err);
-        });
-      }
     };
-  }, [userId]);
+  }, []);
 
   return {
     messages,

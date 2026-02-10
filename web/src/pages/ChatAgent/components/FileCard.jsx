@@ -4,14 +4,14 @@ import './FileCard.css';
 const EXT_ICONS = {
   py: FileCode, js: FileCode, jsx: FileCode, ts: FileCode, tsx: FileCode,
   html: FileCode, css: FileCode, sh: FileCode, bash: FileCode, sql: FileCode,
-  csv: Table, json: Table, yaml: Table, yml: Table, xml: Table, toml: Table,
+  csv: Table, json: Table, yaml: Table, yml: Table, xml: Table, toml: Table, xlsx: Table, xls: Table,
   png: Image, jpg: Image, jpeg: Image, svg: Image, gif: Image, webp: Image,
 };
 
 const KNOWN_EXTS = new Set([
   'md', 'txt', 'pdf', 'doc', 'docx', 'rtf',
   'py', 'js', 'jsx', 'ts', 'tsx', 'html', 'css', 'sh', 'bash', 'sql', 'r', 'ipynb',
-  'csv', 'json', 'yaml', 'yml', 'xml', 'toml', 'ini', 'cfg', 'log', 'env',
+  'csv', 'json', 'yaml', 'yml', 'xml', 'toml', 'ini', 'cfg', 'log', 'env', 'xlsx', 'xls',
   'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp',
   'zip', 'tar', 'gz',
 ]);

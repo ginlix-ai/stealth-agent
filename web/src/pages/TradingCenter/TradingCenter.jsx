@@ -318,17 +318,17 @@ function TradingCenter() {
         />
         <div className="trading-right-panel">
           <div className="trading-right-panel-inner">
+            <TradingPanel
+              messages={messages}
+              isLoading={isLoading}
+              error={error}
+            />
             <TradingChatInput
               onSend={handleSendMessage}
               isLoading={isLoading}
               onCaptureChart={handleCaptureChartForContext}
               chartImage={chartImage}
               onRemoveChartImage={() => { setChartImage(null); setChartImageDesc(null); }}
-            />
-            <TradingPanel
-              messages={messages}
-              isLoading={isLoading}
-              error={error}
             />
           </div>
         </div>
