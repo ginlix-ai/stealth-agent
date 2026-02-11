@@ -40,6 +40,13 @@ function SupabaseAuthProvider({ children }) {
   const [localUser, setLocalUser] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
+  /** Wire up the axios token getter immediately when we have a session. */
+  const wireTokenGetter = useCallback(() => {
+    setTokenGetter(() =>
+      supabase.auth.getSession().then((r) => r.data.session?.access_token)
+    );
+  }, []);
+
   /** Sync Supabase user to our backend and store the profile locally. */
   const syncUser = useCallback(async (sess) => {
     if (!sess) return;
@@ -65,17 +72,16 @@ function SupabaseAuthProvider({ children }) {
     } catch (err) {
       console.error('[auth] syncUser failed:', err);
     }
-    // Wire up the token getter so the axios interceptor can attach Bearer tokens.
-    setTokenGetter(() =>
-      supabase.auth.getSession().then((r) => r.data.session?.access_token)
-    );
   }, []);
 
   // Bootstrap: read existing session and listen for auth changes.
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: sess } }) => {
       setSession(sess);
-      if (sess) syncUser(sess);
+      if (sess) {
+        wireTokenGetter();  // Set token getter BEFORE React re-renders
+        syncUser(sess);
+      }
       setIsInitialized(true);
     });
 
@@ -84,6 +90,7 @@ function SupabaseAuthProvider({ children }) {
     } = supabase.auth.onAuthStateChange((_event, sess) => {
       setSession(sess);
       if (sess) {
+        wireTokenGetter();
         syncUser(sess);
       } else {
         setLocalUser(null);
@@ -92,7 +99,7 @@ function SupabaseAuthProvider({ children }) {
     });
 
     return () => subscription.unsubscribe();
-  }, [syncUser]);
+  }, [wireTokenGetter, syncUser]);
 
   const loginWithEmail = useCallback(
     (email, password) => supabase.auth.signInWithPassword({ email, password }),
