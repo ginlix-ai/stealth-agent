@@ -41,11 +41,28 @@ from src.server.models.user import (
     UserUpdate,
     UserWithPreferencesResponse,
 )
+from src.server.services.plan_service import PlanService
 from src.server.utils.api import CurrentUserId, handle_api_exceptions, raise_not_found
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["Users"])
+
+
+async def enrich_user_with_plan(user_dict: dict) -> dict:
+    """Replace raw plan_id with a plan object for UserResponse serialization."""
+    svc = PlanService.get_instance()
+    await svc.ensure_loaded()
+    plan_id = user_dict.pop('plan_id', None)
+    plan = svc.get_plan(plan_id) if plan_id else svc.get_default_plan()
+    user_dict['plan'] = {
+        'id': plan.id,
+        'name': plan.name,
+        'display_name': plan.display_name,
+        'rank': plan.rank,
+    }
+    return user_dict
+
 
 # ==================== Auth Sync ====================
 
@@ -81,7 +98,7 @@ async def sync_user(
         result = await get_user_with_preferences(user_id)
         if not result:
             raise_not_found("User")
-        user_resp = UserResponse.model_validate(result["user"])
+        user_resp = UserResponse.model_validate(await enrich_user_with_plan(result["user"]))
         pref_resp = None
         if result.get("preferences"):
             pref_resp = UserPreferencesResponse.model_validate(result["preferences"])
@@ -97,7 +114,7 @@ async def sync_user(
                 result = await get_user_with_preferences(user_id)
                 if not result:
                     raise_not_found("User")
-                user_resp = UserResponse.model_validate(result["user"])
+                user_resp = UserResponse.model_validate(await enrich_user_with_plan(result["user"]))
                 pref_resp = None
                 if result.get("preferences"):
                     pref_resp = UserPreferencesResponse.model_validate(result["preferences"])
@@ -110,7 +127,7 @@ async def sync_user(
         name=body.name,
         avatar_url=body.avatar_url,
     )
-    user_resp = UserResponse.model_validate(user)
+    user_resp = UserResponse.model_validate(await enrich_user_with_plan(user))
     return UserWithPreferencesResponse(user=user_resp, preferences=None)
 
 
@@ -148,7 +165,7 @@ async def create_user(
     )
 
     logger.info(f"Created user {user_id}")
-    return UserResponse.model_validate(user)
+    return UserResponse.model_validate(await enrich_user_with_plan(user))
 
 
 @router.get("/users/me", response_model=UserWithPreferencesResponse)
@@ -173,7 +190,7 @@ async def get_current_user(user_id: CurrentUserId):
     if not result:
         raise_not_found("User")
 
-    user_response = UserResponse.model_validate(result["user"])
+    user_response = UserResponse.model_validate(await enrich_user_with_plan(result["user"]))
     preferences_response = None
     if result["preferences"]:
         preferences_response = UserPreferencesResponse.model_validate(result["preferences"])
@@ -227,7 +244,7 @@ async def update_current_user(
     # Get preferences for combined response
     preferences = await db_get_user_preferences(user_id)
 
-    user_response = UserResponse.model_validate(user)
+    user_response = UserResponse.model_validate(await enrich_user_with_plan(user))
     preferences_response = None
     if preferences:
         preferences_response = UserPreferencesResponse.model_validate(preferences)
@@ -293,11 +310,14 @@ async def update_preferences(
     if not user:
         raise_not_found("User")
 
-    # Convert Pydantic models to dicts for JSONB storage
-    risk_pref = request.risk_preference.model_dump(exclude_none=True) if request.risk_preference else None
-    investment_pref = request.investment_preference.model_dump(exclude_none=True) if request.investment_preference else None
-    agent_pref = request.agent_preference.model_dump(exclude_none=True) if request.agent_preference else None
-    other_pref = request.other_preference.model_dump(exclude_none=True) if request.other_preference else None
+    # Convert Pydantic models to dicts for JSONB storage.
+    # Use exclude_unset=True (not exclude_none=True) so explicitly-sent null
+    # values are preserved — _split_updates_and_deletes uses None to signal
+    # key deletion from the JSONB column.
+    risk_pref = request.risk_preference.model_dump(exclude_unset=True) if request.risk_preference else None
+    investment_pref = request.investment_preference.model_dump(exclude_unset=True) if request.investment_preference else None
+    agent_pref = request.agent_preference.model_dump(exclude_unset=True) if request.agent_preference else None
+    other_pref = request.other_preference.model_dump(exclude_unset=True) if request.other_preference else None
 
     preferences = await upsert_user_preferences(
         user_id=user_id,

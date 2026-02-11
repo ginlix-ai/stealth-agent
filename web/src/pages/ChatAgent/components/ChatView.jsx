@@ -777,6 +777,14 @@ function ChatView({ workspaceId, threadId, onBack }) {
                         <span>Agent interrupted. Feel free to provide new instructions.</span>
                       </div>
                     )}
+                    {messageError && !isLoading && (
+                      <div
+                        className="flex items-center gap-2 px-3 py-2 rounded-md text-sm"
+                        style={{ backgroundColor: 'rgba(220, 38, 38, 0.1)', color: 'rgba(255, 180, 180, 0.9)' }}
+                      >
+                        <span>{messageError}</span>
+                      </div>
+                    )}
                     <ChatInputWithMentions
                       onSend={handleSendMessage}
                       disabled={isLoading || isLoadingHistory || !workspaceId || !!pendingInterrupt}

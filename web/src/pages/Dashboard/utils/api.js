@@ -167,6 +167,21 @@ export async function updatePreferences(preferences) {
     return data;
 }
 
+export async function getUsageStatus() {
+  const { data } = await api.get('/api/v1/usage');
+  return data;
+}
+
+export async function redeemCode(code) {
+  const { data } = await api.post('/api/v1/usage/redeem', { code });
+  return data;
+}
+
+export async function getPlans() {
+  const { data } = await api.get('/api/v1/plans');
+  return data;
+}
+
 export async function uploadAvatar(file) {
   const formData = new FormData();
   formData.append('file', file);
@@ -322,6 +337,30 @@ export const getPortfolio = portfolioApi.listPortfolio;
 
 /** Add portfolio holding. Payload: symbol, instrument_type, quantity, average_cost?, ... */
 export const addPortfolioHolding = portfolioApi.addPortfolioHolding;
+
+// --- Models ---
+
+export async function getAvailableModels() {
+  const { data } = await api.get('/api/v1/models');
+  return data;
+}
+
+// --- BYOK API Keys ---
+
+export async function getUserApiKeys() {
+  const { data } = await api.get('/api/v1/users/me/api-keys');
+  return data;
+}
+
+export async function updateUserApiKeys(payload) {
+  const { data } = await api.put('/api/v1/users/me/api-keys', payload);
+  return data;
+}
+
+export async function deleteUserApiKey(provider) {
+  const { data } = await api.delete(`/api/v1/users/me/api-keys/${provider}`);
+  return data;
+}
 
 // --- InfoFlow (content feed) ---
 

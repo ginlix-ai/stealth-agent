@@ -67,7 +67,7 @@ async def create_user(
                 VALUES (%s, %s, %s, %s, %s, %s, FALSE, NOW(), NOW())
                 RETURNING
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, created_at, updated_at, last_login_at
+                    onboarding_completed, plan_id, created_at, updated_at, last_login_at
             """, (user_id, email, name, avatar_url, timezone, locale))
 
             result = await cur.fetchone()
@@ -82,7 +82,7 @@ async def find_user_by_email(email: str) -> Optional[Dict[str, Any]]:
             await cur.execute("""
                 SELECT
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, created_at, updated_at, last_login_at
+                    onboarding_completed, plan_id, created_at, updated_at, last_login_at
                 FROM users
                 WHERE email = %s
                 LIMIT 1
@@ -104,7 +104,7 @@ async def migrate_user_id(old_user_id: str, new_user_id: str) -> Optional[Dict[s
                 WHERE user_id = %s
                 RETURNING
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, created_at, updated_at, last_login_at
+                    onboarding_completed, plan_id, created_at, updated_at, last_login_at
             """, (new_user_id, old_user_id))
             result = await cur.fetchone()
             if result:
@@ -139,7 +139,7 @@ async def create_user_from_auth(
                     updated_at = NOW()
                 RETURNING
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, created_at, updated_at, last_login_at
+                    onboarding_completed, plan_id, created_at, updated_at, last_login_at
             """, (user_id, email, name, avatar_url))
             result = await cur.fetchone()
             logger.info(f"[user_db] create_user_from_auth user_id={user_id}")
@@ -161,7 +161,7 @@ async def get_user(user_id: str) -> Optional[Dict[str, Any]]:
             await cur.execute("""
                 SELECT
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, created_at, updated_at, last_login_at
+                    onboarding_completed, plan_id, created_at, updated_at, last_login_at
                 FROM users
                 WHERE user_id = %s
             """, (user_id,))
@@ -212,7 +212,7 @@ async def update_user(
 
     returning_columns = [
         "user_id", "email", "name", "avatar_url", "timezone", "locale",
-        "onboarding_completed", "created_at", "updated_at", "last_login_at",
+        "onboarding_completed", "plan_id", "created_at", "updated_at", "last_login_at",
     ]
 
     query, params = builder.build(
@@ -274,7 +274,7 @@ async def upsert_user(
                     updated_at = NOW()
                 RETURNING
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, created_at, updated_at, last_login_at
+                    onboarding_completed, plan_id, created_at, updated_at, last_login_at
             """, (user_id, email, name, avatar_url, timezone, locale))
 
             result = await cur.fetchone()
@@ -457,7 +457,7 @@ async def get_user_with_preferences(user_id: str) -> Optional[Dict[str, Any]]:
             await cur.execute("""
                 SELECT
                     u.user_id, u.email, u.name, u.avatar_url, u.timezone, u.locale,
-                    u.onboarding_completed, u.created_at, u.updated_at, u.last_login_at,
+                    u.onboarding_completed, u.plan_id, u.created_at, u.updated_at, u.last_login_at,
                     p.preference_id, p.risk_preference, p.investment_preference,
                     p.agent_preference, p.other_preference,
                     p.created_at as pref_created_at, p.updated_at as pref_updated_at
@@ -479,6 +479,7 @@ async def get_user_with_preferences(user_id: str) -> Optional[Dict[str, Any]]:
                 'timezone': result['timezone'],
                 'locale': result['locale'],
                 'onboarding_completed': result['onboarding_completed'],
+                'plan_id': result['plan_id'],
                 'created_at': result['created_at'],
                 'updated_at': result['updated_at'],
                 'last_login_at': result['last_login_at'],

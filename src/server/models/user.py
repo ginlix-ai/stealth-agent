@@ -201,6 +201,15 @@ class UserUpdate(UserBase):
     )
 
 
+class PlanResponse(BaseModel):
+    """Nested plan object returned inside UserResponse."""
+
+    id: int = Field(description="Plan ID")
+    name: str = Field(description="Plan internal name")
+    display_name: str = Field(description="Plan display name")
+    rank: int = Field(description="Plan rank (0 = lowest)")
+
+
 class UserResponse(UserBase):
     """Response model for user details."""
 
@@ -208,12 +217,32 @@ class UserResponse(UserBase):
     onboarding_completed: bool = Field(
         default=False, description="Whether onboarding is completed"
     )
+    plan: PlanResponse = Field(description="User plan details")
     created_at: datetime = Field(description="Creation timestamp")
     updated_at: datetime = Field(description="Last update timestamp")
     last_login_at: Optional[datetime] = Field(None, description="Last login timestamp")
 
     class Config:
         from_attributes = True
+
+
+# =============================================================================
+# Code Redemption Models
+# =============================================================================
+
+
+class RedeemCodeRequest(BaseModel):
+    """Request model for redeeming a code."""
+
+    code: str = Field(..., min_length=1, max_length=50, description="Redemption code")
+
+
+class RedeemCodeResponse(BaseModel):
+    """Response model for successful code redemption."""
+
+    previous_plan: str = Field(description="Plan before redemption")
+    new_plan: str = Field(description="Plan after redemption")
+    message: str = Field(description="Human-readable success message")
 
 
 # =============================================================================
