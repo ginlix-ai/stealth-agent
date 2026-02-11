@@ -113,7 +113,7 @@ async def run_migrations():
                                 depth += stripped.count('(') - stripped.count(')')
                                 if stripped.endswith(';') and depth <= 0:
                                     buf.append(stripped[:-1])  # drop trailing ;
-                                    stmt = ' '.join(buf).strip()
+                                    stmt = '\n'.join(buf).strip()
                                     if stmt:
                                         statements.append(stmt)
                                     buf = []
@@ -121,12 +121,17 @@ async def run_migrations():
                                 else:
                                     buf.append(stripped)
                             # Catch trailing statement without semicolon
-                            trailing = ' '.join(buf).strip()
+                            trailing = '\n'.join(buf).strip()
                             if trailing:
                                 statements.append(trailing)
 
-                            for stmt in statements:
-                                await cur.execute(stmt)
+                            for i, stmt in enumerate(statements):
+                                try:
+                                    await cur.execute(stmt)
+                                except Exception as stmt_err:
+                                    print(f"   ❌ Statement {i+1} failed: {stmt_err}")
+                                    print(f"   SQL: {stmt[:200]}...")
+                                    raise
                             await cur.execute(
                                 "INSERT INTO _migrations (name) VALUES (%s)",
                                 (migration_file.name,)
