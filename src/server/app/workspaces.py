@@ -20,6 +20,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from src.server.utils.api import CurrentUserId
+from src.server.dependencies.usage_limits import WorkspaceLimitCheck
 from src.server.database.workspace import (
     get_workspace as db_get_workspace,
     get_workspaces_for_user,
@@ -68,7 +69,7 @@ def _workspace_to_response(workspace: dict) -> WorkspaceResponse:
 @router.post("", response_model=WorkspaceResponse, status_code=201)
 async def create_workspace(
     request: WorkspaceCreate,
-    x_user_id: CurrentUserId,
+    x_user_id: WorkspaceLimitCheck,
 ):
     """
     Create a new workspace with dedicated sandbox.

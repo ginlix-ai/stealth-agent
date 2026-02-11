@@ -70,6 +70,8 @@ from src.server.utils.skill_context import (
 )
 from src.server.utils.image_context import parse_image_contexts, inject_image_context
 from src.server.utils.api import CurrentUserId
+from src.server.dependencies.usage_limits import ChatRateLimited
+from src.server.services.usage_limiter import UsageLimiter
 
 # Locale/timezone configuration
 from src.config.settings import (
@@ -88,7 +90,7 @@ router = APIRouter(prefix="/api/v1/chat", tags=["Chat"])
 
 
 @router.post("/stream")
-async def chat_stream(request: ChatRequest, user_id: CurrentUserId):
+async def chat_stream(request: ChatRequest, user_id: ChatRateLimited):
     """
     Stream PTC agent responses as Server-Sent Events.
 
@@ -423,6 +425,10 @@ async def _astream_flash_workflow(
             yield f"event: error\ndata: {error_event}\n\n"
 
         raise
+
+    finally:
+        # Release burst slot for flash workflows (synchronous, no background task)
+        await UsageLimiter.release_burst_slot(user_id)
 
 
 async def _astream_workflow(
@@ -902,6 +908,9 @@ async def _astream_workflow(
                     f"[PTC_CHAT] Background completion persistence failed for {thread_id}: {e}",
                     exc_info=True,
                 )
+            finally:
+                # Release burst slot so it doesn't block future requests
+                await UsageLimiter.release_burst_slot(user_id)
 
         # Start workflow in background with event buffering
         task_info = await manager.start_workflow(
@@ -1015,6 +1024,9 @@ async def _astream_workflow(
                 # Cancel the background workflow
                 await manager.cancel_workflow(thread_id)
 
+                # Release burst slot on cancellation
+                await UsageLimiter.release_burst_slot(user_id)
+
                 registry_store = BackgroundRegistryStore.get_instance()
                 await registry_store.cancel_and_clear(thread_id, force=True)
             else:
@@ -1046,6 +1058,9 @@ async def _astream_workflow(
         # =====================================================================
         # Phase 4: Error Recovery with Retry Logic
         # =====================================================================
+
+        # Release burst slot on error so it doesn't block future requests
+        await UsageLimiter.release_burst_slot(user_id)
 
         # Get token/tool usage for billing even on errors
         _per_call_records = token_callback.per_call_records if token_callback else None
