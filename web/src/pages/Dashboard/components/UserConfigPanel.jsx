@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, User, LogOut } from 'lucide-react';
 import { Input } from '../../../components/ui/input';
-import { updateCurrentUser, getCurrentUser, updatePreferences, getPreferences, uploadAvatar } from '../utils/api';
+import { updateCurrentUser, getCurrentUser, updatePreferences, getPreferences, uploadAvatar, redeemCode, getUsageStatus } from '../utils/api';
 import { useAuth } from '../../../contexts/AuthContext';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -29,6 +29,14 @@ function UserConfigPanel({ isOpen, onClose }) {
   const [holdingPeriod, setHoldingPeriod] = useState('');
   const [analysisFocus, setAnalysisFocus] = useState('');
   const [outputStyle, setOutputStyle] = useState('');
+
+  const [plan, setPlan] = useState({ id: 1, name: 'free', display_name: 'Free', rank: 0 });
+  const [redeemInput, setRedeemInput] = useState('');
+  const [isRedeeming, setIsRedeeming] = useState(false);
+  const [redeemError, setRedeemError] = useState(null);
+  const [redeemSuccess, setRedeemSuccess] = useState(null);
+
+  const [usage, setUsage] = useState(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -78,7 +86,7 @@ function UserConfigPanel({ isOpen, onClose }) {
   useEffect(() => {
     if (isOpen) {
       setIsLoading(true);
-      Promise.all([loadUserData(), loadPreferencesData()])
+      Promise.all([loadUserData(), loadPreferencesData(), loadUsageData()])
         .finally(() => setIsLoading(false));
     }
   }, [isOpen]);
@@ -90,6 +98,7 @@ function UserConfigPanel({ isOpen, onClose }) {
         setName(userData.user.name || '');
         setTimezone(userData.user.timezone || '');
         setLocale(userData.user.locale || '');
+        setPlan(userData.user.plan || { id: 1, name: 'free', display_name: 'Free', rank: 0 });
         const url = userData.user.avatar_url;
         const version = userData.user.updated_at;
         setAvatarUrl(url ? `${url}?v=${version}` : null);
@@ -110,6 +119,15 @@ function UserConfigPanel({ isOpen, onClose }) {
         setOutputStyle(preferencesData.agent_preference?.output_style || '');
       }
     } catch {}
+  };
+
+  const loadUsageData = async () => {
+    try {
+      const data = await getUsageStatus();
+      setUsage(data);
+    } catch {
+      // Usage data load failed - keep null
+    }
   };
 
   const handleAvatarChange = async (e) => {
@@ -180,8 +198,36 @@ function UserConfigPanel({ isOpen, onClose }) {
     onClose();
   };
 
+  const handleRedeemCode = async () => {
+    if (!redeemInput.trim()) return;
+    setIsRedeeming(true);
+    setRedeemError(null);
+    setRedeemSuccess(null);
+    try {
+      const result = await redeemCode(redeemInput.trim());
+      setRedeemSuccess(result.message);
+      setRedeemInput('');
+      refreshUser();
+      await Promise.all([loadUserData(), loadUsageData()]);
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message || 'Failed to redeem code';
+      setRedeemError(typeof detail === 'string' ? detail : detail.message || 'Failed to redeem code');
+    } finally {
+      setIsRedeeming(false);
+    }
+  };
+
+  const PLAN_BADGE_COLORS = [
+    { backgroundColor: 'var(--color-bg-card)', color: 'var(--color-text-tertiary)', border: '1px solid var(--color-border-muted)' },
+    { backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.3)' },
+    { backgroundColor: 'rgba(234, 179, 8, 0.15)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)' },
+  ];
+  const getPlanBadgeStyle = (rank) => PLAN_BADGE_COLORS[Math.min(rank, PLAN_BADGE_COLORS.length - 1)];
+
   const handleClose = () => {
     setError(null);
+    setRedeemError(null);
+    setRedeemSuccess(null);
     onClose();
   };
 
@@ -347,6 +393,94 @@ function UserConfigPanel({ isOpen, onClose }) {
                         <option key={i} value={item.value} style={{ backgroundColor: 'var(--color-bg-card)' }}>{item.label}</option>
                       ))}
                     </select>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid var(--color-border-muted)', paddingTop: '16px' }}>
+                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>Plan</label>
+                    <div className="flex items-center gap-3 mb-3">
+                      <span
+                        className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase"
+                        style={getPlanBadgeStyle(plan.rank ?? 0)}
+                      >
+                        {plan.display_name || plan.name || 'Free'}
+                      </span>
+                    </div>
+
+                    {usage && (
+                      <div className="mb-4 space-y-3">
+                        {/* Credits */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Daily Credits</span>
+                            <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                              {usage.credits.limit === -1
+                                ? 'Unlimited'
+                                : `${usage.credits.used} / ${usage.credits.limit}`}
+                            </span>
+                          </div>
+                          {usage.credits.limit !== -1 && (
+                            <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-border-muted)' }}>
+                              <div
+                                className="h-full rounded-full transition-all"
+                                style={{
+                                  width: `${Math.min(100, (usage.credits.used / usage.credits.limit) * 100)}%`,
+                                  backgroundColor: usage.credits.used / usage.credits.limit > 0.9
+                                    ? 'var(--color-loss)'
+                                    : 'var(--color-accent-primary)',
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Workspaces */}
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Active Workspaces</span>
+                            <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                              {usage.workspaces.limit === -1
+                                ? 'Unlimited'
+                                : `${usage.workspaces.active} / ${usage.workspaces.limit}`}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={redeemInput}
+                        onChange={(e) => { setRedeemInput(e.target.value); setRedeemError(null); setRedeemSuccess(null); }}
+                        placeholder="Enter redemption code"
+                        className="flex-1 rounded-md px-3 py-1.5 text-sm"
+                        style={{
+                          backgroundColor: 'var(--color-bg-card)',
+                          border: '1px solid var(--color-border-muted)',
+                          color: 'var(--color-text-primary)',
+                        }}
+                        disabled={isRedeeming}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleRedeemCode(); } }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleRedeemCode}
+                        disabled={isRedeeming || !redeemInput.trim()}
+                        className="px-3 py-1.5 rounded-md text-sm font-medium"
+                        style={{
+                          backgroundColor: isRedeeming || !redeemInput.trim() ? 'var(--color-accent-disabled)' : 'var(--color-accent-primary)',
+                          color: 'var(--color-text-on-accent)',
+                        }}
+                      >
+                        {isRedeeming ? 'Redeeming...' : 'Redeem'}
+                      </button>
+                    </div>
+                    {redeemError && (
+                      <p className="text-xs mt-1.5" style={{ color: 'var(--color-loss)' }}>{redeemError}</p>
+                    )}
+                    {redeemSuccess && (
+                      <p className="text-xs mt-1.5" style={{ color: 'var(--color-gain)' }}>{redeemSuccess}</p>
+                    )}
                   </div>
 
                   {error && (

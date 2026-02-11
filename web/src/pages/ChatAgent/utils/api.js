@@ -104,6 +104,16 @@ export async function updateThreadTitle(threadId, title) {
 async function streamFetch(url, opts, onEvent) {
   const res = await fetch(`${baseURL}${url}`, opts);
   if (!res.ok) {
+    // Handle 429 (rate limit) with structured detail
+    if (res.status === 429) {
+      let detail = {};
+      try { detail = await res.json(); } catch { /* ignore */ }
+      const err = new Error(detail?.detail?.message || 'Rate limit exceeded');
+      err.status = 429;
+      err.rateLimitInfo = detail?.detail || {};
+      err.retryAfter = parseInt(res.headers.get('Retry-After'), 10) || null;
+      throw err;
+    }
     // Handle 404 specifically for history replay (expected for new threads)
     if (res.status === 404 && url.includes('/replay')) {
       throw new Error(`HTTP error! status: ${res.status}`);

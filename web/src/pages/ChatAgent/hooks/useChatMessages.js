@@ -1693,16 +1693,28 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         }))
       );
     } catch (err) {
-          console.error('Error sending message:', err);
-          setMessageError(err.message || 'Failed to send message');
-          setMessages((prev) =>
-            updateMessage(prev, assistantMessageId, (msg) => ({
-              ...msg,
-              content: msg.content || 'Failed to send message. Please try again.',
-              isStreaming: false,
-              error: true,
-            }))
-          );
+          // Handle rate limit (429) — show limit message and remove optimistic assistant message
+          if (err.status === 429) {
+            const info = err.rateLimitInfo || {};
+            const limitMsg = info.type === 'credit_limit'
+              ? `Daily credit limit reached (${info.used_credits}/${info.credit_limit} credits). Resets at midnight UTC.`
+              : info.type === 'workspace_limit'
+                ? `Active workspace limit reached (${info.current}/${info.limit}).`
+                : info.message || 'Rate limit exceeded. Please try again later.';
+            setMessageError(limitMsg);
+            setMessages((prev) => prev.filter((m) => m.id !== assistantMessageId));
+          } else {
+            console.error('Error sending message:', err);
+            setMessageError(err.message || 'Failed to send message');
+            setMessages((prev) =>
+              updateMessage(prev, assistantMessageId, (msg) => ({
+                ...msg,
+                content: msg.content || 'Failed to send message. Please try again.',
+                isStreaming: false,
+                error: true,
+              }))
+            );
+          }
         } finally {
           setIsLoading(false);
           currentMessageRef.current = null;

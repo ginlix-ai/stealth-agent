@@ -31,3 +31,17 @@ api.interceptors.request.use(async (config) => {
   }
   return config;
 });
+
+// Enrich 429 errors with structured rate limit info
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 429) {
+      const detail = error.response.data?.detail || {};
+      error.status = 429;
+      error.rateLimitInfo = typeof detail === 'object' ? detail : {};
+      error.retryAfter = parseInt(error.response.headers?.['retry-after'], 10) || null;
+    }
+    return Promise.reject(error);
+  },
+);
