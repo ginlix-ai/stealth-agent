@@ -71,6 +71,15 @@ async def create_user(
             """, (user_id, email, name, avatar_url, timezone, locale))
 
             result = await cur.fetchone()
+
+            # Ensure a preferences row exists so the user can configure
+            # models/BYOK without completing onboarding first.
+            await cur.execute("""
+                INSERT INTO user_preferences (preference_id, user_id, created_at, updated_at)
+                VALUES (gen_random_uuid(), %s, NOW(), NOW())
+                ON CONFLICT (user_id) DO NOTHING
+            """, (user_id,))
+
             logger.info(f"[user_db] create_user user_id={user_id}")
             return dict(result)
 
@@ -142,6 +151,15 @@ async def create_user_from_auth(
                     onboarding_completed, plan_id, created_at, updated_at, last_login_at
             """, (user_id, email, name, avatar_url))
             result = await cur.fetchone()
+
+            # Ensure a preferences row exists so the user can configure
+            # models/BYOK without completing onboarding first.
+            await cur.execute("""
+                INSERT INTO user_preferences (preference_id, user_id, created_at, updated_at)
+                VALUES (gen_random_uuid(), %s, NOW(), NOW())
+                ON CONFLICT (user_id) DO NOTHING
+            """, (user_id,))
+
             logger.info(f"[user_db] create_user_from_auth user_id={user_id}")
             return dict(result)
 

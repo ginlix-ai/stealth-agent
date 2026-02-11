@@ -17,3 +17,11 @@ CREATE TABLE IF NOT EXISTS user_api_keys (
 
 -- 2. BYOK toggle on users table (global per-user switch)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS byok_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- 3. Backfill: ensure every existing user has a preferences row
+INSERT INTO user_preferences (preference_id, user_id, created_at, updated_at)
+SELECT gen_random_uuid(), u.user_id, NOW(), NOW()
+FROM users u
+WHERE NOT EXISTS (
+    SELECT 1 FROM user_preferences p WHERE p.user_id = u.user_id
+);

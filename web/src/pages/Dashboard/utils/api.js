@@ -153,8 +153,13 @@ export async function getCurrentUser() {
 }
 
 export async function getPreferences() {
-  const { data } = await api.get('/api/v1/users/me/preferences');
-  return data;
+  try {
+    const { data } = await api.get('/api/v1/users/me/preferences');
+    return data;
+  } catch (err) {
+    if (err.response?.status === 404) return null;
+    throw err;
+  }
 }
 
 export async function updateCurrentUser(userData) {
