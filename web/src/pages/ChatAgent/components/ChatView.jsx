@@ -550,23 +550,25 @@ function ChatView({ workspaceId, threadId, onBack }) {
       if (threadId === '__default__') {
         // New thread - send immediately
         initialMessageSentRef.current = true;
+        // Capture state values before clearing (navigate may update location ref)
+        const { initialMessage, planMode, additionalContext, attachmentMeta } = location.state;
         // Clear navigation state to prevent re-sending on re-renders
         navigate(location.pathname, { replace: true, state: {} });
         // Small delay to ensure component is fully mounted
         setTimeout(() => {
-          const { initialMessage, planMode, additionalContext } = location.state;
-          handleSendMessage(initialMessage, planMode || false, additionalContext || null);
+          handleSendMessage(initialMessage, planMode || false, additionalContext || null, attachmentMeta || null);
         }, 100);
       } else if (!isLoadingHistory && !isLoading) {
         // Existing thread - wait for history to load, then send
         // This ensures we don't send duplicate messages
         initialMessageSentRef.current = true;
+        // Capture state values before clearing (navigate may update location ref)
+        const { initialMessage, planMode, additionalContext, attachmentMeta } = location.state;
         // Clear navigation state to prevent re-sending on re-renders
         navigate(location.pathname, { replace: true, state: {} });
         // Small delay to ensure component is fully mounted
         setTimeout(() => {
-          const { initialMessage, planMode, additionalContext } = location.state;
-          handleSendMessage(initialMessage, planMode || false, additionalContext || null);
+          handleSendMessage(initialMessage, planMode || false, additionalContext || null, attachmentMeta || null);
         }, 100);
       }
     }

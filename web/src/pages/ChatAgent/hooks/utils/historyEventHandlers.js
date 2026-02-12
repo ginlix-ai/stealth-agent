@@ -90,6 +90,11 @@ export function handleHistoryUserMessage({
         isHistory: true,
       };
 
+      // Restore attachment metadata from persisted query metadata
+      if (event.metadata?.attachments?.length > 0) {
+        userMessage.attachments = event.metadata.attachments;
+      }
+
       setMessages((prev) => {
         const insertIndex = newMessagesStartIndexRef.current;
         const newMessages = [

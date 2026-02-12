@@ -284,8 +284,32 @@ function TradingCenter() {
     }
     const imageContext = contexts.length > 0 ? contexts : null;
 
+    // Build attachment metadata for display in user message bubble
+    const metaItems = [];
+    if (chartImage) {
+      metaItems.push({
+        name: chartImageDesc || 'Chart',
+        type: 'image',
+        size: 0,
+        preview: chartImage,
+        dataUrl: chartImage,
+      });
+    }
+    if (attachments && attachments.length > 0) {
+      attachments.forEach((a) => {
+        metaItems.push({
+          name: a.file.name,
+          type: a.type,
+          size: a.file.size,
+          preview: a.preview || null,
+          dataUrl: a.dataUrl,
+        });
+      });
+    }
+    const attachmentMeta = metaItems.length > 0 ? metaItems : null;
+
     if (mode === 'fast') {
-      handleFastModeSend(message, imageContext);
+      handleFastModeSend(message, imageContext, attachmentMeta);
     } else {
       // Deep mode: use selected workspace or fall back to default
       try {
@@ -304,6 +328,7 @@ function TradingCenter() {
             initialMessage: message,
             planMode: planMode || false,
             additionalContext: imageContext,
+            ...(attachmentMeta ? { attachmentMeta } : {}),
           },
         });
       } catch (error) {

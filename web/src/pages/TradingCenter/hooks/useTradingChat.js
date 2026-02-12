@@ -16,14 +16,18 @@ import { sendFlashChatMessage } from '../utils/api';
 /**
  * Creates a user message object
  */
-function createUserMessage(content) {
-  return {
+function createUserMessage(content, attachments = null) {
+  const msg = {
     id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     role: 'user',
     content: content.trim(),
     contentType: 'text',
     timestamp: new Date().toISOString(),
   };
+  if (attachments && attachments.length > 0) {
+    msg.attachments = attachments;
+  }
+  return msg;
 }
 
 /**
@@ -392,13 +396,13 @@ export function useTradingChat() {
   /**
    * Handles sending a message in flash mode
    */
-  const handleSendMessage = async (message, additionalContext = null) => {
+  const handleSendMessage = async (message, additionalContext = null, attachmentMeta = null) => {
     if (!message.trim() || isLoading) {
       return;
     }
 
-    // Create and add user message
-    const userMessage = createUserMessage(message);
+    // Create and add user message (with attachment metadata for display)
+    const userMessage = createUserMessage(message, attachmentMeta);
     setMessages((prev) => appendMessage(prev, userMessage));
 
     setIsLoading(true);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bot, User, FileText } from 'lucide-react';
+import { Bot, User, FileText, ImageIcon } from 'lucide-react';
 import logo from '../../../assets/img/logo.svg';
 import MorphLoading from '@/components/ui/morph-loading';
 import ActivityAccordion from './ActivityAccordion';
@@ -30,6 +30,70 @@ const INLINE_ARTIFACT_MAP = {
   sector_performance: InlineSectorPerformanceCard,
   sec_filing: InlineSecFilingCard,
 };
+
+/* --- Attachment helpers --- */
+const formatFileSize = (bytes) => {
+  if (!bytes || bytes === 0) return '';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+/**
+ * AttachmentCard — 96x96 preview card matching FilePreviewCard styling.
+ * Handles both live attachments (with preview/dataUrl) and history
+ * attachments (name/type/size only).
+ */
+function AttachmentCard({ attachment }) {
+  const att = attachment;
+  const isImage = att.type?.startsWith('image/') || att.type === 'image';
+  const hasPreview = att.preview || att.dataUrl;
+  const ext = att.name?.split('.').pop() || '';
+
+  if (isImage && hasPreview) {
+    return (
+      <div className="relative group flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)]">
+        <img src={att.preview || att.dataUrl} alt={att.name} className="w-full h-full object-cover" />
+        <div className="absolute inset-0 bg-black/20" />
+      </div>
+    );
+  }
+
+  if (isImage && !hasPreview) {
+    // History image — no thumbnail available, show placeholder
+    return (
+      <div className="relative flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)]">
+        <div className="w-full h-full p-3 flex flex-col items-center justify-center gap-2">
+          <ImageIcon className="w-6 h-6 text-[rgba(255,255,255,0.4)]" />
+          <p className="text-[10px] text-[rgba(255,255,255,0.45)] truncate w-full text-center">{att.name}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // PDF / generic file card
+  return (
+    <div className="relative flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)]">
+      <div className="w-full h-full p-3 flex flex-col justify-between">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 bg-[rgba(255,255,255,0.1)] rounded">
+            <FileText className="w-4 h-4 text-[rgba(255,255,255,0.6)]" />
+          </div>
+          <span className="text-[10px] font-medium text-[rgba(255,255,255,0.45)] uppercase tracking-wider truncate">
+            {ext}
+          </span>
+        </div>
+        <div className="space-y-0.5">
+          <p className="text-xs font-medium text-[#BBBBBB] truncate" title={att.name}>{att.name}</p>
+          {att.size > 0 && (
+            <p className="text-[10px] text-[rgba(255,255,255,0.35)]">{formatFileSize(att.size)}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * MessageList Component
@@ -87,6 +151,8 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, onOpenSubagentTa
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
 
+  const hasAttachments = isUser && message.attachments && message.attachments.length > 0;
+
   return (
     <div
       className={`flex gap-4 ${isUser ? 'justify-end' : 'justify-start'}`}
@@ -98,88 +164,70 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, onOpenSubagentTa
         </div>
       )}
 
-      {/* Message bubble */}
-      <div
-        className={`${isUser ? 'max-w-[80%]' : 'w-full min-w-0'} rounded-lg ${
-          isUser ? 'px-4 py-3 rounded-tr-none' : 'pl-0 pr-0 pb-3 rounded-tl-none'
-        } overflow-hidden`}
-        style={{
-          backgroundColor: isUser
-            ? 'var(--color-gray-292929)'
-            : 'transparent',
-          border: 'none',
-          color: '#FFFFFF',
-        }}
-      >
-        {/* Attachment thumbnails for user messages */}
-        {isUser && message.attachments && message.attachments.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-2">
-            {message.attachments.map((att, idx) => {
-              const isImage = att.type?.startsWith('image/');
-              if (isImage && (att.preview || att.dataUrl)) {
-                return (
-                  <img
-                    key={idx}
-                    src={att.preview || att.dataUrl}
-                    alt={att.name}
-                    className="rounded-md object-cover"
-                    style={{ maxHeight: 80, maxWidth: 120 }}
-                  />
-                );
-              }
-              return (
-                <div
-                  key={idx}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
-                  style={{ backgroundColor: 'rgba(97, 85, 245, 0.15)', color: 'rgba(255,255,255,0.85)' }}
-                >
-                  <FileText className="h-3.5 w-3.5" style={{ color: 'rgba(97, 85, 245, 0.8)' }} />
-                  <span className="truncate" style={{ maxWidth: 120 }}>{att.name}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Render content segments in chronological order */}
-        {message.contentSegments && message.contentSegments.length > 0 ? (
-          <MessageContentSegments
-            segments={message.contentSegments}
-            reasoningProcesses={message.reasoningProcesses || {}}
-            toolCallProcesses={message.toolCallProcesses || {}}
-            todoListProcesses={message.todoListProcesses || {}}
-            subagentTasks={message.subagentTasks || {}}
-            planApprovals={message.planApprovals || {}}
-            pendingToolCallChunks={message.pendingToolCallChunks || {}}
-            isStreaming={message.isStreaming}
-            hasError={message.error}
-            isAssistant={isAssistant}
-            compactToolCalls={compactToolCalls}
-            onOpenSubagentTask={onOpenSubagentTask}
-            onOpenFile={onOpenFile}
-            onOpenDir={onOpenDir}
-            onToolCallDetailClick={onToolCallDetailClick}
-            onApprovePlan={onApprovePlan}
-            onRejectPlan={onRejectPlan}
-            onPlanDetailClick={onPlanDetailClick}
-            textOnly={true}
-          />
-        ) : (
-          // Fallback for messages without segments (backward compatibility) - main chat shows text only
-          (message.contentType === 'text' || !message.contentType) && (
-            <TextMessageContent
-              content={message.content}
+      {/* Message content column — bubble + standalone attachment cards */}
+      <div className={`${isUser ? 'max-w-[80%] flex flex-col items-end gap-2' : 'w-full min-w-0'}`}>
+        {/* Message bubble */}
+        <div
+          className={`rounded-lg ${
+            isUser ? 'px-4 py-3 rounded-tr-none' : 'pl-0 pr-0 pb-3 rounded-tl-none'
+          } overflow-hidden`}
+          style={{
+            backgroundColor: isUser
+              ? 'var(--color-gray-292929)'
+              : 'transparent',
+            border: 'none',
+            color: '#FFFFFF',
+          }}
+        >
+          {/* Render content segments in chronological order */}
+          {message.contentSegments && message.contentSegments.length > 0 ? (
+            <MessageContentSegments
+              segments={message.contentSegments}
+              reasoningProcesses={message.reasoningProcesses || {}}
+              toolCallProcesses={message.toolCallProcesses || {}}
+              todoListProcesses={message.todoListProcesses || {}}
+              subagentTasks={message.subagentTasks || {}}
+              planApprovals={message.planApprovals || {}}
+              pendingToolCallChunks={message.pendingToolCallChunks || {}}
               isStreaming={message.isStreaming}
               hasError={message.error}
+              isAssistant={isAssistant}
+              compactToolCalls={compactToolCalls}
+              onOpenSubagentTask={onOpenSubagentTask}
+              onOpenFile={onOpenFile}
+              onOpenDir={onOpenDir}
+              onToolCallDetailClick={onToolCallDetailClick}
+              onApprovePlan={onApprovePlan}
+              onRejectPlan={onRejectPlan}
+              onPlanDetailClick={onPlanDetailClick}
+              textOnly={true}
             />
-          )
-        )}
+          ) : (
+            // Fallback for messages without segments (backward compatibility) - main chat shows text only
+            (message.contentType === 'text' || !message.contentType) && (
+              <TextMessageContent
+                content={message.content}
+                isStreaming={message.isStreaming}
+                hasError={message.error}
+              />
+            )
+          )}
 
-        {/* Streaming indicator — hidden when dot-loader is already showing for pending chunks */}
-        {message.isStreaming && !Object.keys(message.pendingToolCallChunks || {}).length && (() => {
-          const hasContent = message.contentSegments?.some(s => s.content?.trim()) || message.content?.trim();
-          return <MorphLoading size="sm" className={hasContent ? "mt-2" : "mt-4"} style={{ color: '#6155F5' }} />;
-        })()}
+          {/* Streaming indicator — hidden when dot-loader is already showing for pending chunks */}
+          {message.isStreaming && !Object.keys(message.pendingToolCallChunks || {}).length && (() => {
+            const hasContent = message.contentSegments?.some(s => s.content?.trim()) || message.content?.trim();
+            return <MorphLoading size="sm" className={hasContent ? "mt-2" : "mt-4"} style={{ color: '#6155F5' }} />;
+          })()}
+        </div>
+
+        {/* Attachment preview cards — standalone below the bubble */}
+        {hasAttachments && (
+          <div className="flex gap-3 overflow-x-auto">
+            {message.attachments.map((att, idx) => (
+              <AttachmentCard key={idx} attachment={att} />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* User avatar - shown on the right */}

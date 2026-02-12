@@ -332,8 +332,16 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
     setIsSendingMessage(true);
     try {
       let additionalContext = null;
+      let attachmentMeta = null;
       if (attachments && attachments.length > 0) {
         additionalContext = attachmentsToImageContexts(attachments);
+        attachmentMeta = attachments.map((a) => ({
+          name: a.file.name,
+          type: a.type,
+          size: a.file.size,
+          preview: a.preview || null,
+          dataUrl: a.dataUrl,
+        }));
       }
 
       navigate(`/chat/${workspaceId}/__default__`, {
@@ -342,6 +350,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
           planMode: planMode,
           ...(isFlash ? { agentMode: 'flash' } : {}),
           ...(additionalContext ? { additionalContext } : {}),
+          ...(attachmentMeta ? { attachmentMeta } : {}),
         },
       });
     } catch (error) {
