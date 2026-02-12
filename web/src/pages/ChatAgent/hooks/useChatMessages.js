@@ -354,44 +354,27 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         // Handle user_message events from history
         // Note: event.content may be empty for HITL resume pairs (plan approval/rejection)
         if (eventType === 'user_message' && hasPairIndex) {
-          // Resolve pending HITL interrupt status based on this user message
-          if (pendingHistoryInterrupt) {
-            const { type: interruptType, assistantMessageId: intMsgId } = pendingHistoryInterrupt;
-
-            if (interruptType === 'ask_user_question') {
-              // User question: resolve as answered (answer already extracted from tool_call_result)
-              const { questionId, answer: extractedAnswer } = pendingHistoryInterrupt;
-              setMessages((prev) =>
-                updateMessage(prev, intMsgId, (msg) => ({
-                  ...msg,
-                  userQuestions: {
-                    ...(msg.userQuestions || {}),
-                    [questionId]: {
-                      ...(msg.userQuestions?.[questionId] || {}),
-                      status: extractedAnswer === '__skipped__' ? 'skipped' : 'answered',
-                      answer: extractedAnswer === '__skipped__' ? null : (extractedAnswer || null),
-                    },
+          // Resolve pending HITL interrupt status based on this user message.
+          // Note: ask_user_question is NOT resolved here — the answer text lives in
+          // the tool_call_result that comes AFTER this user_message in the resume pair.
+          // It gets resolved in the tool_call_result handler below instead.
+          if (pendingHistoryInterrupt && pendingHistoryInterrupt.type !== 'ask_user_question') {
+            // Plan approval: resolve based on whether user sent feedback text
+            const hasContent = event.content && event.content.trim();
+            const resolvedStatus = hasContent ? 'rejected' : 'approved';
+            const { assistantMessageId: intMsgId, planApprovalId } = pendingHistoryInterrupt;
+            setMessages((prev) =>
+              updateMessage(prev, intMsgId, (msg) => ({
+                ...msg,
+                planApprovals: {
+                  ...(msg.planApprovals || {}),
+                  [planApprovalId]: {
+                    ...(msg.planApprovals?.[planApprovalId] || {}),
+                    status: resolvedStatus,
                   },
-                }))
-              );
-            } else {
-              // Plan approval: resolve based on whether user sent feedback text
-              const hasContent = event.content && event.content.trim();
-              const resolvedStatus = hasContent ? 'rejected' : 'approved';
-              const { planApprovalId } = pendingHistoryInterrupt;
-              setMessages((prev) =>
-                updateMessage(prev, intMsgId, (msg) => ({
-                  ...msg,
-                  planApprovals: {
-                    ...(msg.planApprovals || {}),
-                    [planApprovalId]: {
-                      ...(msg.planApprovals?.[planApprovalId] || {}),
-                      status: resolvedStatus,
-                    },
-                  },
-                }))
-              );
-            }
+                },
+              }))
+            );
             pendingHistoryInterrupt = null;
           }
 
@@ -620,14 +603,53 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             setMessages,
           });
 
-          // Check if this tool_call_result resolves a pending user question interrupt
+          // Resolve pending user question interrupt from the tool_call_result content.
+          // This is where the answer text lives (e.g. "User answered: Redis").
           if (pendingHistoryInterrupt?.type === 'ask_user_question' && typeof event.content === 'string') {
             const content = event.content;
+            const { assistantMessageId: intMsgId, questionId } = pendingHistoryInterrupt;
+            let resolvedStatus = null;
+            let answer = null;
+
             if (content.startsWith('User answered: ')) {
-              pendingHistoryInterrupt.answer = content.slice('User answered: '.length);
+              resolvedStatus = 'answered';
+              answer = content.slice('User answered: '.length);
             } else if (content.startsWith('User skipped the question')) {
-              pendingHistoryInterrupt.answer = '__skipped__';
+              resolvedStatus = 'skipped';
             }
+
+            if (resolvedStatus) {
+              setMessages((prev) =>
+                updateMessage(prev, intMsgId, (msg) => ({
+                  ...msg,
+                  userQuestions: {
+                    ...(msg.userQuestions || {}),
+                    [questionId]: {
+                      ...(msg.userQuestions?.[questionId] || {}),
+                      status: resolvedStatus,
+                      answer,
+                    },
+                  },
+                }))
+              );
+            } else {
+              // Fallback: content didn't match known patterns (e.g. "User provided no answer.")
+              // but this tool_call_result IS from the resumed interrupt, so resolve as answered.
+              setMessages((prev) =>
+                updateMessage(prev, intMsgId, (msg) => ({
+                  ...msg,
+                  userQuestions: {
+                    ...(msg.userQuestions || {}),
+                    [questionId]: {
+                      ...(msg.userQuestions?.[questionId] || {}),
+                      status: 'answered',
+                      answer: content,
+                    },
+                  },
+                }))
+              );
+            }
+            pendingHistoryInterrupt = null;
           }
           return;
         }
