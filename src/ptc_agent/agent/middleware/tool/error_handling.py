@@ -6,6 +6,7 @@ import logging
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import ToolMessage
+from langgraph.errors import GraphBubbleUp
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,8 @@ class ToolErrorHandlingMiddleware(AgentMiddleware):
         """Synchronous tool error handler."""
         try:
             return handler(request)
+        except GraphBubbleUp:
+            raise  # Let LangGraph control-flow exceptions (interrupt, etc.) propagate
         except Exception as e:
             tool_name = request.tool_call.get("name", "unknown")
             error_message = self._format_error_message(e, tool_name)
@@ -88,6 +91,8 @@ class ToolErrorHandlingMiddleware(AgentMiddleware):
         """Asynchronous tool error handler."""
         try:
             return await handler(request)
+        except GraphBubbleUp:
+            raise  # Let LangGraph control-flow exceptions (interrupt, etc.) propagate
         except Exception as e:
             tool_name = request.tool_call.get("name", "unknown")
             error_message = self._format_error_message(e, tool_name)

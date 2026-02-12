@@ -19,6 +19,7 @@ from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 from ptc_agent.agent.middleware import (
+    AskUserMiddleware,
     BackgroundSubagentMiddleware,
     BackgroundSubagentOrchestrator,
     PlanModeMiddleware,
@@ -412,6 +413,12 @@ class PTCAgent:
                         getattr(t, "name", str(t)) for t in plan_middleware.tools
                     ],
                 )
+
+        # Ask user question middleware (always available for main agent)
+        ask_user_middleware = AskUserMiddleware()
+        main_only_middleware.append(ask_user_middleware)
+        tools.extend(ask_user_middleware.tools)
+        logger.info("AskUserQuestion tool enabled")
 
         # Create subagents from names using the registry
         # Note: Subagents get vision capability through VisionMiddleware in shared_middleware

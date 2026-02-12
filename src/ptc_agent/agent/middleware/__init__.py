@@ -23,6 +23,9 @@ from ptc_agent.agent.middleware.plan_mode import (
     create_plan_mode_interrupt_config,
 )
 
+# Ask user middleware
+from ptc_agent.agent.middleware.ask_user import AskUserMiddleware
+
 # Tool middleware (argument parsing, error handling, result normalization)
 from ptc_agent.agent.middleware.tool import (
     ToolArgumentParsingMiddleware,
@@ -82,6 +85,8 @@ __all__ = [
     # Plan mode
     "PlanModeMiddleware",
     "create_plan_mode_interrupt_config",
+    # Ask user
+    "AskUserMiddleware",
     # Multimodal middleware (for read_file image/PDF support)
     "MultimodalMiddleware",
     # Tool middleware
