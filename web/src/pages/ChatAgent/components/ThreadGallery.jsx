@@ -7,6 +7,7 @@ import RenameThreadModal from './RenameThreadModal';
 import ChatInput from '../../../components/ui/chat-input';
 import { attachmentsToImageContexts } from '../utils/fileUpload';
 import FilePanel from './FilePanel';
+import SandboxSettingsPanel from './SandboxSettingsPanel';
 import { getWorkspaceThreads, getWorkspace, deleteThread, updateThreadTitle } from '../utils/api';
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
 import { removeStoredThreadId } from '../hooks/utils/threadStorage';
@@ -48,6 +49,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
   const [renameError, setRenameError] = useState(null);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [showFilePanel, setShowFilePanel] = useState(false);
+  const [showSandboxPanel, setShowSandboxPanel] = useState(false);
   const [filePanelWidth, setFilePanelWidth] = useState(420);
   const [filePanelTargetFile, setFilePanelTargetFile] = useState(null);
   // Initialize files from cache for instant display on return navigation
@@ -462,7 +464,10 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
 
             {/* Workspace Header */}
             <div className="w-full flex flex-col items-center mt-[8vh]">
-              <div className="flex items-center justify-center transition-colors cursor-pointer">
+              <div
+                className="flex items-center justify-center transition-colors cursor-pointer"
+                onClick={!isFlash ? () => setShowSandboxPanel(true) : undefined}
+              >
                 {isFlash ? (
                   <Zap className="w-10 h-10" style={{ color: '#6155F5' }} />
                 ) : (
@@ -615,6 +620,14 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
         isRenaming={isRenaming}
         error={renameError}
       />
+
+      {/* Sandbox Settings Panel */}
+      {showSandboxPanel && (
+        <SandboxSettingsPanel
+          onClose={() => setShowSandboxPanel(false)}
+          workspaceId={workspaceId}
+        />
+      )}
     </div>
   );
 }

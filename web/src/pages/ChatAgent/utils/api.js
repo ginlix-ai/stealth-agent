@@ -358,6 +358,23 @@ export async function deleteWorkspaceFiles(workspaceId, paths) {
   return data;
 }
 
+// --- Sandbox ---
+
+export async function getSandboxStats(workspaceId) {
+  const { data } = await api.get(`/api/v1/workspaces/${workspaceId}/sandbox/stats`);
+  return data;
+}
+
+export async function installSandboxPackages(workspaceId, packages) {
+  const { data } = await api.post(`/api/v1/workspaces/${workspaceId}/sandbox/packages`, { packages });
+  return data;
+}
+
+export async function refreshWorkspace(workspaceId) {
+  const { data } = await api.post(`/api/v1/workspaces/${workspaceId}/refresh`);
+  return data;
+}
+
 export async function uploadWorkspaceFile(workspaceId, file, destPath = null, onProgress = null) {
   const formData = new FormData();
   formData.append('file', file);
