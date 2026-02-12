@@ -1,6 +1,6 @@
 import {
   TrendingUp, Building2, BarChart3, PieChart, Search, Globe,
-  FilePlus, FileText, FilePen, FolderSearch, Play, Wrench,
+  FilePlus, FileText, FilePen, FolderSearch, SquareChevronRight, Wrench,
   Newspaper, Brain, User, FileBarChart, Clock, ClipboardList,
 } from 'lucide-react';
 
@@ -40,7 +40,7 @@ export const TOOL_DISPLAY_CONFIG = {
   Write:                    { displayName: 'Write',                icon: FilePlus },
   Read:                     { displayName: 'Read',                 icon: FileText },
   Edit:                     { displayName: 'Edit',                 icon: FilePen },
-  ExecuteCode:              { displayName: 'Execute Code',         icon: Play },
+  ExecuteCode:              { displayName: 'Execute Code',         icon: SquareChevronRight },
   think_tool:               { displayName: 'Thinking',             icon: Brain },
   // Background subagent management
   Wait:                     { displayName: 'Waiting for Subagent', icon: Clock },
