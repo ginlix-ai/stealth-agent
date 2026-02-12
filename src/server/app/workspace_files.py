@@ -10,18 +10,21 @@ Design goals:
 - Return virtual paths to clients for a consistent UX.
 
 Endpoints:
-- GET  /api/v1/workspaces/{workspace_id}/files
-- GET  /api/v1/workspaces/{workspace_id}/files/read
-- GET  /api/v1/workspaces/{workspace_id}/files/download
-- POST /api/v1/workspaces/{workspace_id}/files/upload
+- GET    /api/v1/workspaces/{workspace_id}/files
+- GET    /api/v1/workspaces/{workspace_id}/files/read
+- GET    /api/v1/workspaces/{workspace_id}/files/download
+- POST   /api/v1/workspaces/{workspace_id}/files/upload
+- DELETE /api/v1/workspaces/{workspace_id}/files
 """
 
 from __future__ import annotations
 
 import mimetypes
+import shlex
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel, Field
 
 from src.server.utils.api import CurrentUserId
 from fastapi.responses import Response, StreamingResponse
@@ -398,3 +401,67 @@ async def upload_workspace_file(
         "size": len(content),
         "filename": file.filename,
     }
+
+
+class DeleteFilesRequest(BaseModel):
+    paths: list[str] = Field(..., min_length=1, max_length=100)
+
+
+@router.delete("/{workspace_id}/files")
+async def delete_workspace_files(
+    workspace_id: str,
+    x_user_id: CurrentUserId,
+    body: DeleteFilesRequest = Body(...),
+) -> dict[str, Any]:
+    """Delete one or more files from the workspace's live sandbox."""
+
+    workspace = await db_get_workspace(workspace_id)
+    _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
+
+    if _is_flash_workspace(workspace):
+        raise HTTPException(status_code=400, detail="Flash workspaces do not have a sandbox")
+
+    manager = WorkspaceManager.get_instance()
+    session = await manager.get_session_for_workspace(workspace_id, user_id=x_user_id)
+
+    sandbox = getattr(session, "sandbox", None)
+    if sandbox is None:
+        raise HTTPException(status_code=503, detail="Sandbox not available")
+
+    errors: list[dict[str, str]] = []
+    valid_paths: list[tuple[str, str]] = []  # (normalized, client_path)
+
+    for path in body.paths:
+        normalized, error = sandbox.validate_and_normalize_path(path)
+        if error:
+            errors.append({"path": path, "detail": error})
+            continue
+
+        client_path = _to_client_path(sandbox, normalized)
+        if _is_system_path(client_path):
+            errors.append({"path": path, "detail": "Cannot delete system files"})
+            continue
+
+        valid_paths.append((normalized, client_path))
+
+    deleted: list[str] = []
+    if valid_paths:
+        rm_args = " ".join(shlex.quote(p) for p, _ in valid_paths)
+        result = await sandbox.execute_bash_command(f"rm -f {rm_args}")
+        if result.get("success"):
+            deleted = [cp for _, cp in valid_paths]
+        else:
+            # Batch failed — fall back to per-file delete
+            for normalized, client_path in valid_paths:
+                r = await sandbox.execute_bash_command(
+                    f"rm -f {shlex.quote(normalized)}"
+                )
+                if r.get("success"):
+                    deleted.append(client_path)
+                else:
+                    errors.append({
+                        "path": client_path,
+                        "detail": r.get("stderr", "Delete failed"),
+                    })
+
+    return {"deleted": deleted, "errors": errors}

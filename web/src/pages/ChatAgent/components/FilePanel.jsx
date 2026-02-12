@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
-import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download, Upload, Folder, ChevronRight, ChevronDown, ArrowUpDown, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download, Upload, Folder, ChevronRight, ChevronDown, ArrowUpDown, AlertTriangle, Trash2, CheckSquare, Square } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { readWorkspaceFile, downloadWorkspaceFile, downloadWorkspaceFileAsArrayBuffer, triggerFileDownload, uploadWorkspaceFile } from '../utils/api';
+import { readWorkspaceFile, downloadWorkspaceFile, downloadWorkspaceFileAsArrayBuffer, triggerFileDownload, uploadWorkspaceFile, deleteWorkspaceFiles } from '../utils/api';
 import { stripLineNumbers } from './toolDisplayConfig';
 import Markdown from './Markdown';
 import DocumentErrorBoundary from './viewers/DocumentErrorBoundary';
@@ -179,6 +179,13 @@ function FilePanel({
   const [showSortMenu, setShowSortMenu] = useState(false);
   const sortMenuRef = useRef(null);
 
+  // Selection / delete state
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedPaths, setSelectedPaths] = useState(new Set());
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
   const availableTypes = useMemo(() => getAvailableTypes(files), [files]);
 
   // Apply directory filter, type filter, sort, then group
@@ -207,6 +214,73 @@ function FilePanel({
       return next;
     });
   }, []);
+
+  // Selection helpers
+  const toggleSelect = useCallback((path) => {
+    setSelectedPaths((prev) => {
+      const next = new Set(prev);
+      next.has(path) ? next.delete(path) : next.add(path);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedPaths((prev) => {
+      if (prev.size === filteredSortedFiles.length) return new Set();
+      return new Set(filteredSortedFiles);
+    });
+  }, [filteredSortedFiles]);
+
+  const toggleDirSelect = useCallback((dirFiles) => {
+    setSelectedPaths((prev) => {
+      const next = new Set(prev);
+      const allSelected = dirFiles.every((f) => next.has(f));
+      dirFiles.forEach((f) => (allSelected ? next.delete(f) : next.add(f)));
+      return next;
+    });
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedPaths(new Set());
+    setDeleteError(null);
+    setDeleteConfirm(false);
+  }, []);
+
+  const handleDelete = useCallback(() => {
+    if (selectedPaths.size === 0) return;
+    if (!deleteConfirm) {
+      setDeleteConfirm(true);
+      return;
+    }
+    const paths = Array.from(selectedPaths);
+    exitSelectMode();
+    setDeleteLoading(true);
+    setDeleteError(null);
+    deleteWorkspaceFiles(workspaceId, paths)
+      .then((result) => {
+        if (result.errors?.length > 0) {
+          setDeleteError(`${result.errors.length} file(s) failed to delete`);
+        }
+      })
+      .catch((err) => {
+        setDeleteError(err?.response?.data?.detail || err?.message || 'Delete failed');
+      })
+      .finally(() => {
+        setDeleteLoading(false);
+        onRefreshFiles?.();
+      });
+  }, [selectedPaths, workspaceId, deleteConfirm, exitSelectMode, onRefreshFiles]);
+
+  // Auto-dismiss delete confirmation after 4 seconds
+  useEffect(() => {
+    if (!deleteConfirm) return;
+    const timer = setTimeout(() => setDeleteConfirm(false), 4000);
+    return () => clearTimeout(timer);
+  }, [deleteConfirm]);
+
+  // Reset select mode when directory filter changes
+  useEffect(() => { exitSelectMode(); }, [targetDirectory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close sort menu on outside click
   useEffect(() => {
@@ -414,8 +488,17 @@ function FilePanel({
           </span>
         </div>
         <div className="flex items-center gap-1">
-          {!selectedFile && (
+          {!selectedFile && !selectMode && (
             <>
+              {files.length > 0 && (
+                <button
+                  onClick={() => setSelectMode(true)}
+                  className="file-panel-icon-btn"
+                  title="Select files"
+                >
+                  <CheckSquare className="h-3.5 w-3.5" />
+                </button>
+              )}
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="file-panel-icon-btn"
@@ -439,6 +522,42 @@ function FilePanel({
               </button>
             </>
           )}
+          {!selectedFile && selectMode && (
+            <>
+              <span className="text-xs" style={{ color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap' }}>
+                {selectedPaths.size} selected
+              </span>
+              <button
+                onClick={toggleSelectAll}
+                className="file-panel-chip"
+                style={{ marginLeft: 2, fontSize: 10, padding: '1px 6px' }}
+              >
+                {selectedPaths.size === filteredSortedFiles.length ? 'Deselect All' : 'Select All'}
+              </button>
+              {deleteConfirm ? (
+                <button
+                  onClick={handleDelete}
+                  className="file-panel-delete-confirm-btn"
+                  disabled={deleteLoading}
+                >
+                  Delete {selectedPaths.size}?
+                </button>
+              ) : (
+                <button
+                  onClick={handleDelete}
+                  className="file-panel-icon-btn"
+                  title="Delete selected"
+                  disabled={selectedPaths.size === 0 || deleteLoading}
+                  style={selectedPaths.size > 0 ? { color: '#f87171' } : undefined}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+              <button onClick={exitSelectMode} className="file-panel-icon-btn" title="Cancel selection">
+                <X className="h-4 w-4" />
+              </button>
+            </>
+          )}
           {selectedFile && (
             <button
               onClick={async () => {
@@ -454,9 +573,11 @@ function FilePanel({
               <Download className="h-3.5 w-3.5" />
             </button>
           )}
-          <button onClick={onClose} className="file-panel-icon-btn" title="Close">
-            <X className="h-4 w-4" />
-          </button>
+          {!selectMode && (
+            <button onClick={onClose} className="file-panel-icon-btn" title="Close">
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -475,6 +596,21 @@ function FilePanel({
         <div className="file-panel-upload-error">
           <span>{uploadError}</span>
           <button onClick={() => setUploadError(null)} className="file-panel-icon-btn" style={{ padding: 2 }}>
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
+      {/* Delete progress (indeterminate) */}
+      {deleteLoading && (
+        <div className="file-panel-progress-indeterminate" />
+      )}
+
+      {/* Delete error */}
+      {deleteError && (
+        <div className="file-panel-upload-error">
+          <span>{deleteError}</span>
+          <button onClick={() => setDeleteError(null)} className="file-panel-icon-btn" style={{ padding: 2 }}>
             <X className="h-3 w-3" />
           </button>
         </div>
@@ -632,9 +768,13 @@ function FilePanel({
                       {!isRoot && (
                         <div
                           className="file-panel-dir-header"
-                          onClick={() => toggleDir(dir)}
+                          onClick={() => selectMode ? toggleDirSelect(groupFiles) : toggleDir(dir)}
                         >
-                          {isCollapsed
+                          {selectMode ? (
+                            groupFiles.every((f) => selectedPaths.has(f))
+                              ? <CheckSquare className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#6155F5' }} />
+                              : <Square className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                          ) : isCollapsed
                             ? <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
                             : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
                           }
@@ -650,9 +790,13 @@ function FilePanel({
                       {isRoot && groupedFiles.length > 1 && (
                         <div
                           className="file-panel-dir-header"
-                          onClick={() => toggleDir(dir)}
+                          onClick={() => selectMode ? toggleDirSelect(groupFiles) : toggleDir(dir)}
                         >
-                          {isCollapsed
+                          {selectMode ? (
+                            groupFiles.every((f) => selectedPaths.has(f))
+                              ? <CheckSquare className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#6155F5' }} />
+                              : <Square className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                          ) : isCollapsed
                             ? <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
                             : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
                           }
@@ -666,16 +810,23 @@ function FilePanel({
                         </div>
                       )}
                       {/* File items */}
-                      {!isCollapsed && groupFiles.map((filePath) => {
+                      {(!isCollapsed || selectMode) && groupFiles.map((filePath) => {
                         const name = filePath.split('/').pop();
                         const Icon = getFileIcon(name);
+                        const isSelected = selectedPaths.has(filePath);
                         return (
                           <div
                             key={filePath}
-                            className={`file-panel-item ${!isRoot || groupedFiles.length > 1 ? 'file-panel-item-nested' : ''}`}
-                            onClick={() => handleFileClick(filePath)}
+                            className={`file-panel-item ${!isRoot || groupedFiles.length > 1 ? 'file-panel-item-nested' : ''} ${selectMode && isSelected ? 'file-panel-item-selected' : ''}`}
+                            onClick={() => selectMode ? toggleSelect(filePath) : handleFileClick(filePath)}
                           >
-                            <Icon className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.5)' }} />
+                            {selectMode ? (
+                              isSelected
+                                ? <CheckSquare className="h-4 w-4 flex-shrink-0" style={{ color: '#6155F5' }} />
+                                : <Square className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                            ) : (
+                              <Icon className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.5)' }} />
+                            )}
                             <span className="text-sm truncate" style={{ color: '#FFFFFF' }}>{name}</span>
                           </div>
                         );

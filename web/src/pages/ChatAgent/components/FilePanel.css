@@ -24,9 +24,13 @@
     background: none;
     border: none;
   }
-  .file-panel-icon-btn:hover {
+  .file-panel-icon-btn:hover:not(:disabled) {
     color: #FFFFFF;
     background-color: rgba(255, 255, 255, 0.1);
+  }
+  .file-panel-icon-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
   }
   
   .file-panel-content {
@@ -229,4 +233,59 @@
     font-size: 14px;
     font-weight: 500;
     pointer-events: none;
+  }
+
+  /* ====== Selected File Row ====== */
+  .file-panel-item-selected {
+    background-color: rgba(97, 85, 245, 0.1);
+  }
+  .file-panel-item-selected:hover {
+    background-color: rgba(97, 85, 245, 0.15);
+  }
+
+  /* ====== Indeterminate Progress Bar (delete) ====== */
+  .file-panel-progress-indeterminate {
+    height: 3px;
+    background-color: rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .file-panel-progress-indeterminate::after {
+    content: '';
+    display: block;
+    height: 100%;
+    width: 40%;
+    background-color: #6155F5;
+    animation: indeterminate-slide 1.2s ease-in-out infinite;
+  }
+  @keyframes indeterminate-slide {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+  }
+
+  /* ====== Delete Confirmation Button ====== */
+  .file-panel-delete-confirm-btn {
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid rgba(248, 113, 113, 0.5);
+    background: rgba(220, 38, 38, 0.2);
+    color: #f87171;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    animation: confirm-pulse 0.3s ease-out;
+  }
+  .file-panel-delete-confirm-btn:hover:not(:disabled) {
+    background: rgba(220, 38, 38, 0.35);
+    border-color: rgba(248, 113, 113, 0.7);
+  }
+  .file-panel-delete-confirm-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  @keyframes confirm-pulse {
+    0% { transform: scale(0.92); opacity: 0.6; }
+    100% { transform: scale(1); opacity: 1; }
   }

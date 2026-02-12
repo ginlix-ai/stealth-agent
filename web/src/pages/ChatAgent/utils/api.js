@@ -351,6 +351,13 @@ export async function sendHitlResponse(workspaceId, threadId, hitlResponse, onEv
   );
 }
 
+export async function deleteWorkspaceFiles(workspaceId, paths) {
+  const { data } = await api.delete(`/api/v1/workspaces/${workspaceId}/files`, {
+    data: { paths },
+  });
+  return data;
+}
+
 export async function uploadWorkspaceFile(workspaceId, file, destPath = null, onProgress = null) {
   const formData = new FormData();
   formData.append('file', file);
