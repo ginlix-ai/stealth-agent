@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FolderOpen, Bot, StopCircle, Zap } from 'lucide-react';
+import { ArrowLeft, FolderOpen, Bot, StopCircle, Zap, AlertTriangle } from 'lucide-react';
 import { ScrollArea } from '../../../components/ui/scroll-area';
 import { useAuth } from '../../../contexts/AuthContext';
 import { updateCurrentUser } from '../../Dashboard/utils/api';
@@ -21,6 +21,7 @@ import AgentSidebar from './AgentSidebar';
 import SubagentStatusBar from './SubagentStatusBar';
 import SubagentCardContent from './SubagentCardContent';
 import TodoDrawer from './TodoDrawer';
+import { parseErrorMessage } from '../utils/parseErrorMessage';
 import '../../Dashboard/Dashboard.css';
 
 /**
@@ -777,14 +778,18 @@ function ChatView({ workspaceId, threadId, onBack }) {
                         <span>Agent interrupted. Feel free to provide new instructions.</span>
                       </div>
                     )}
-                    {messageError && !isLoading && (
-                      <div
-                        className="flex items-center gap-2 px-3 py-2 rounded-md text-sm"
-                        style={{ backgroundColor: 'rgba(220, 38, 38, 0.1)', color: 'rgba(255, 180, 180, 0.9)' }}
-                      >
-                        <span>{messageError}</span>
-                      </div>
-                    )}
+                    {messageError && !isLoading && (() => {
+                      const parsed = parseErrorMessage(messageError);
+                      return (
+                        <div
+                          className="flex items-center gap-2 px-3 py-2 rounded-md text-sm"
+                          style={{ backgroundColor: 'rgba(220, 38, 38, 0.1)', color: 'rgba(255, 180, 180, 0.9)' }}
+                        >
+                          <AlertTriangle className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255, 120, 120, 0.9)' }} />
+                          <span>{parsed.detail ? `${parsed.title}: ${parsed.detail}` : parsed.title}</span>
+                        </div>
+                      );
+                    })()}
                     <ChatInputWithMentions
                       onSend={handleSendMessage}
                       disabled={isLoading || isLoadingHistory || !workspaceId || !!pendingInterrupt}

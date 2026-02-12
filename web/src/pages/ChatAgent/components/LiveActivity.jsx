@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Brain, CheckCircle2, Wrench } from 'lucide-react';
 import { getDisplayName, getToolIcon, getInProgressText, getPreparingText } from './toolDisplayConfig';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { DotLoader } from '@/components/ui/dot-loader';
+import { useAnimatedText } from '@/components/ui/animated-text';
 import Markdown from './Markdown';
 
 const MIN_EXPOSURE_MS = 5000; // minimum total time visible (active + hold)
@@ -14,7 +15,7 @@ const FADE_MS = 500;          // animating out
  * Shows currently active items with streaming/progress indicators.
  * Completed items hold for HOLD_MS, then fade out over FADE_MS before removal.
  */
-function LiveActivity({ activeReasoning, activeToolCalls, preparingToolCall }) {
+function LiveActivity({ activeReasoning, activeToolCalls, preparingToolCall, artifactReadyIds }) {
   // --- Reasoning hold ---
   // phase: null | 'hold' | 'exit'
   const [reasoningPhase, setReasoningPhase] = useState(null);
@@ -85,7 +86,9 @@ function LiveActivity({ activeReasoning, activeToolCalls, preparingToolCall }) {
     }
   }, [activeToolCalls]);
 
-  useEffect(() => {
+  // useLayoutEffect so fading state is set before paint — prevents a one-frame
+  // flash where the component returns null between "active" and "fading" states.
+  useLayoutEffect(() => {
     const current = activeToolCalls || [];
     const currentIds = new Set(current.map((tc) => tc.id || tc.toolCallId));
     const prev = prevToolCallsRef.current;
@@ -93,6 +96,12 @@ function LiveActivity({ activeReasoning, activeToolCalls, preparingToolCall }) {
     for (const tc of prev) {
       const id = tc.id || tc.toolCallId;
       if (!currentIds.has(id) && !toolTimersRef.current[id]) {
+        // Tool moved to compact_artifact — skip fade entirely
+        if (artifactReadyIds?.has(id)) {
+          delete toolAppearTimeRef.current[id];
+          continue;
+        }
+
         // Calculate remaining hold time to meet minimum exposure
         const appearedAt = toolAppearTimeRef.current[id] || Date.now();
         const alreadyVisible = Date.now() - appearedAt;
@@ -126,7 +135,7 @@ function LiveActivity({ activeReasoning, activeToolCalls, preparingToolCall }) {
     return () => {
       for (const t of Object.values(toolTimersRef.current)) clearTimeout(t);
     };
-  }, [activeToolCalls]);
+  }, [activeToolCalls, artifactReadyIds]);
 
   const showReasoning = !!displayReasoning;
   const isReasoningStreaming = displayReasoning?.isReasoning;
@@ -175,11 +184,9 @@ function LiveActivity({ activeReasoning, activeToolCalls, preparingToolCall }) {
           </div>
 
           {displayReasoning.content && (
-            <Markdown
-              variant="compact"
+            <AnimatedReasoningContent
               content={displayReasoning.content}
-              className="text-xs"
-              style={{ opacity: 0.8 }}
+              isStreaming={!!isReasoningStreaming}
             />
           )}
         </div>
@@ -202,6 +209,19 @@ function LiveActivity({ activeReasoning, activeToolCalls, preparingToolCall }) {
           <ToolCallLiveRow key={`fade-${tc._fadeId}`} tc={tc} phase={tc._phase} />
         ))}
     </div>
+  );
+}
+
+/** Animated reasoning content — smoothly reveals text during streaming */
+function AnimatedReasoningContent({ content, isStreaming }) {
+  const displayText = useAnimatedText(content || '', { enabled: isStreaming });
+  return (
+    <Markdown
+      variant="compact"
+      content={displayText}
+      className="text-xs"
+      style={{ opacity: 0.8 }}
+    />
   );
 }
 

@@ -3,6 +3,15 @@ import { Bot, User } from 'lucide-react';
 import logo from '../../../assets/img/logo.svg';
 import MorphLoading from '@/components/ui/morph-loading';
 import ActivityAccordion from './ActivityAccordion';
+import {
+  INLINE_ARTIFACT_TOOLS,
+  InlineStockPriceCard,
+  InlineCompanyOverviewCard,
+  InlineMarketIndicesCard,
+  InlineSectorPerformanceCard,
+  InlineSecFilingCard,
+} from './charts/InlineMarketCharts';
+import { getDisplayName, getToolIcon } from './toolDisplayConfig';
 import { extractFilePaths, FileMentionCards } from './FileCard';
 import { useAuth } from '../../../contexts/AuthContext';
 import LiveActivity from './LiveActivity';
@@ -12,6 +21,15 @@ import SubagentTaskMessageContent from './SubagentTaskMessageContent';
 import TextMessageContent from './TextMessageContent';
 import ToolCallMessageContent from './ToolCallMessageContent';
 import TodoListMessageContent from './TodoListMessageContent';
+
+/** Map artifact type → inline artifact component */
+const INLINE_ARTIFACT_MAP = {
+  stock_prices: InlineStockPriceCard,
+  company_overview: InlineCompanyOverviewCard,
+  market_indices: InlineMarketIndicesCard,
+  sector_performance: InlineSectorPerformanceCard,
+  sec_filing: InlineSecFilingCard,
+};
 
 /**
  * MessageList Component
@@ -88,8 +106,6 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, onOpenSubagentTa
         style={{
           backgroundColor: isUser
             ? 'var(--color-gray-292929)'
-            : message.error
-            ? 'rgba(255, 56, 60, 0.1)'
             : 'transparent',
           border: 'none',
           color: '#FFFFFF',
@@ -247,7 +263,7 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
     }
   }
 
-  // textOnly mode: use ActivityAccordion + LiveActivity pattern
+  // textOnly mode: use inline ActivityAccordion + LiveActivity groups
   if (textOnly) {
     const filtered = groupedSegments.filter((s) => {
       if (s.type === 'text' || s.type === 'reasoning') return true;
@@ -263,23 +279,34 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
       return false;
     });
 
-    // Build episodes split into before/after LiveActivity to preserve chronological order.
-    // Text arriving after in-progress or recently-completed tool calls renders below them.
-    const episodesBefore = [];
-    const episodesAfter = [];
-    let currentCompleted = [];
-    let activeReasoning = null;
-    const activeToolCalls = [];
-    let seenLiveItem = false;
+    // Build flat render blocks. Consecutive reasoning/tool_call segments are grouped
+    // into activity blocks. Text, subagent, and plan_approval segments flush the
+    // pending activity group and appear as their own blocks.
+    const renderBlocks = [];
+    let pendingCompleted = [];
+    let pendingLiveReasoning = null;
+    let pendingLiveToolCalls = [];
+    let pendingHasFadingContent = false;
+    let activityCounter = 0;
+    const artifactReadyIds = new Set();
 
     const now = Date.now();
 
-    const flushBeforeLive = () => {
-      if (!seenLiveItem && currentCompleted.length > 0) {
-        episodesBefore.push({ completed: [...currentCompleted], text: null });
-        currentCompleted = [];
+    const flushActivity = () => {
+      if (pendingCompleted.length > 0 || pendingLiveReasoning || pendingLiveToolCalls.length > 0 || pendingHasFadingContent) {
+        renderBlocks.push({
+          type: 'activity',
+          key: `activity-${activityCounter++}`,
+          completed: pendingCompleted,
+          liveReasoning: pendingLiveReasoning,
+          liveToolCalls: pendingLiveToolCalls,
+          _hasFadingContent: pendingHasFadingContent,
+        });
+        pendingCompleted = [];
+        pendingLiveReasoning = null;
+        pendingLiveToolCalls = [];
+        pendingHasFadingContent = false;
       }
-      seenLiveItem = true;
     };
 
     for (const seg of filtered) {
@@ -287,8 +314,7 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
         const proc = reasoningProcesses[seg.reasoningId];
         if (!proc) continue;
         if (proc.isReasoning) {
-          flushBeforeLive();
-          activeReasoning = {
+          pendingLiveReasoning = {
             content: proc.content || '',
             title: proc.reasoningTitle || null,
             isReasoning: true,
@@ -297,16 +323,14 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
           const completedAt = proc._completedAt;
           const completedAge = completedAt ? now - completedAt : Infinity;
           if (completedAge < MIN_LIVE_EXPOSURE_MS + FADE_MS) {
-            // Still visible in LiveActivity hold/fade — treat as live for ordering
-            flushBeforeLive();
-            // Schedule re-render when hold+fade period expires
+            // Still in LiveActivity hold/fade — keep block alive
+            pendingHasFadingContent = true;
             const expiry = completedAt + MIN_LIVE_EXPOSURE_MS + FADE_MS;
             if (nextExpiryRef.current === null || expiry < nextExpiryRef.current) {
               nextExpiryRef.current = expiry;
             }
           } else {
-            // Completed reasoning — move to accordion
-            currentCompleted.push({
+            pendingCompleted.push({
               type: 'reasoning',
               id: seg.reasoningId,
               reasoningTitle: proc.reasoningTitle || null,
@@ -324,35 +348,45 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
         const createdAt = proc._createdAt;
         const age = createdAt ? now - createdAt : Infinity;
 
+        // Artifact tools skip exposure hold once they have a result
+        const isArtifactReady = INLINE_ARTIFACT_TOOLS.has(proc.toolName) && proc.toolCallResult?.artifact;
+
         if (proc.isInProgress && isStreaming && age < MAX_IN_PROGRESS_MS) {
-          // Keep in live view while streaming, but archive if stuck too long
-          flushBeforeLive();
-          activeToolCalls.push({
+          pendingLiveToolCalls.push({
             ...proc,
             id: seg.toolCallId,
             toolCallId: seg.toolCallId,
           });
-          // Schedule re-render at max age so stale items get archived
           const expiry = createdAt + MAX_IN_PROGRESS_MS;
           if (nextExpiryRef.current === null || expiry < nextExpiryRef.current) {
             nextExpiryRef.current = expiry;
           }
-        } else if (age < MIN_LIVE_EXPOSURE_MS) {
-          flushBeforeLive();
-          activeToolCalls.push({
+        } else if (isArtifactReady) {
+          // Artifact tool with result — render immediately, no exposure hold
+          artifactReadyIds.add(seg.toolCallId);
+          flushActivity();
+          renderBlocks.push({
+            type: 'compact_artifact',
+            key: `compact-${seg.toolCallId}`,
+            toolCallId: seg.toolCallId,
+            proc,
+          });
+        } else if (age < MIN_LIVE_EXPOSURE_MS && !INLINE_ARTIFACT_TOOLS.has(proc.toolName)) {
+          // Recently completed (non-artifact tools) — keep in LiveActivity until minimum exposure met.
+          // Artifact tools skip this so they don't show a redundant "done" card alongside their inline chart.
+          // LiveActivity's internal fade (FADE_MS) runs after item leaves here.
+          pendingLiveToolCalls.push({
             ...proc,
             id: seg.toolCallId,
             toolCallId: seg.toolCallId,
             _recentlyCompleted: true,
           });
-          // Schedule re-render for when minimum exposure expires
           const expiry = createdAt + MIN_LIVE_EXPOSURE_MS;
           if (nextExpiryRef.current === null || expiry < nextExpiryRef.current) {
             nextExpiryRef.current = expiry;
           }
         } else {
-          // Completed tool call — move to accordion
-          currentCompleted.push({
+          pendingCompleted.push({
             type: 'tool_call',
             id: seg.toolCallId,
             toolCallId: seg.toolCallId,
@@ -360,138 +394,175 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
           });
         }
       } else if (seg.type === 'subagent_task') {
-        const target = seenLiveItem ? episodesAfter : episodesBefore;
-        target.push({ completed: [...currentCompleted], text: null, subagentTask: seg });
-        currentCompleted = [];
+        flushActivity();
+        renderBlocks.push({ type: 'subagent_task', key: `subagent-${seg.subagentId}`, segment: seg });
       } else if (seg.type === 'plan_approval') {
-        const target = seenLiveItem ? episodesAfter : episodesBefore;
-        target.push({ completed: [...currentCompleted], text: null, planApproval: seg });
-        currentCompleted = [];
+        flushActivity();
+        renderBlocks.push({ type: 'plan_approval', key: `plan-${seg.planApprovalId}`, segment: seg });
       } else if (seg.type === 'text') {
-        const target = seenLiveItem ? episodesAfter : episodesBefore;
-        target.push({ completed: [...currentCompleted], text: seg });
-        currentCompleted = [];
+        flushActivity();
+        renderBlocks.push({ type: 'text', key: `text-${seg.order}`, segment: seg });
       }
     }
+    // Flush trailing activity items
+    flushActivity();
 
-    // Remaining completed items (no text after them)
-    if (currentCompleted.length > 0) {
-      const target = seenLiveItem ? episodesAfter : episodesBefore;
-      target.push({ completed: currentCompleted, text: null });
-    }
-
-    // Extract file paths from all text content for assistant messages (only when done streaming)
-    const allEpisodes = [...episodesBefore, ...episodesAfter];
-    const detectedFiles = isAssistant && !isStreaming
-      ? extractFilePaths(allEpisodes.filter(ep => ep.text).map(ep => ep.text.content).join('\n'))
-      : [];
-
-    const renderEpisode = (episode, key, isLastText) => (
-      <div key={key}>
-        {episode.completed.length > 0 && (compactToolCalls ? (
-          episode.completed.map((item) => {
-            if (item.type === 'tool_call') {
-              return (
-                <ToolCallMessageContent
-                  key={`tool-call-${item.toolCallId}`}
-                  toolCallId={item.toolCallId}
-                  toolName={item.toolName}
-                  toolCall={item.toolCall}
-                  toolCallResult={item.toolCallResult}
-                  isInProgress={item.isInProgress || false}
-                  isComplete={item.isComplete || false}
-                  isFailed={item.isFailed || false}
-                  onOpenFile={onOpenFile}
-                />
-              );
-            }
-            if (item.type === 'reasoning') {
-              return (
-                <ReasoningMessageContent
-                  key={`reasoning-${item.id}`}
-                  reasoningContent={item.content || ''}
-                  isReasoning={false}
-                  reasoningComplete={item.reasoningComplete || false}
-                  reasoningTitle={item.reasoningTitle ?? undefined}
-                />
-              );
-            }
-            return null;
-          })
-        ) : (
-          <ActivityAccordion
-            completedItems={episode.completed}
-            onToolCallClick={onToolCallDetailClick}
-            onOpenFile={onOpenFile}
-          />
-        ))}
-        {episode.subagentTask && (() => {
-          const task = subagentTasks[episode.subagentTask.subagentId];
-          if (!task) return null;
-          const rawToolCallProcess = toolCallProcesses[episode.subagentTask.subagentId] || null;
-          // Augment with actual subagent result (from subagent_status completed_tasks)
-          const toolCallProcess = rawToolCallProcess ? {
-            ...rawToolCallProcess,
-            _subagentResult: task.result || null,
-            _subagentStatus: task.status || null,
-          } : null;
-          return (
-            <SubagentTaskMessageContent
-              subagentId={episode.subagentTask.subagentId}
-              description={task.description}
-              type={task.type}
-              status={task.status}
-              onOpen={onOpenSubagentTask}
-              onDetailOpen={onToolCallDetailClick}
-              toolCallProcess={toolCallProcess}
-            />
-          );
-        })()}
-        {episode.planApproval && (() => {
-          const pd = planApprovals[episode.planApproval.planApprovalId];
-          if (!pd) return null;
-          return (
-            <PlanApprovalCard
-              planData={pd}
-              onApprove={onApprovePlan}
-              onReject={onRejectPlan}
-              onDetailClick={() => onPlanDetailClick?.(pd)}
-            />
-          );
-        })()}
-        {episode.text && (
-          <TextMessageContent
-            content={episode.text.content}
-            isStreaming={isStreaming && isLastText && !activeReasoning && activeToolCalls.length === 0}
-            hasError={hasError}
-          />
-        )}
-      </div>
-    );
-
-    // Aggregate all pending chunks into a single preparing indicator
+    // Derived values
     const chunkEntries = Object.values(pendingToolCallChunks);
     const preparingToolCall = chunkEntries.length > 0 ? {
-      // Pick the first non-null tool name across all indices
       toolName: chunkEntries.find((c) => c.toolName)?.toolName || null,
       chunkCount: chunkEntries.reduce((sum, c) => sum + c.chunkCount, 0),
       argsLength: chunkEntries.reduce((sum, c) => sum + c.argsLength, 0),
     } : null;
 
-    const hasLiveContent = !!(activeReasoning || activeToolCalls.length > 0 || preparingToolCall);
+    let lastTextBlockIdx = -1;
+    let lastActivityBlockIdx = -1;
+    let hasAnyTrulyInProgress = false;
+    for (let i = 0; i < renderBlocks.length; i++) {
+      const b = renderBlocks[i];
+      if (b.type === 'text') lastTextBlockIdx = i;
+      if (b.type === 'activity') {
+        lastActivityBlockIdx = i;
+        if (b.liveToolCalls.some(tc => !tc._recentlyCompleted)) {
+          hasAnyTrulyInProgress = true;
+        }
+      }
+    }
+
+    const detectedFiles = isAssistant && !isStreaming
+      ? extractFilePaths(renderBlocks.filter(b => b.type === 'text').map(b => b.segment.content).join('\n'))
+      : [];
 
     return (
       <div className="space-y-1">
-        {episodesBefore.map((episode, idx) =>
-          renderEpisode(episode, `ep-${idx}`, !hasLiveContent && episodesAfter.length === 0 && idx === episodesBefore.length - 1)
-        )}
-        <LiveActivity
-          activeReasoning={activeReasoning}
-          activeToolCalls={activeToolCalls}
-          preparingToolCall={preparingToolCall}
-        />
-        {episodesAfter.map((episode, idx) =>
-          renderEpisode(episode, `ep-after-${idx}`, idx === episodesAfter.length - 1)
+        {renderBlocks.map((block, blockIdx) => {
+          if (block.type === 'activity') {
+            return (
+              <div key={block.key}>
+                {/* Completed items ABOVE — chronological order preserved */}
+                {block.completed.length > 0 && (
+                  <div className={isStreaming ? 'accordion-enter-anim' : undefined}>
+                    {compactToolCalls ? (
+                      block.completed.map((item) => {
+                        if (item.type === 'tool_call') {
+                          return (
+                            <ToolCallMessageContent
+                              key={`tool-call-${item.toolCallId}`}
+                              toolCallId={item.toolCallId}
+                              toolName={item.toolName}
+                              toolCall={item.toolCall}
+                              toolCallResult={item.toolCallResult}
+                              isInProgress={item.isInProgress || false}
+                              isComplete={item.isComplete || false}
+                              isFailed={item.isFailed || false}
+                              onOpenFile={onOpenFile}
+                            />
+                          );
+                        }
+                        if (item.type === 'reasoning') {
+                          return (
+                            <ReasoningMessageContent
+                              key={`reasoning-${item.id}`}
+                              reasoningContent={item.content || ''}
+                              isReasoning={false}
+                              reasoningComplete={item.reasoningComplete || false}
+                              reasoningTitle={item.reasoningTitle ?? undefined}
+                            />
+                          );
+                        }
+                        return null;
+                      })
+                    ) : (
+                      <ActivityAccordion
+                        completedItems={block.completed}
+                        onToolCallClick={onToolCallDetailClick}
+                        onOpenFile={onOpenFile}
+                      />
+                    )}
+                  </div>
+                )}
+                {/* Live items BELOW — in-progress items stay beneath completed ones */}
+                <LiveActivity
+                  activeReasoning={block.liveReasoning}
+                  activeToolCalls={block.liveToolCalls}
+                  preparingToolCall={blockIdx === lastActivityBlockIdx ? preparingToolCall : null}
+                  artifactReadyIds={artifactReadyIds}
+                />
+              </div>
+            );
+          }
+
+          if (block.type === 'compact_artifact') {
+            const artifact = block.proc.toolCallResult?.artifact;
+            const ChartComponent = artifact ? INLINE_ARTIFACT_MAP[artifact.type] : null;
+            if (!ChartComponent) return null;
+            return (
+              <div key={block.key} className="mt-1 mb-1">
+                <ChartComponent
+                  artifact={artifact}
+                  onClick={() => onToolCallDetailClick?.(block.proc)}
+                />
+              </div>
+            );
+          }
+
+          if (block.type === 'text') {
+            return (
+              <TextMessageContent
+                key={block.key}
+                content={block.segment.content}
+                isStreaming={isStreaming && blockIdx === lastTextBlockIdx && !hasAnyTrulyInProgress}
+                hasError={hasError}
+              />
+            );
+          }
+
+          if (block.type === 'subagent_task') {
+            const task = subagentTasks[block.segment.subagentId];
+            if (!task) return null;
+            const rawToolCallProcess = toolCallProcesses[block.segment.subagentId] || null;
+            const toolCallProcess = rawToolCallProcess ? {
+              ...rawToolCallProcess,
+              _subagentResult: task.result || null,
+              _subagentStatus: task.status || null,
+            } : null;
+            return (
+              <SubagentTaskMessageContent
+                key={block.key}
+                subagentId={block.segment.subagentId}
+                description={task.description}
+                type={task.type}
+                status={task.status}
+                onOpen={onOpenSubagentTask}
+                onDetailOpen={onToolCallDetailClick}
+                toolCallProcess={toolCallProcess}
+              />
+            );
+          }
+
+          if (block.type === 'plan_approval') {
+            const pd = planApprovals[block.segment.planApprovalId];
+            if (!pd) return null;
+            return (
+              <PlanApprovalCard
+                key={block.key}
+                planData={pd}
+                onApprove={onApprovePlan}
+                onReject={onRejectPlan}
+                onDetailClick={() => onPlanDetailClick?.(pd)}
+              />
+            );
+          }
+
+          return null;
+        })}
+        {/* Standalone preparingToolCall when no activity blocks exist yet */}
+        {preparingToolCall && lastActivityBlockIdx === -1 && (
+          <LiveActivity
+            activeReasoning={null}
+            activeToolCalls={[]}
+            preparingToolCall={preparingToolCall}
+          />
         )}
         {detectedFiles.length > 0 && (
           <FileMentionCards filePaths={detectedFiles} onOpenFile={onOpenFile} onOpenDir={onOpenDir} />

@@ -25,3 +25,19 @@
 .loading-logo-spin {
   animation: logo-spin 1s linear infinite;
 }
+
+/* Accordion entrance animation — slides up into position as LiveActivity collapses */
+@keyframes accordion-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.accordion-enter-anim {
+  animation: accordion-enter 350ms ease-out;
+}

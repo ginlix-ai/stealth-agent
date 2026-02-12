@@ -12,7 +12,7 @@ const TEXT_COLOR = '#8b8fa3';
 const CARD_BG = 'rgba(255,255,255,0.03)';
 const CARD_BORDER = 'rgba(255,255,255,0.06)';
 
-export const INLINE_CHART_TOOLS = new Set([
+export const INLINE_ARTIFACT_TOOLS = new Set([
   'get_stock_daily_prices',
   'get_company_overview',
   'get_market_indices',

@@ -3,7 +3,7 @@ import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
 import { getDisplayName, getToolIcon } from './toolDisplayConfig';
 import Markdown from './Markdown';
 import {
-  INLINE_CHART_TOOLS,
+  INLINE_ARTIFACT_TOOLS,
   InlineStockPriceCard,
   InlineCompanyOverviewCard,
   InlineMarketIndicesCard,
@@ -30,8 +30,8 @@ function getFilePathFromArgs(args) {
  * @param {Function} onToolCallClick - (toolCallProcess) => void, opens detail panel
  * @param {Function} onOpenFile - (filePath) => void, opens file in FilePanel
  */
-/** Map artifact type → inline chart component */
-const INLINE_CHART_MAP = {
+/** Map artifact type → inline artifact component */
+const INLINE_ARTIFACT_MAP = {
   stock_prices: InlineStockPriceCard,
   company_overview: InlineCompanyOverviewCard,
   market_indices: InlineMarketIndicesCard,
@@ -51,7 +51,7 @@ function ActivityAccordion({ completedItems, onToolCallClick, onOpenFile }) {
   for (const item of completedItems) {
     if (
       item.type === 'tool_call' &&
-      INLINE_CHART_TOOLS.has(item.toolName || '') &&
+      INLINE_ARTIFACT_TOOLS.has(item.toolName || '') &&
       item.toolCallResult?.artifact
     ) {
       inlineChartItems.push(item);
@@ -81,26 +81,10 @@ function ActivityAccordion({ completedItems, onToolCallClick, onOpenFile }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: accordionItems.length > 0 ? 6 : 0 }}>
           {inlineChartItems.map((item, idx) => {
             const artifact = item.toolCallResult.artifact;
-            const ChartComponent = INLINE_CHART_MAP[artifact.type];
+            const ChartComponent = INLINE_ARTIFACT_MAP[artifact.type];
             if (!ChartComponent) return null;
-            const toolName = item.toolName || '';
-            const displayName = getDisplayName(toolName);
-            const IconComponent = getToolIcon(toolName);
             return (
               <div key={`chart-${item.id || idx}`}>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '4px 10px',
-                    fontSize: 12,
-                    color: 'var(--Labels-Tertiary)',
-                  }}
-                >
-                  <IconComponent style={{ width: 13, height: 13, opacity: 0.7 }} />
-                  <span>{displayName}</span>
-                </div>
                 <ChartComponent
                   artifact={artifact}
                   onClick={() => onToolCallClick?.(item)}
