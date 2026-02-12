@@ -1,7 +1,8 @@
 import React from 'react';
 import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import iconRoboSing from '../../../assets/img/icon-robo-sing.svg';
+import iconRobo from '../../../assets/img/icon-robo.png';
+import iconRoboSing from '../../../assets/img/icon-robo-sing.png';
 import Markdown from './Markdown';
 import './AgentSidebar.css';
 
@@ -27,7 +28,7 @@ function SubagentStatusBar({ agent }) {
       return <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />;
     }
     if (isCompleted) {
-      return <CheckCircle2 className="h-4 w-4" style={{ color: '#0FEDBE' }} />;
+      return <CheckCircle2 className="h-4 w-4" style={{ color: '#6155F5' }} />;
     }
     return <Circle className="h-4 w-4" style={{ color: 'rgba(255, 255, 255, 0.3)' }} />;
   };
@@ -67,12 +68,12 @@ function SubagentStatusBar({ agent }) {
         )}
         style={{
           backgroundColor: isActive && !isCompleted
-            ? 'rgba(15, 237, 190, 0.25)'
+            ? 'rgba(97, 85, 245, 0.25)'
             : 'rgba(255, 255, 255, 0.1)',
         }}
       >
         <img
-          src={iconRoboSing}
+          src={isCompleted ? iconRobo : iconRoboSing}
           alt="Agent"
           className="h-5 w-5"
           style={{ filter: 'brightness(0) saturate(100%) invert(100%)' }}
@@ -111,7 +112,7 @@ function SubagentStatusBar({ agent }) {
         )}
         <div className="flex items-center gap-1.5 mt-1">
           {getStatusIcon()}
-          <span className="text-xs" style={{ color: isCompleted ? '#0FEDBE' : 'rgba(255, 255, 255, 0.5)' }}>
+          <span className="text-xs" style={{ color: isCompleted ? '#6155F5' : 'rgba(255, 255, 255, 0.5)' }}>
             {getStatusText()}
           </span>
         </div>

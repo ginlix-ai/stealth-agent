@@ -1,6 +1,7 @@
 import React from 'react';
 import { Check, Loader2, ArrowRight } from 'lucide-react';
-import iconRoboSing from '../../../assets/img/icon-robo-sing.svg';
+import iconRobo from '../../../assets/img/icon-robo.png';
+import iconRoboSing from '../../../assets/img/icon-robo-sing.png';
 import './AgentSidebar.css';
 
 /**
@@ -17,21 +18,14 @@ function summarize(text, maxLen = 100) {
   return cleaned.slice(0, maxLen).replace(/\s+\S*$/, '') + '…';
 }
 
+const CARD_BORDER = 'rgba(255,255,255,0.06)';
+
 /**
  * SubagentTaskMessageContent Component
  *
  * Renders a compact, clickable card in the main chat view to indicate that
  * a background subagent task was launched (via the `task` tool).
- * Shows only a short summary — click to open the subagent tab for full details.
- *
- * @param {Object} props
- * @param {string} props.subagentId - Logical identifier for the subagent task
- * @param {string} props.description - Task description (from tool args)
- * @param {string} props.type - Subagent type (e.g., "general-purpose")
- * @param {string} props.status - Task status ("running" | "completed" | "unknown")
- * @param {Function} props.onOpen - Callback when user clicks to open the subagent tab
- * @param {Function} props.onDetailOpen - Callback to open the result in DetailPanel
- * @param {Object} props.toolCallProcess - The tool_call_process object for this Task tool call
+ * Uses the same visual style as inline artifact cards (company overview, etc.).
  */
 function SubagentTaskMessageContent({
   subagentId,
@@ -65,64 +59,62 @@ function SubagentTaskMessageContent({
   };
 
   return (
-    <div className="my-2">
-      <button
-        onClick={handleCardClick}
-        className="flex items-center gap-2.5 px-3.5 py-2.5 w-full text-left rounded-lg transition-colors hover:bg-white/5"
-        style={{
-          backgroundColor: isRunning
-            ? 'rgba(97, 85, 245, 0.12)'
-            : 'rgba(97, 85, 245, 0.06)',
-          border: '1px solid rgba(97, 85, 245, 0.2)',
-        }}
-        title={isRunning ? 'Click to view running subagent' : 'Click to view subagent details'}
-      >
-        {/* Icon */}
-        <div className="relative flex-shrink-0">
+    <div
+      style={{
+        background: 'rgba(255,255,255,0.03)',
+        border: `1px solid ${CARD_BORDER}`,
+        borderRadius: 8,
+        padding: '12px 14px',
+        cursor: 'pointer',
+        transition: 'border-color 0.15s',
+      }}
+      onClick={handleCardClick}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
+      title={isRunning ? 'Click to view running subagent' : 'Click to view subagent details'}
+    >
+      {/* Top row: icon + summary text */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <div style={{ position: 'relative', flexShrink: 0 }}>
           <img
-            src={iconRoboSing}
+            src={isCompleted ? iconRobo : iconRoboSing}
             alt="Subagent"
-            className={`w-5 h-5 ${isRunning ? 'agent-tab-active-pulse' : ''}`}
+            className={isRunning ? 'agent-tab-active-pulse' : ''}
+            style={{ width: 20, height: 20 }}
           />
           {isRunning && (
             <Loader2
-              className="h-2.5 w-2.5 absolute -bottom-0.5 -right-0.5 animate-spin"
-              style={{ color: '#6155F5' }}
+              style={{
+                width: 10, height: 10,
+                position: 'absolute', bottom: -2, right: -2,
+                color: '#6155F5',
+                animation: 'spin 1s linear infinite',
+              }}
             />
           )}
         </div>
-
-        {/* Summary text — single line */}
-        <span
-          className="text-xs flex-1 min-w-0 truncate"
-          style={{ color: 'rgba(255, 255, 255, 0.7)' }}
-        >
+        <span style={{ fontWeight: 600, color: '#fff', fontSize: 14, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {summary || 'Subagent Task'}
         </span>
-
-        {/* Type badge */}
-        <span className="text-xs flex-shrink-0" style={{ color: 'rgba(255, 255, 255, 0.3)' }}>
-          {type}
-        </span>
-
-        {/* Status */}
-        <span className="flex items-center gap-1 text-xs flex-shrink-0" style={{
-          color: isRunning ? '#6155F5' : isCompleted ? '#0FEDBE' : 'rgba(255, 255, 255, 0.4)',
-        }}>
-          {isRunning && <Loader2 className="h-3 w-3 animate-spin" />}
-          {isCompleted && <Check className="h-3 w-3" />}
-          {isRunning ? 'Running' : isCompleted ? 'Completed' : status}
-        </span>
-
-        {/* View output arrow (only when completed) */}
         {hasResult && (
           <ArrowRight
-            className="h-3.5 w-3.5 flex-shrink-0"
-            style={{ color: '#6155F5' }}
+            style={{ width: 14, height: 14, flexShrink: 0, color: '#6155F5' }}
             onClick={handleViewOutput}
           />
         )}
-      </button>
+      </div>
+
+      {/* Bottom row: type badge + status */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
+          {type}
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: isRunning ? '#6155F5' : isCompleted ? '#6155F5' : 'rgba(255,255,255,0.4)' }}>
+          {isRunning && <Loader2 style={{ width: 12, height: 12, animation: 'spin 1s linear infinite' }} />}
+          {isCompleted && <Check style={{ width: 12, height: 12 }} />}
+          {isRunning ? 'Running' : isCompleted ? 'Completed' : status}
+        </span>
+      </div>
     </div>
   );
 }

@@ -88,7 +88,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
 
   // Right panel management - can show 'file', 'detail', or null (closed)
   const [rightPanelType, setRightPanelType] = useState(null);
-  const [rightPanelWidth, setRightPanelWidth] = useState(420);
+  const [rightPanelWidth, setRightPanelWidth] = useState(750);
   // Active agent in main view (default: 'main')
   const [activeAgentId, setActiveAgentId] = useState('main');
   // Sidebar visibility
@@ -220,6 +220,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
     handleRejectInterrupt,
     handleAnswerQuestion,
     handleSkipQuestion,
+    tokenUsage,
     threadId: currentThreadId,
     getSubagentHistory,
     resolveSubagentIdToAgentId,
@@ -338,7 +339,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
     .filter(([cardId]) => cardId.startsWith('subagent-'))
     .map(([cardId, card]) => ({
       id: cardId.replace('subagent-', ''),
-      name: card.subagentData?.displayId || 'Agent',
+      name: card.subagentData?.displayId || 'Worker',
       taskId: card.subagentData?.taskId || card.subagentData?.agentId || '',
       description: card.subagentData?.description || '',
       type: card.subagentData?.type || 'general-purpose',
@@ -375,7 +376,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
   // Main agent (always first) - Director
   const mainAgent = {
     id: 'main',
-    name: 'master', // Icon label at bottom
+    name: 'Boss', // Icon label at bottom
     displayName: 'LangAlpha', // Floating card / panel header title
     taskId: '',
     description: '',
@@ -435,6 +436,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
 
   // Open a file in the right panel from chat tool calls
   const handleOpenFileFromChat = useCallback((filePath) => {
+    setRightPanelWidth(850);
     setRightPanelType('file');
     setFilePanelTargetDir(null);
     setFilePanelTargetFile(filePath);
@@ -442,22 +444,46 @@ function ChatView({ workspaceId, threadId, onBack }) {
 
   // Open file panel filtered to a specific directory
   const handleOpenDirFromChat = useCallback((dirPath) => {
+    setRightPanelWidth(850);
     setRightPanelType('file');
     setFilePanelTargetFile(null);
     setFilePanelTargetDir(dirPath);
+  }, []);
+
+  // Determine detail panel width based on content type
+  const getDetailPanelWidth = useCallback((toolCallProcess) => {
+    if (!toolCallProcess) return 550;
+    const toolName = toolCallProcess.toolName || '';
+    const artifactType = toolCallProcess.toolCallResult?.artifact?.type;
+
+    // Wide: file reading, SEC filings, subagent results
+    if (artifactType === 'sec_filing') return 850;
+    if (toolName === 'Read' || toolName === 'read_file') return 850;
+    if (toolName === 'Task' || toolName === 'task') return 750;
+
+    // Medium: charts, search results, default markdown
+    if (artifactType === 'stock_prices' || artifactType === 'market_indices' || artifactType === 'sector_performance') return 650;
+    if (toolName === 'WebSearch' || toolName === 'web_search') return 650;
+
+    // Slim: compact data cards
+    if (artifactType === 'company_overview') return 480;
+
+    return 650;
   }, []);
 
   // Open tool call detail in right panel
   const handleToolCallDetailClick = useCallback((toolCallProcess) => {
     setDetailToolCall(toolCallProcess);
     setDetailPlanData(null);
+    setRightPanelWidth(getDetailPanelWidth(toolCallProcess));
     setRightPanelType('detail');
-  }, []);
+  }, [getDetailPanelWidth]);
 
   // Open plan detail in right panel
   const handlePlanDetailClick = useCallback((planData) => {
     setDetailPlanData(planData);
     setDetailToolCall(null);
+    setRightPanelWidth(550);
     setRightPanelType('detail');
   }, []);
 
@@ -466,6 +492,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
     if (rightPanelType === 'file') {
       setRightPanelType(null);
     } else {
+      setRightPanelWidth(850);
       setRightPanelType('file');
     }
   }, [rightPanelType]);
@@ -840,7 +867,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
               <div className="w-full max-w-3xl space-y-3">
                 {activeAgentId === 'main' ? (
                   <>
-                    <TodoDrawer todoData={floatingCards['todo-list-card']?.todoData} />
+                    <TodoDrawer todoData={floatingCards['todo-list-card']?.todoData} defaultCollapsed={!!floatingCards['todo-list-card']?.todoData?.fromHistory} />
                     {pendingRejection && (
                       <div
                         className="flex items-center gap-2 px-3 py-2 rounded-md text-sm"
@@ -877,6 +904,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
                       onStop={handleSoftInterrupt}
                       isLoading={isLoading}
                       files={workspaceFiles}
+                      tokenUsage={tokenUsage}
                     />
                   </>
                 ) : activeAgent ? (

@@ -1,8 +1,9 @@
 import React from 'react';
 import { X, Check } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import iconRoboSing from '../../../assets/img/icon-robo-sing.svg';
-import iconKing from '../../../assets/img/icon-king.svg';
+import iconRobo from '../../../assets/img/icon-robo.png';
+import iconRoboSing from '../../../assets/img/icon-robo-sing.png';
+import iconKing from '../../../assets/img/icon-king.png';
 import './AgentSidebar.css';
 
 /**
@@ -31,7 +32,7 @@ function AgentSidebar({ agents, activeAgentId, onSelectAgent, onRemoveAgent }) {
         const isActive = agent.status === 'active' && agent.isActive;
         const isCompleted = agent.status === 'completed';
         const isMainAgent = agent.id === 'main' || agent.isMainAgent;
-        const agentIcon = isMainAgent ? iconKing : iconRoboSing;
+        const agentIcon = isMainAgent ? iconKing : (isCompleted ? iconRobo : iconRoboSing);
 
         return (
           <div
@@ -66,7 +67,7 @@ function AgentSidebar({ agents, activeAgentId, onSelectAgent, onRemoveAgent }) {
                   )}
                   style={{
                     backgroundColor: isActive && !isCompleted
-                      ? 'rgba(15, 237, 190, 0.25)'
+                      ? 'rgba(97, 85, 245, 0.25)'
                       : 'rgba(255, 255, 255, 0.1)',
                   }}
                 >

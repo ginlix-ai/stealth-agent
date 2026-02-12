@@ -87,6 +87,9 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   // sent via handleSendMessage is routed as rejection feedback via hitl_response.
   const [pendingRejection, setPendingRejection] = useState(null);
 
+  // Token usage tracking (for context window progress ring)
+  const [tokenUsage, setTokenUsage] = useState(null);
+
   // Track current plan mode so HITL resume can forward it
   const currentPlanModeRef = useRef(false);
 
@@ -299,6 +302,20 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           return;
         }
 
+        // Handle token_usage events from history (for context window progress ring)
+        if (eventType === 'token_usage') {
+          const callInput = event.input_tokens || 0;
+          const callOutput = event.output_tokens || 0;
+          setTokenUsage((prev) => ({
+            totalInput: (prev?.totalInput || 0) + callInput,
+            totalOutput: (prev?.totalOutput || 0) + callOutput,
+            lastOutput: callOutput,
+            total: event.total_tokens || 0,
+            threshold: event.threshold || prev?.threshold || 0,
+          }));
+          return;
+        }
+
         // Handle subagent events - store them separately, don't process in main chat
         if (isSubagent) {
           // Get task ID from agent mapping
@@ -467,13 +484,27 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         if (eventType === 'artifact') {
           const artifactType = event.artifact_type;
           if (artifactType === 'todo_update') {
+            const payload = event.payload || {};
+
+            // Update floating todo card from history (last event wins, shows final state)
+            if (updateTodoListCard) {
+              updateTodoListCard({
+                todos: payload.todos || [],
+                total: payload.total || 0,
+                completed: payload.completed || 0,
+                in_progress: payload.in_progress || 0,
+                pending: payload.pending || 0,
+                fromHistory: true,
+              });
+            }
+
             // Artifacts in history replay have pair_index - use it!
             if (hasPairIndex) {
               const pairIndex = event.pair_index;
               // Update active pair tracking
               currentActivePairIndex = pairIndex;
               currentActivePairState = pairStateByPair.get(pairIndex);
-              
+
               const currentAssistantMessageId = assistantMessagesByPair.get(pairIndex);
               const pairState = pairStateByPair.get(pairIndex);
 
@@ -487,7 +518,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 assistantMessageId: currentAssistantMessageId,
                 artifactType,
                 artifactId: event.artifact_id,
-                payload: event.payload || {},
+                payload,
                 pairState: pairState,
                 setMessages,
               });
@@ -512,7 +543,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                   assistantMessageId: targetAssistantMessageId,
                   artifactType,
                   artifactId: event.artifact_id,
-                  payload: event.payload || {},
+                  payload,
                   pairState: targetPairState,
                   setMessages,
                 });
@@ -1243,6 +1274,22 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           id: event.id,
           content_type: event.content_type,
         });
+      }
+
+      // Handle token_usage events (for context window progress ring)
+      // Backend emits per-call values; we accumulate totals on the frontend.
+      if (eventType === 'token_usage') {
+        const callInput = event.input_tokens || 0;
+        const callOutput = event.output_tokens || 0;
+        setTokenUsage((prev) => ({
+          totalInput: (prev?.totalInput || 0) + callInput,
+          totalOutput: (prev?.totalOutput || 0) + callOutput,
+          lastOutput: callOutput,
+          // total_tokens = context window usage for the latest call (used for ring progress)
+          total: event.total_tokens || 0,
+          threshold: event.threshold || prev?.threshold || 0,
+        }));
+        return;
       }
 
       // Handle subagent_status events
@@ -2140,6 +2187,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     handleRejectInterrupt,
     handleAnswerQuestion,
     handleSkipQuestion,
+    tokenUsage,
     // Resolve subagentId (e.g. toolCallId from segment) to stable agent_id for card operations.
     resolveSubagentIdToAgentId: (subagentId) =>
       toolCallIdToTaskIdMapRef.current.get(subagentId) || subagentId,

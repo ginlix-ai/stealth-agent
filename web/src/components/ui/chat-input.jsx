@@ -3,6 +3,7 @@ import {
   Plus, ArrowUp, X, FileText, Loader2, Archive, Square,
   ScrollText, ChartCandlestick, Zap, FileStack, ChevronDown, FolderOpen,
 } from 'lucide-react';
+import { TokenUsageRing } from './token-usage-ring';
 import './chat-input.css';
 
 /* --- UTILS --- */
@@ -111,6 +112,8 @@ function ChatInput({
   // Prefill (trading)
   prefillMessage = '',
   onClearPrefill = null,
+  // Token usage (context window progress)
+  tokenUsage = null,
 }) {
   const [message, setMessage] = useState('');
   const [attachedFiles, setAttachedFiles] = useState([]);
@@ -568,6 +571,11 @@ function ChatInput({
               >
                 <Plus className="w-5 h-5" />
               </button>
+
+              {/* Token Usage Ring */}
+              {tokenUsage && tokenUsage.threshold > 0 && tokenUsage.total > 0 && (
+                <TokenUsageRing tokenUsage={tokenUsage} />
+              )}
 
               {/* Chart Capture (trading only) */}
               {onCaptureChart && (

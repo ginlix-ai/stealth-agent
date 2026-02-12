@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle2, ChevronDown, ChevronUp, Circle, Loader2 } from 'lucide-react';
 
 /**
@@ -13,15 +13,29 @@ import { CheckCircle2, ChevronDown, ChevronUp, Circle, Loader2 } from 'lucide-re
  * @param {Object} props
  * @param {Object} props.todoData - Todo data from floating cards { todos, total, completed, in_progress, pending }
  */
-function TodoDrawer({ todoData }) {
-  const [isExpanded, setIsExpanded] = useState(true);
+function TodoDrawer({ todoData, defaultCollapsed = false }) {
+  const [isExpanded, setIsExpanded] = useState(!defaultCollapsed);
+  const wasAllCompleted = useRef(false);
+
+  const todos = todoData?.todos;
+  const total = todoData?.total || 0;
+  const completed = todoData?.completed || 0;
+  const in_progress = todoData?.in_progress || 0;
+  const pending = todoData?.pending || 0;
+
+  // Auto-collapse when all todos become completed
+  useEffect(() => {
+    const allCompleted = total > 0 && completed === total;
+    if (allCompleted && !wasAllCompleted.current) {
+      setIsExpanded(false);
+    }
+    wasAllCompleted.current = allCompleted;
+  }, [completed, total]);
 
   // Don't render if no todo data
-  if (!todoData || !todoData.todos || todoData.todos.length === 0) {
+  if (!todoData || !todos || todos.length === 0) {
     return null;
   }
-
-  const { todos, total, completed, in_progress, pending } = todoData;
 
   /**
    * Get icon for todo item based on status

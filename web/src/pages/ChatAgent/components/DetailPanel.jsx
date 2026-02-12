@@ -8,7 +8,8 @@ import {
 } from './charts/MarketDataCharts';
 import SecFilingViewer from './charts/SecFilingViewer';
 import Markdown from './Markdown';
-import iconRoboSing from '../../../assets/img/icon-robo-sing.svg';
+import iconRobo from '../../../assets/img/icon-robo.png';
+import iconRoboSing from '../../../assets/img/icon-robo-sing.png';
 
 /**
  * DetailPanel Component
@@ -75,6 +76,7 @@ function DetailPanel({ toolCallProcess, planData, onClose, onOpenFile, onOpenSub
   const subagentType = isTaskTool ? (toolCallProcess.toolCall?.args?.subagent_type || 'general-purpose') : '';
   const subagentDescription = isTaskTool ? (toolCallProcess.toolCall?.args?.description || '') : '';
   const subagentId = isTaskTool ? toolCallProcess.toolCall?.id : null;
+  const isSubagentCompleted = isTaskTool && (toolCallProcess._subagentStatus === 'completed' || !!content);
 
   return (
     <div
@@ -91,7 +93,7 @@ function DetailPanel({ toolCallProcess, planData, onClose, onOpenFile, onOpenSub
       >
         <div className="flex items-center gap-2 min-w-0">
           {isTaskTool ? (
-            <img src={iconRoboSing} alt="Subagent" className="w-5 h-5 flex-shrink-0" />
+            <img src={isSubagentCompleted ? iconRobo : iconRoboSing} alt="Subagent" className="w-5 h-5 flex-shrink-0" />
           ) : (
             <IconComponent className="h-4 w-4 flex-shrink-0" style={{ color: '#6155F5' }} />
           )}
@@ -229,7 +231,7 @@ function TaskToolContent({ description, type, subagentId, subagentResult, subage
             border: '1px solid rgba(97, 85, 245, 0.2)',
           }}
         >
-          <img src={iconRoboSing} alt="Subagent" className="w-5 h-5 flex-shrink-0" />
+          <img src={isRunning ? iconRoboSing : iconRobo} alt="Subagent" className="w-5 h-5 flex-shrink-0" />
           <div className="flex flex-col gap-0.5 min-w-0 flex-1 text-left">
             <span className="text-xs font-medium" style={{ color: '#FFFFFF', opacity: 0.8 }}>
               Go to subagent tab

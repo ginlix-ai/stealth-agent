@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ListTodo, CheckCircle2, Circle, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 
 /**
@@ -22,9 +22,17 @@ import { ListTodo, CheckCircle2, Circle, Loader2, ChevronDown, ChevronUp } from 
  * @param {number} props.pending - Number of pending todos
  */
 function TodoListMessageContent({ todos, total, completed, in_progress, pending }) {
-  const [isExpanded, setIsExpanded] = useState(false); // Folded by default (like reasoning and tool calls)
+  const [isExpanded, setIsExpanded] = useState(false);
+  const wasAllCompleted = useRef(false);
 
-  console.log('[TodoListMessageContent] Rendering with props:', { todos, total, completed, in_progress, pending });
+  // Auto-collapse when all todos become completed
+  useEffect(() => {
+    const allCompleted = total > 0 && completed === total;
+    if (allCompleted && !wasAllCompleted.current) {
+      setIsExpanded(false);
+    }
+    wasAllCompleted.current = allCompleted;
+  }, [completed, total]);
 
   // Don't render if there are no todos
   if (!todos || todos.length === 0) {
