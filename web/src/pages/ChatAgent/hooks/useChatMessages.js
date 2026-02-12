@@ -1854,14 +1854,6 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     currentMessageRef.current = assistantMessageId;
 
     try {
-      // Build message history for API (filter out assistant messages)
-      const messageHistory = messages
-        .filter((msg) => msg.role === 'user')
-        .map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        }));
-
       // Prepare refs for event handlers
       const subagentStateRefs = {}; // Will be populated as subagents are detected
       const refs = {
@@ -1881,7 +1873,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         message,
         workspaceId,
         threadId,
-        messageHistory,
+        [],
         planMode,
         processEvent,
         additionalContext,
