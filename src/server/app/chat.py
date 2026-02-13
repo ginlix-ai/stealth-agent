@@ -88,6 +88,48 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat"])
 
 
+async def _queue_message_for_thread(
+    thread_id: str, content: str, user_id: str
+) -> dict | None:
+    """Queue a user message for injection into a running workflow via Redis.
+
+    The MessageQueueMiddleware will pick these up before the next LLM call.
+
+    Args:
+        thread_id: The thread with an active workflow
+        content: The user's message text
+        user_id: User identifier
+
+    Returns:
+        Dict with queue position if successful, None if queuing failed
+    """
+    from src.utils.cache.redis_cache import get_cache_client
+
+    cache = get_cache_client()
+    if not cache.enabled or not cache.client:
+        return None
+
+    try:
+        key = f"workflow:queued_messages:{thread_id}"
+        message = json.dumps(
+            {"content": content, "user_id": user_id, "timestamp": time.time()}
+        )
+        pipe = cache.client.pipeline()
+        pipe.rpush(key, message)
+        pipe.llen(key)
+        pipe.expire(key, 3600)  # 1h TTL
+        results = await pipe.execute()
+        position = results[1]
+        logger.info(
+            f"[CHAT] Queued message for running workflow: "
+            f"thread_id={thread_id} position={position}"
+        )
+        return {"position": position}
+    except Exception as e:
+        logger.error(f"[CHAT] Failed to queue message: {e}")
+        return None
+
+
 async def _resolve_byok_llm_client(user_id: str, model_name: str, byok_active: bool):
     """
     If BYOK is active, look up the user's key for the model's provider
@@ -926,6 +968,23 @@ async def _astream_workflow(
             thread_id, timeout=30.0
         )
         if not ready_for_new_request:
+            # Try to queue the message for injection into the running workflow
+            queued = await _queue_message_for_thread(
+                thread_id, user_input, user_id
+            )
+            if queued:
+                # Return a short SSE response confirming the queue, then exit
+                event_data = json.dumps(
+                    {
+                        "thread_id": thread_id,
+                        "content": user_input,
+                        "position": queued["position"],
+                    }
+                )
+                yield f"event: message_queued\ndata: {event_data}\n\n"
+                return
+
+            # Fallback: raise 409 if queuing failed
             raise HTTPException(
                 status_code=409,
                 detail=(

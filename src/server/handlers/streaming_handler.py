@@ -576,6 +576,16 @@ class WorkflowStreamHandler:
                             yield self._format_sse_event("token_usage", usage_data)
                             continue
 
+                        # Handle queued message injection signal
+                        if event_type == "queued_message_injected":
+                            yield self._format_sse_event("queued_message_injected", {
+                                "thread_id": self.thread_id,
+                                "count": event_data.get("count", 0),
+                                "messages": event_data.get("messages", []),
+                                "timestamp": event_data.get("timestamp"),
+                            })
+                            continue
+
                         # Check if this is an artifact event from middleware
                         # Generic handler: any event with artifact_type is emitted as artifact SSE
                         artifact_type = event_data.get("artifact_type")
