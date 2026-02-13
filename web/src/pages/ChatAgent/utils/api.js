@@ -52,14 +52,7 @@ export async function getFlashWorkspace() {
   return data;
 }
 
-// --- Conversations ---
-
-export async function getConversations(limit = 50, offset = 0) {
-  const { data } = await api.get('/api/v1/conversations', {
-    params: { limit, offset },
-  });
-  return data;
-}
+// --- Threads ---
 
 /**
  * Get all threads for a specific workspace
@@ -70,8 +63,8 @@ export async function getConversations(limit = 50, offset = 0) {
  */
 export async function getWorkspaceThreads(workspaceId, limit = 20, offset = 0) {
   if (!workspaceId) throw new Error('Workspace ID is required');
-  const { data } = await api.get(`/api/v1/workspaces/${workspaceId}/threads`, {
-    params: { limit, offset },
+  const { data } = await api.get('/api/v1/threads', {
+    params: { workspace_id: workspaceId, limit, offset },
   });
   return data;
 }
@@ -165,13 +158,13 @@ async function streamFetch(url, opts, onEvent) {
 
 export async function replayThreadHistory(threadId, onEvent = () => {}) {
   if (!threadId) throw new Error('Thread ID is required');
-  await streamFetch(`/api/v1/threads/${threadId}/replay`, { method: 'GET' }, onEvent);
+  await streamFetch(`/api/v1/threads/${threadId}/messages/replay`, { method: 'GET' }, onEvent);
 }
 
 export async function sendChatMessageStream(
   message,
   workspaceId,
-  threadId = '__default__',
+  threadId = null,
   messageHistory = [],
   planMode = false,
   onEvent = () => {},
@@ -183,7 +176,6 @@ export async function sendChatMessageStream(
   const messages = [...messageHistory, { role: 'user', content: message }];
   const body = {
     workspace_id: workspaceId,
-    thread_id: threadId,
     messages,
     agent_mode: agentMode,
     plan_mode: planMode,
@@ -193,9 +185,14 @@ export async function sendChatMessageStream(
   if (additionalContext) {
     body.additional_context = additionalContext;
   }
+  // Use /threads/{id}/messages for existing thread, /threads/messages for new
+  const isNewThread = !threadId || threadId === '__default__';
+  const url = isNewThread
+    ? '/api/v1/threads/messages'
+    : `/api/v1/threads/${threadId}/messages`;
   const authHeaders = await getAuthHeaders();
   await streamFetch(
-    '/api/v1/chat/stream',
+    url,
     {
       method: 'POST',
       headers: {
@@ -216,7 +213,7 @@ export async function sendChatMessageStream(
  */
 export async function getWorkflowStatus(threadId) {
   if (!threadId) throw new Error('Thread ID is required');
-  const { data } = await api.get(`/api/v1/workflow/${threadId}/status`);
+  const { data } = await api.get(`/api/v1/threads/${threadId}/status`);
   return data;
 }
 
@@ -231,7 +228,7 @@ export async function reconnectToWorkflowStream(threadId, lastEventId = null, on
   const queryParam = lastEventId != null ? `?last_event_id=${lastEventId}` : '';
   const authHeaders = await getAuthHeaders();
   await streamFetch(
-    `/api/v1/chat/stream/${threadId}/reconnect${queryParam}`,
+    `/api/v1/threads/${threadId}/messages/stream${queryParam}`,
     { method: 'GET', headers: { ...authHeaders } },
     onEvent
   );
@@ -244,7 +241,7 @@ export async function reconnectToWorkflowStream(threadId, lastEventId = null, on
  */
 export async function softInterruptWorkflow(threadId) {
   if (!threadId) throw new Error('Thread ID is required');
-  const { data } = await api.post(`/api/v1/workflow/${threadId}/soft-interrupt`);
+  const { data } = await api.post(`/api/v1/threads/${threadId}/interrupt`);
   return data;
 }
 
@@ -330,14 +327,13 @@ export async function triggerFileDownload(workspaceId, filePath) {
 export async function sendHitlResponse(workspaceId, threadId, hitlResponse, onEvent = () => {}, planMode = false) {
   const body = {
     workspace_id: workspaceId,
-    thread_id: threadId,
     messages: [],
     hitl_response: hitlResponse,
     plan_mode: planMode,
   };
   const authHeaders = await getAuthHeaders();
   await streamFetch(
-    '/api/v1/chat/stream',
+    `/api/v1/threads/${threadId}/messages`,
     {
       method: 'POST',
       headers: {

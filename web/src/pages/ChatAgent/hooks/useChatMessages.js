@@ -108,6 +108,9 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   // Track if streaming is in progress to prevent history loading during streaming
   const isStreamingRef = useRef(false);
 
+  // Track if history replay found an unresolved interrupt (skip reconnection in that case)
+  const historyHasUnresolvedInterruptRef = useRef(false);
+
   // Track the last received SSE event ID for reconnection
   const lastEventIdRef = useRef(null);
   // Track reconnection state for UI indicator
@@ -198,6 +201,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
     try {
       historyLoadingRef.current = true;
+      historyHasUnresolvedInterruptRef.current = false;
       setIsLoadingHistory(true);
       setMessageError(null);
 
@@ -821,6 +825,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         if (pendingHistoryInterrupt) {
           const { type: intType } = pendingHistoryInterrupt;
           console.log('[History] Unresolved interrupt detected, making interactive:', intType);
+          historyHasUnresolvedInterruptRef.current = true;
 
           if (intType === 'ask_user_question') {
             setPendingInterrupt({
@@ -1139,9 +1144,11 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
       if (cancelled) return;
 
-      if (status.can_reconnect) {
+      if (status.can_reconnect && !historyHasUnresolvedInterruptRef.current) {
         console.log('[Reconnect] Workflow status:', status.status, 'can_reconnect:', status.can_reconnect);
         await reconnectToStream();
+      } else if (status.can_reconnect && historyHasUnresolvedInterruptRef.current) {
+        console.log('[Reconnect] Skipping reconnect: history has unresolved interrupt');
       }
     };
 
@@ -2286,21 +2293,25 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
   const handleAnswerQuestion = useCallback((answer) => {
     if (!pendingInterrupt || pendingInterrupt.type !== 'ask_user_question') return;
-    const { interruptId, assistantMessageId, questionId } = pendingInterrupt;
+    const { interruptId, questionId } = pendingInterrupt;
 
-    // Update card to answered
+    // Update card to answered – search all messages by questionId so it works
+    // even if assistantMessageId was overwritten by a reconnect replay
     setMessages((prev) =>
-      updateMessage(prev, assistantMessageId, (msg) => ({
-        ...msg,
-        userQuestions: {
-          ...(msg.userQuestions || {}),
-          [questionId]: {
-            ...(msg.userQuestions?.[questionId] || {}),
-            status: 'answered',
-            answer,
+      prev.map((msg) => {
+        if (!msg.userQuestions?.[questionId]) return msg;
+        return {
+          ...msg,
+          userQuestions: {
+            ...msg.userQuestions,
+            [questionId]: {
+              ...msg.userQuestions[questionId],
+              status: 'answered',
+              answer,
+            },
           },
-        },
-      }))
+        };
+      })
     );
 
     const hitlResponse = {
@@ -2311,20 +2322,24 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
   const handleSkipQuestion = useCallback(() => {
     if (!pendingInterrupt || pendingInterrupt.type !== 'ask_user_question') return;
-    const { interruptId, assistantMessageId, questionId } = pendingInterrupt;
+    const { interruptId, questionId } = pendingInterrupt;
 
-    // Update card to skipped
+    // Update card to skipped – search all messages by questionId so it works
+    // even if assistantMessageId was overwritten by a reconnect replay
     setMessages((prev) =>
-      updateMessage(prev, assistantMessageId, (msg) => ({
-        ...msg,
-        userQuestions: {
-          ...(msg.userQuestions || {}),
-          [questionId]: {
-            ...(msg.userQuestions?.[questionId] || {}),
-            status: 'skipped',
+      prev.map((msg) => {
+        if (!msg.userQuestions?.[questionId]) return msg;
+        return {
+          ...msg,
+          userQuestions: {
+            ...msg.userQuestions,
+            [questionId]: {
+              ...msg.userQuestions[questionId],
+              status: 'skipped',
+            },
           },
-        },
-      }))
+        };
+      })
     );
 
     const hitlResponse = {

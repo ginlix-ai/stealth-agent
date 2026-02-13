@@ -559,7 +559,7 @@ async function streamFetch(url, opts, onEvent) {
 /**
  * Send chat message in flash mode (fast response without sandbox)
  * @param {string} message - User message content
- * @param {string} threadId - Thread ID (use '__default__' for new thread)
+ * @param {string|null} threadId - Thread ID (null or '__default__' for new thread)
  * @param {Function} onEvent - Event handler callback
  * @param {string} locale - Locale (defaults to 'en-US')
  * @param {string} timezone - Timezone (defaults to 'America/New_York')
@@ -567,14 +567,13 @@ async function streamFetch(url, opts, onEvent) {
  */
 export async function sendFlashChatMessage(
   message,
-  threadId = '__default__',
+  threadId = null,
   onEvent = () => {},
   locale = 'en-US',
   timezone = 'America/New_York',
   additionalContext = null
 ) {
   const body = {
-    thread_id: threadId,
     agent_mode: 'flash',
     messages: [
       { role: 'user', content: message }
@@ -585,6 +584,12 @@ export async function sendFlashChatMessage(
   if (additionalContext) {
     body.additional_context = additionalContext;
   }
+
+  // Use /threads/{id}/messages for existing thread, /threads/messages for new
+  const isNewThread = !threadId || threadId === '__default__';
+  const url = isNewThread
+    ? '/api/v1/threads/messages'
+    : `/api/v1/threads/${threadId}/messages`;
 
   if (process.env.NODE_ENV === 'development') {
     console.log('[TradingCenter API] Sending flash chat message:', {
@@ -598,7 +603,7 @@ export async function sendFlashChatMessage(
 
   try {
     await streamFetch(
-      '/api/v1/chat/stream',
+      url,
       {
         method: 'POST',
         headers: {
