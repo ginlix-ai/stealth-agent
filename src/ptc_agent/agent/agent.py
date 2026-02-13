@@ -40,6 +40,8 @@ from ptc_agent.agent.middleware import (
     SummarizationMiddleware,
     # Large result eviction middleware
     LargeResultEvictionMiddleware,
+    # Message queue middleware
+    MessageQueueMiddleware,
 )
 from ptc_agent.agent.skills import SKILL_REGISTRY
 from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
@@ -379,6 +381,11 @@ class PTCAgent:
 
         # --- Build main-only middleware (NOT passed to subagents) ---
         main_only_middleware: list[Any] = []
+
+        # Message queue middleware - checks Redis for queued user messages
+        # before each LLM call (must be first so queued context is visible
+        # before any other middleware runs)
+        main_only_middleware.append(MessageQueueMiddleware())
 
         # Create background subagent middleware (must be created before subagents)
         background_middleware = BackgroundSubagentMiddleware(

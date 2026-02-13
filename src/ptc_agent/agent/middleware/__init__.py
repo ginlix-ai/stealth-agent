@@ -70,6 +70,11 @@ from ptc_agent.agent.middleware.large_result_eviction import (
     LargeResultEvictionMiddleware,
 )
 
+# Message queue middleware
+from ptc_agent.agent.middleware.message_queue import (
+    MessageQueueMiddleware,
+)
+
 # Subagent middleware
 from ptc_agent.agent.middleware.subagents import (
     CompiledSubAgent,
@@ -111,6 +116,8 @@ __all__ = [
     "DynamicSkillLoaderMiddleware",
     # Large result eviction
     "LargeResultEvictionMiddleware",
+    # Message queue
+    "MessageQueueMiddleware",
     # Subagent middleware
     "CompiledSubAgent",
     "SubAgent",
