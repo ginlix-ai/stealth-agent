@@ -1,0 +1,449 @@
+"""
+Unified Thread Router — All thread-related endpoints under /api/v1/threads.
+
+Consolidates endpoints from:
+- chat.py (POST /chat/stream → POST /threads/messages, /threads/{id}/messages)
+- workflow.py (workflow control → /threads/{id}/status, cancel, interrupt, summarize)
+- conversation.py (thread CRUD → /threads, /threads/{id})
+
+Route definitions are thin — business logic lives in handlers/.
+"""
+
+import json
+import logging
+from typing import Optional
+from uuid import uuid4
+
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
+
+from src.server.utils.api import CurrentUserId
+from src.server.models.chat import ChatRequest
+from src.server.models.conversation import (
+    WorkspaceThreadListItem,
+    WorkspaceThreadsListResponse,
+    ThreadUpdateRequest,
+    ThreadDeleteResponse,
+)
+from src.server.database.conversation import (
+    get_workspace_threads,
+    get_threads_for_user,
+    get_thread_with_summary,
+    get_queries_for_thread,
+    get_responses_for_thread,
+    delete_thread,
+    update_thread_title,
+    get_thread_by_id,
+)
+from src.server.dependencies.usage_limits import ChatRateLimited
+
+# Import setup module to access initialized globals
+from src.server.app import setup
+
+logger = logging.getLogger(__name__)
+
+# Single router for all thread operations
+router = APIRouter(prefix="/api/v1/threads", tags=["Threads"])
+
+
+# =============================================================================
+# THREAD CRUD
+# =============================================================================
+
+
+@router.get("", response_model=WorkspaceThreadsListResponse)
+async def list_threads(
+    x_user_id: CurrentUserId,
+    workspace_id: Optional[str] = Query(None, description="Filter by workspace ID"),
+    limit: int = Query(20, ge=1, le=100, description="Max threads per page"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    sort_by: str = Query("updated_at", description="Sort field (created_at, updated_at)"),
+    sort_order: str = Query("desc", description="Sort order (asc or desc)"),
+):
+    """
+    List threads with optional workspace filter.
+
+    When workspace_id is provided, returns threads for that workspace.
+    Otherwise returns all threads for the authenticated user.
+    """
+    try:
+        if workspace_id:
+            threads, total = await get_workspace_threads(
+                workspace_id=workspace_id,
+                limit=limit,
+                offset=offset,
+                sort_by=sort_by,
+                sort_order=sort_order,
+            )
+        else:
+            threads, total = await get_threads_for_user(
+                user_id=x_user_id,
+                limit=limit,
+                offset=offset,
+                sort_by=sort_by,
+                sort_order=sort_order,
+            )
+
+        thread_items = [
+            WorkspaceThreadListItem(
+                thread_id=str(thread["thread_id"]),
+                workspace_id=str(thread["workspace_id"]),
+                thread_index=thread["thread_index"],
+                current_status=thread["current_status"],
+                msg_type=thread.get("msg_type"),
+                title=thread.get("title"),
+                first_query_content=thread.get("first_query_content"),
+                created_at=thread["created_at"],
+                updated_at=thread["updated_at"],
+            )
+            for thread in threads
+        ]
+
+        return WorkspaceThreadsListResponse(
+            threads=thread_items,
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
+
+    except Exception as e:
+        logger.exception(f"Error listing threads: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list threads: {str(e)}",
+        )
+
+
+@router.delete("/{thread_id}", response_model=ThreadDeleteResponse)
+async def delete_thread_endpoint(thread_id: str):
+    """
+    Delete a thread and all its queries/responses.
+
+    Permanently deletes the thread and all associated data due to CASCADE constraints.
+    """
+    try:
+        thread = await get_thread_by_id(thread_id)
+        if not thread:
+            raise HTTPException(status_code=404, detail=f"Thread not found: {thread_id}")
+
+        await delete_thread(thread_id)
+
+        logger.info(f"Successfully deleted thread thread_id={thread_id}")
+        return ThreadDeleteResponse(
+            success=True,
+            thread_id=thread_id,
+            message="Thread deleted successfully",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error deleting thread {thread_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete thread: {str(e)}")
+
+
+@router.patch("/{thread_id}", response_model=WorkspaceThreadListItem)
+async def update_thread_endpoint(thread_id: str, request: ThreadUpdateRequest):
+    """Update thread properties (currently only title)."""
+    try:
+        updated_thread = await update_thread_title(thread_id, request.title)
+
+        if not updated_thread:
+            raise HTTPException(status_code=404, detail=f"Thread not found: {thread_id}")
+
+        return WorkspaceThreadListItem(
+            thread_id=str(updated_thread["thread_id"]),
+            workspace_id=str(updated_thread["workspace_id"]),
+            thread_index=updated_thread["thread_index"],
+            current_status=updated_thread["current_status"],
+            msg_type=updated_thread.get("msg_type"),
+            title=updated_thread.get("title"),
+            created_at=updated_thread["created_at"],
+            updated_at=updated_thread["updated_at"],
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error updating thread {thread_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update thread: {str(e)}")
+
+
+# =============================================================================
+# THREAD MESSAGES (SSE streams)
+# =============================================================================
+
+
+@router.post("/messages")
+async def send_new_thread_message(request: ChatRequest, auth: ChatRateLimited):
+    """
+    Create a new thread and send the first message. Returns an SSE stream.
+
+    The server creates a new thread_id and returns it in SSE events.
+    """
+    # Generate a new thread_id since none was provided
+    thread_id = str(uuid4())
+    return await _handle_send_message(request, auth, thread_id)
+
+
+@router.post("/{thread_id}/messages")
+async def send_thread_message(thread_id: str, request: ChatRequest, auth: ChatRateLimited):
+    """
+    Send a message to an existing thread. Returns an SSE stream.
+    """
+    return await _handle_send_message(request, auth, thread_id)
+
+
+async def _handle_send_message(request: ChatRequest, auth: ChatRateLimited, thread_id: str):
+    """Shared logic for both POST /threads/messages and POST /threads/{id}/messages."""
+    from src.server.handlers.chat_handler import (
+        astream_flash_workflow,
+        astream_ptc_workflow,
+    )
+    from src.server.database.workspace import get_or_create_flash_workspace
+
+    user_id = auth.user_id
+    byok_active = auth.byok_active
+    agent_mode = request.agent_mode or "ptc"
+    workspace_id = request.workspace_id
+
+    # Validate that agent_config is initialized
+    if not hasattr(setup, "agent_config") or setup.agent_config is None:
+        raise HTTPException(
+            status_code=503,
+            detail="PTC Agent not initialized. Check server startup logs.",
+        )
+
+    # Validate workspace_id for ptc mode
+    if agent_mode == "ptc" and not workspace_id:
+        raise HTTPException(
+            status_code=400,
+            detail="workspace_id is required for 'ptc' agent mode. Create workspace first via POST /workspaces, or use agent_mode='flash' for lightweight queries.",
+        )
+
+    # For flash mode, resolve workspace_id to the shared flash workspace
+    if agent_mode == "flash" and not workspace_id:
+        flash_ws = await get_or_create_flash_workspace(user_id)
+        workspace_id = str(flash_ws["workspace_id"])
+
+    # Extract user input
+    user_input = ""
+    if request.messages:
+        last_msg = request.messages[-1]
+        if isinstance(last_msg.content, str):
+            user_input = last_msg.content
+        elif isinstance(last_msg.content, list):
+            for item in last_msg.content:
+                if hasattr(item, "text") and item.text:
+                    user_input = item.text
+                    break
+
+    logger.info(
+        f"[{'FLASH' if agent_mode == 'flash' else 'PTC'}_CHAT] New request: "
+        f"workspace_id={workspace_id} thread_id={thread_id} user_id={user_id} "
+        f"mode={agent_mode}"
+    )
+
+    # Route to appropriate streaming function based on agent mode
+    if agent_mode == "flash":
+        return StreamingResponse(
+            astream_flash_workflow(
+                request=request,
+                thread_id=thread_id,
+                user_input=user_input,
+                user_id=user_id,
+                byok_active=byok_active,
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
+
+    return StreamingResponse(
+        astream_ptc_workflow(
+            request=request,
+            thread_id=thread_id,
+            user_input=user_input,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            byok_active=byok_active,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@router.get("/{thread_id}/messages/stream")
+async def reconnect_to_stream(
+    thread_id: str,
+    last_event_id: Optional[int] = Query(None, description="Last received event ID"),
+):
+    """
+    Reconnect to a running or completed workflow's SSE stream.
+
+    Replays buffered events, then attaches to live stream if still running.
+    """
+    from src.server.handlers.chat_handler import reconnect_to_workflow_stream
+
+    async def stream_reconnection():
+        try:
+            async for event in reconnect_to_workflow_stream(thread_id, last_event_id):
+                yield event
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"[PTC_RECONNECT] Error: {e}", exc_info=True)
+            yield f'event: error\ndata: {{"error": "Reconnection failed: {str(e)}"}}\n\n'
+
+    return StreamingResponse(
+        stream_reconnection(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@router.get("/{thread_id}/messages/replay")
+async def replay_thread_messages(thread_id: str):
+    """Replay a thread as SSE using persisted streaming_chunks.
+
+    Stream includes:
+    - user_message: emitted once per pair_index (query content)
+    - message_chunk/tool_* events: emitted from stored streaming_chunks
+    - replay_done: terminal sentinel
+    """
+    try:
+        thread = await get_thread_with_summary(thread_id)
+        if not thread:
+            raise HTTPException(status_code=404, detail=f"Thread not found: {thread_id}")
+
+        queries, _ = await get_queries_for_thread(thread_id)
+        responses, _ = await get_responses_for_thread(thread_id)
+        responses_by_pair = {r.get("pair_index"): r for r in responses if isinstance(r, dict)}
+
+        async def event_generator():
+            seq = 0
+
+            for q in queries:
+                if not isinstance(q, dict):
+                    continue
+
+                pair_index = q.get("pair_index")
+                seq += 1
+                payload = {
+                    "thread_id": thread_id,
+                    "pair_index": pair_index,
+                    "content": q.get("content"),
+                    "timestamp": q.get("timestamp"),
+                    "metadata": q.get("metadata"),
+                }
+                yield (
+                    f"id: {seq}\n"
+                    f"event: user_message\n"
+                    f"data: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+                )
+
+                response = responses_by_pair.get(pair_index)
+                if not response:
+                    continue
+
+                streaming_chunks = response.get("streaming_chunks")
+                if not (isinstance(streaming_chunks, list) and streaming_chunks):
+                    continue
+
+                for item in streaming_chunks:
+                    if not isinstance(item, dict):
+                        continue
+                    event_type = item.get("event")
+                    data = item.get("data")
+                    if not event_type or not isinstance(data, dict):
+                        continue
+
+                    seq += 1
+                    replay_data = dict(data)
+                    replay_data.setdefault("thread_id", thread_id)
+                    replay_data["pair_index"] = pair_index
+                    replay_data["response_id"] = str(response.get("response_id"))
+
+                    yield (
+                        f"id: {seq}\n"
+                        f"event: {event_type}\n"
+                        f"data: {json.dumps(replay_data, ensure_ascii=False, default=str)}\n\n"
+                    )
+
+            seq += 1
+            yield f"id: {seq}\nevent: replay_done\ndata: {json.dumps({'thread_id': thread_id}, default=str)}\n\n"
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error replaying thread {thread_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to replay thread: {str(e)}")
+
+
+# =============================================================================
+# THREAD CONTROL (was "workflow")
+# =============================================================================
+
+
+@router.get("/{thread_id}/status")
+async def get_thread_status(thread_id: str):
+    """Get current workflow execution status for a thread."""
+    from src.server.handlers.workflow_handler import get_workflow_status
+    return await get_workflow_status(thread_id)
+
+
+@router.post("/{thread_id}/cancel", status_code=200)
+async def cancel_thread(thread_id: str):
+    """Cancel a running workflow for this thread."""
+    from src.server.handlers.workflow_handler import cancel_workflow
+    return await cancel_workflow(thread_id)
+
+
+@router.post("/{thread_id}/interrupt", status_code=200)
+async def interrupt_thread(thread_id: str):
+    """Soft interrupt — pause main agent, keep subagents running."""
+    from src.server.handlers.workflow_handler import soft_interrupt_workflow
+    return await soft_interrupt_workflow(thread_id)
+
+
+@router.post("/{thread_id}/summarize", status_code=200)
+async def summarize_thread(
+    thread_id: str,
+    keep_messages: int = Query(default=5, ge=1, le=20, description="Number of recent messages to preserve"),
+):
+    """Manually trigger conversation summarization for a thread."""
+    from src.server.handlers.workflow_handler import trigger_summarization
+    return await trigger_summarization(thread_id, keep_messages)
+
+
+@router.get("/{thread_id}/subagents")
+async def get_thread_subagents(thread_id: str):
+    """Stream subagent status updates for a thread."""
+    from src.server.handlers.chat_handler import stream_subagent_status
+
+    return StreamingResponse(
+        stream_subagent_status(thread_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )

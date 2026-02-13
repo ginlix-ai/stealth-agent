@@ -1,31 +1,16 @@
 """
-Chat Endpoint
+Chat Handler — Business logic for chat/message streaming.
 
-This module provides the /api/v1/chat/stream endpoint that uses the ptc-agent
-library for code execution in Daytona sandboxes.
-
-Features:
-- SSE streaming for real-time responses (reuses WorkflowStreamHandler)
-- Session management (sandbox reuse per conversation)
-- Per-conversation LangGraph graphs via ptc_agent.agent.graph
-- Reconnection support
-- Token tracking (optional)
-- Interrupt/resume for plan review
-- Database persistence (conversations, threads, queries, responses)
-- Background execution with event buffering
+Extracted from src/server/app/chat.py to separate business logic from route definitions.
 """
 
 import asyncio
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
-from uuid import uuid4
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import HTTPException
 from langgraph.types import Command
 
 from src.server.models.chat import (
@@ -36,7 +21,6 @@ from src.server.models.chat import (
 from src.server.handlers.streaming_handler import WorkflowStreamHandler
 from ptc_agent.agent.graph import build_ptc_graph_with_session
 from ptc_agent.agent.flash import build_flash_graph
-from src.server.services.session_manager import SessionService
 from src.server.services.workspace_manager import WorkspaceManager
 from src.server.database.workspace import update_workspace_activity, get_or_create_flash_workspace
 from src.server.services.background_task_manager import (
@@ -69,7 +53,6 @@ from src.server.utils.skill_context import (
     build_skill_prefix_message,
 )
 from src.server.utils.multimodal_context import parse_multimodal_contexts, inject_multimodal_context
-from src.server.dependencies.usage_limits import ChatRateLimited
 from src.server.services.usage_limiter import UsageLimiter
 
 # Locale/timezone configuration
@@ -84,11 +67,14 @@ from src.server.app import setup
 
 logger = logging.getLogger(__name__)
 
-# Create router with v1 prefix
-router = APIRouter(prefix="/api/v1/chat", tags=["Chat"])
+# Maps agent mode → (config field on llm, preference key in other_preference)
+_MODE_MODEL_MAP = {
+    "ptc":   ("name",  "preferred_model"),
+    "flash": ("flash", "preferred_flash_model"),
+}
 
 
-async def _queue_message_for_thread(
+async def queue_message_for_thread(
     thread_id: str, content: str, user_id: str
 ) -> dict | None:
     """Queue a user message for injection into a running workflow via Redis.
@@ -130,7 +116,7 @@ async def _queue_message_for_thread(
         return None
 
 
-async def _resolve_byok_llm_client(user_id: str, model_name: str, byok_active: bool):
+async def resolve_byok_llm_client(user_id: str, model_name: str, byok_active: bool):
     """
     If BYOK is active, look up the user's key for the model's provider
     and return a fresh LLM client.  Returns None if BYOK isn't applicable.
@@ -158,14 +144,7 @@ async def _resolve_byok_llm_client(user_id: str, model_name: str, byok_active: b
     return create_llm(model_name, api_key=user_key)
 
 
-# Maps agent mode → (config field on llm, preference key in other_preference)
-_MODE_MODEL_MAP = {
-    "ptc":   ("name",  "preferred_model"),
-    "flash": ("flash", "preferred_flash_model"),
-}
-
-
-async def _get_model_preference(user_id: str) -> dict:
+async def get_model_preference(user_id: str) -> dict:
     """Return model preferences from other_preference (not agent_preference, which is dumped to agent context)."""
     from src.server.database.user import get_user_preferences
 
@@ -175,7 +154,7 @@ async def _get_model_preference(user_id: str) -> dict:
     return prefs.get("other_preference") or {}
 
 
-async def _resolve_llm_config(
+async def resolve_llm_config(
     base_config,
     user_id: str,
     request_model: str | None,
@@ -199,7 +178,7 @@ async def _resolve_llm_config(
         config.llm_client = None
         logger.info(f"[CHAT] Using per-request LLM model: {request_model}")
     else:
-        model_pref = await _get_model_preference(user_id)
+        model_pref = await get_model_preference(user_id)
         preferred = model_pref.get(pref_key)
         if preferred:
             config = config.model_copy(deep=True)
@@ -211,7 +190,7 @@ async def _resolve_llm_config(
 
     # BYOK injection — resolve the effective model from whichever field we just set
     effective_model = getattr(config.llm, model_field, None) or config.llm.name
-    byok_client = await _resolve_byok_llm_client(user_id, effective_model, byok_active)
+    byok_client = await resolve_byok_llm_client(user_id, effective_model, byok_active)
     if byok_client:
         if config is base_config:
             config = config.model_copy(deep=True)
@@ -220,110 +199,7 @@ async def _resolve_llm_config(
     return config
 
 
-@router.post("/stream")
-async def chat_stream(request: ChatRequest, auth: ChatRateLimited):
-    """
-    Stream PTC agent responses as Server-Sent Events.
-
-    This endpoint supports two modes:
-    - **ptc** (default): Uses Daytona sandbox session with full code execution capabilities
-    - **flash**: Lightweight, fast responses without sandbox (external tools only)
-
-    Args:
-        request: ChatRequest with messages and configuration
-            - workspace_id required for 'ptc' mode, optional for 'flash' mode
-            - agent_mode: 'ptc' (default) or 'flash'
-        user_id: User ID from Bearer token
-
-    Returns:
-        StreamingResponse with SSE events
-    """
-    # Extract user_id and byok_active from auth result
-    user_id = auth.user_id
-    byok_active = auth.byok_active
-
-    # Determine agent mode
-    agent_mode = request.agent_mode or "ptc"
-
-    # Extract identity fields (user_id from header, workspace_id from body)
-    workspace_id = request.workspace_id
-    thread_id = request.thread_id
-    if thread_id == "__default__":
-        thread_id = str(uuid4())
-
-    # Validate that agent_config is initialized
-    if not hasattr(setup, "agent_config") or setup.agent_config is None:
-        raise HTTPException(
-            status_code=503,
-            detail="PTC Agent not initialized. Check server startup logs.",
-        )
-
-    # Validate workspace_id for ptc mode
-    if agent_mode == "ptc" and not workspace_id:
-        raise HTTPException(
-            status_code=400,
-            detail="workspace_id is required for 'ptc' agent mode. Create workspace first via POST /workspaces, or use agent_mode='flash' for lightweight queries.",
-        )
-
-    # For flash mode, resolve workspace_id to the shared flash workspace
-    if agent_mode == "flash" and not workspace_id:
-        flash_ws = await get_or_create_flash_workspace(user_id)
-        workspace_id = str(flash_ws["workspace_id"])
-    # Extract user input
-    user_input = ""
-    if request.messages:
-        last_msg = request.messages[-1]
-        if isinstance(last_msg.content, str):
-            user_input = last_msg.content
-        elif isinstance(last_msg.content, list):
-            for item in last_msg.content:
-                if hasattr(item, "text") and item.text:
-                    user_input = item.text
-                    break
-
-    logger.info(
-        f"[{'FLASH' if agent_mode == 'flash' else 'PTC'}_CHAT] New request: "
-        f"workspace_id={workspace_id} thread_id={thread_id} user_id={user_id} "
-        f"mode={agent_mode}"
-    )
-
-    # Route to appropriate streaming function based on agent mode
-    if agent_mode == "flash":
-        return StreamingResponse(
-            _astream_flash_workflow(
-                request=request,
-                thread_id=thread_id,
-                user_input=user_input,
-                user_id=user_id,
-                byok_active=byok_active,
-            ),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-                "Connection": "keep-alive",
-            },
-        )
-
-    return StreamingResponse(
-        _astream_workflow(
-            request=request,
-            thread_id=thread_id,
-            user_input=user_input,
-            user_id=user_id,
-            workspace_id=workspace_id,
-            byok_active=byok_active,
-        ),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
-    )
-
-
-async def _astream_flash_workflow(
+async def astream_flash_workflow(
     request: ChatRequest,
     thread_id: str,
     user_input: str,
@@ -425,7 +301,7 @@ async def _astream_flash_workflow(
         # =====================================================================
 
         # Resolve LLM config for this request (model override + preferred + BYOK)
-        config = await _resolve_llm_config(
+        config = await resolve_llm_config(
             setup.agent_config, user_id, request.llm_model, byok_active, mode="flash"
         )
 
@@ -576,7 +452,7 @@ async def _astream_flash_workflow(
         await UsageLimiter.release_burst_slot(user_id)
 
 
-async def _astream_workflow(
+async def astream_ptc_workflow(
     request: ChatRequest,
     thread_id: str,
     user_input: str,
@@ -690,6 +566,8 @@ async def _astream_workflow(
         # Timezone and Locale Validation
         # =====================================================================
 
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
         timezone_str = "UTC"  # Default
 
         if request.timezone:
@@ -734,7 +612,7 @@ async def _astream_workflow(
         # =====================================================================
 
         # Resolve LLM config for this request (model override + preferred + BYOK)
-        config = await _resolve_llm_config(
+        config = await resolve_llm_config(
             setup.agent_config, user_id, request.llm_model, byok_active, mode="ptc"
         )
 
@@ -969,7 +847,7 @@ async def _astream_workflow(
         )
         if not ready_for_new_request:
             # Try to queue the message for injection into the running workflow
-            queued = await _queue_message_for_thread(
+            queued = await queue_message_for_thread(
                 thread_id, user_input, user_id
             )
             if queued:
@@ -1087,7 +965,7 @@ async def _astream_workflow(
                 await UsageLimiter.release_burst_slot(user_id)
 
         # Start workflow in background with event buffering
-        task_info = await manager.start_workflow(
+        await manager.start_workflow(
             thread_id=thread_id,
             workflow_generator=handler.stream_workflow(
                 graph=ptc_graph,
@@ -1328,6 +1206,7 @@ async def _astream_workflow(
 
         if is_recoverable:
             # Recoverable error - check retry count
+            tracker = WorkflowTracker.get_instance()
             retry_count = await tracker.increment_retry_count(thread_id)
 
             error_type = (
@@ -1460,10 +1339,9 @@ async def _astream_workflow(
         logger.debug("PTC execution tracking stopped")
 
 
-@router.get("/stream/{thread_id}/reconnect")
-async def reconnect_to_workflow(
+async def reconnect_to_workflow_stream(
     thread_id: str,
-    last_event_id: Optional[int] = Query(None, description="Last received event ID"),
+    last_event_id: Optional[int] = None,
 ):
     """
     Reconnect to a running or completed PTC workflow.
@@ -1472,8 +1350,8 @@ async def reconnect_to_workflow(
         thread_id: Workflow thread identifier
         last_event_id: Optional last event ID for filtering duplicates
 
-    Returns:
-        StreamingResponse with SSE events
+    Yields:
+        SSE-formatted event strings
     """
     manager = BackgroundTaskManager.get_instance()
     tracker = WorkflowTracker.get_instance()
@@ -1489,146 +1367,105 @@ async def reconnect_to_workflow(
             )
         raise HTTPException(status_code=404, detail=f"Workflow {thread_id} not found")
 
-    async def stream_reconnection():
+    # Replay buffered events
+    buffered_events = await manager.get_buffered_events_redis(
+        thread_id,
+        from_beginning=True,
+        after_event_id=last_event_id,
+    )
+
+    logger.info(
+        f"[PTC_RECONNECT] Replaying {len(buffered_events)} events "
+        f"for {thread_id}"
+    )
+
+    for event in buffered_events:
+        yield event
+
+    # Attach to live stream if still running
+    status = await manager.get_task_status(thread_id)
+
+    if status == TaskStatus.RUNNING:
+        live_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+        await manager.subscribe_to_live_events(thread_id, live_queue)
+        await manager.increment_connection(thread_id)
+
         try:
-            # Replay buffered events
-            buffered_events = await manager.get_buffered_events_redis(
-                thread_id,
-                from_beginning=True,
-                after_event_id=last_event_id,
-            )
-
-            logger.info(
-                f"[PTC_RECONNECT] Replaying {len(buffered_events)} events "
-                f"for {thread_id}"
-            )
-
-            for event in buffered_events:
-                yield event
-
-            # Attach to live stream if still running
-            status = await manager.get_task_status(thread_id)
-
-            if status == TaskStatus.RUNNING:
-                live_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
-                await manager.subscribe_to_live_events(thread_id, live_queue)
-                await manager.increment_connection(thread_id)
-
+            while True:
                 try:
-                    while True:
-                        try:
-                            event = await asyncio.wait_for(
-                                live_queue.get(), timeout=1.0
-                            )
-                            if event is None:
-                                break
-                            yield event
-                        except asyncio.TimeoutError:
-                            current_status = await manager.get_task_status(thread_id)
-                            if current_status in [
-                                TaskStatus.COMPLETED,
-                                TaskStatus.FAILED,
-                                TaskStatus.CANCELLED,
-                            ]:
-                                break
-                            continue
-                finally:
-                    await manager.unsubscribe_from_live_events(thread_id, live_queue)
-                    await manager.decrement_connection(thread_id)
-
-        except Exception as e:
-            logger.error(f"[PTC_RECONNECT] Error: {e}", exc_info=True)
-            yield f'event: error\ndata: {{"error": "Reconnection failed: {str(e)}"}}\n\n'
-
-    return StreamingResponse(
-        stream_reconnection(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
-    )
+                    event = await asyncio.wait_for(
+                        live_queue.get(), timeout=1.0
+                    )
+                    if event is None:
+                        break
+                    yield event
+                except asyncio.TimeoutError:
+                    current_status = await manager.get_task_status(thread_id)
+                    if current_status in [
+                        TaskStatus.COMPLETED,
+                        TaskStatus.FAILED,
+                        TaskStatus.CANCELLED,
+                    ]:
+                        break
+                    continue
+        finally:
+            await manager.unsubscribe_from_live_events(thread_id, live_queue)
+            await manager.decrement_connection(thread_id)
 
 
-@router.get("/stream/{thread_id}/status")
 async def stream_subagent_status(thread_id: str):
-    """Stream subagent status updates for a thread."""
+    """Stream subagent status updates for a thread.
+
+    Yields:
+        SSE-formatted event strings
+    """
+    import json
+    from datetime import datetime, timezone
+
     registry_store = BackgroundRegistryStore.get_instance()
+    event_id = 0
+    last_payload: dict[str, list] | None = None
 
-    async def stream_status():
-        event_id = 0
-        last_payload: dict[str, list] | None = None
+    while True:
+        registry = await registry_store.get_registry(thread_id)
+        if registry:
+            tasks = await registry.get_all_tasks()
+            pending = [task for task in tasks if task.is_pending]
+            completed = [task for task in tasks if task.completed]
 
-        while True:
-            registry = await registry_store.get_registry(thread_id)
-            if registry:
-                tasks = await registry.get_all_tasks()
-                pending = [task for task in tasks if task.is_pending]
-                completed = [task for task in tasks if task.completed]
-
-                active_tasks = [
-                    {
-                        "id": task.display_id,
-                        "description": task.description[:100]
-                        if task.description
-                        else "",
-                        "type": task.subagent_type,
-                        "tool_calls": task.total_tool_calls,
-                        "current_tool": task.current_tool,
-                    }
-                    for task in sorted(pending, key=lambda task: task.display_id)
-                ]
-                completed_tasks = sorted([task.display_id for task in completed])
-            else:
-                active_tasks = []
-                completed_tasks = []
-
-            payload = {
-                "active_tasks": active_tasks,
-                "completed_tasks": completed_tasks,
-            }
-
-            if payload != last_payload:
-                event_id += 1
-                last_payload = payload
-                event_payload = {
-                    "thread_id": thread_id,
-                    **payload,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+            active_tasks = [
+                {
+                    "id": task.display_id,
+                    "description": task.description[:100]
+                    if task.description
+                    else "",
+                    "type": task.subagent_type,
+                    "tool_calls": task.total_tool_calls,
+                    "current_tool": task.current_tool,
                 }
-                yield f"id: {event_id}\nevent: subagent_status\ndata: {json.dumps(event_payload)}\n\n"
+                for task in sorted(pending, key=lambda task: task.display_id)
+            ]
+            completed_tasks = sorted([task.display_id for task in completed])
+        else:
+            active_tasks = []
+            completed_tasks = []
 
-            if not active_tasks:
-                break
-
-            await asyncio.sleep(1.0)
-
-    return StreamingResponse(
-        stream_status(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
-    )
-
-
-@router.get("/sessions")
-async def get_chat_sessions():
-    """
-    Get information about active PTC sessions.
-
-    Returns:
-        Dict with session statistics and details
-    """
-    try:
-        session_service = SessionService.get_instance()
-        return session_service.get_stats()
-    except ValueError:
-        # Service not initialized
-        return {
-            "active_sessions": 0,
-            "message": "PTC Session Service not initialized",
+        payload = {
+            "active_tasks": active_tasks,
+            "completed_tasks": completed_tasks,
         }
+
+        if payload != last_payload:
+            event_id += 1
+            last_payload = payload
+            event_payload = {
+                "thread_id": thread_id,
+                **payload,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            yield f"id: {event_id}\nevent: subagent_status\ndata: {json.dumps(event_payload)}\n\n"
+
+        if not active_tasks:
+            break
+
+        await asyncio.sleep(1.0)

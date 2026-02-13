@@ -861,6 +861,19 @@ class BackgroundTaskManager:
                         metadata, "interrupt", thread_id
                     )
 
+                    # Determine actual interrupt reason from streaming chunks
+                    interrupt_reason = "plan_review_required"  # default fallback
+                    if streaming_chunks:
+                        for chunk in streaming_chunks:
+                            if chunk.get("event") == "interrupt":
+                                chunk_data = chunk.get("data", {})
+                                action_requests = chunk_data.get("action_requests", [])
+                                if action_requests:
+                                    action_type = action_requests[0].get("type")
+                                    if action_type == "ask_user_question":
+                                        interrupt_reason = "user_question"
+                                break
+
                     # Calculate execution time from start_time
                     execution_time = calculate_execution_time(metadata)
 
@@ -872,7 +885,7 @@ class BackgroundTaskManager:
                     }
 
                     await persistence_service.persist_interrupt(
-                        interrupt_reason="plan_review_required",
+                        interrupt_reason=interrupt_reason,
                         state_snapshot=state_snapshot,
                         agent_messages=agent_messages,
                         execution_time=execution_time,
@@ -889,7 +902,7 @@ class BackgroundTaskManager:
                     tracker = WorkflowTracker.get_instance()
                     await tracker.mark_interrupted(
                         thread_id=thread_id,
-                        metadata={"interrupt_reason": "plan_review_required"},
+                        metadata={"interrupt_reason": interrupt_reason},
                     )
                 except Exception as persist_error:
                     logger.error(

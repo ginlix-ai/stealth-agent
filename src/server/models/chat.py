@@ -1,8 +1,8 @@
 """
 Request and response models for Chat API endpoint.
 
-This module defines Pydantic models for the /api/v1/chat/stream endpoint
-that uses the ptc-agent library for code execution in Daytona sandboxes.
+This module defines Pydantic models for the /api/v1/threads/messages endpoints
+that use the ptc-agent library for code execution in Daytona sandboxes.
 """
 
 import copy
@@ -190,9 +190,10 @@ class ChatRequest(BaseModel):
         default=None,
         description="Workspace identifier - required for 'full' mode, optional for 'flash' mode",
     )
-    thread_id: str = Field(
-        default="__default__",
-        description="Thread identifier for checkpointing within a workspace",
+    thread_id: Optional[str] = Field(
+        default=None,
+        description="Thread identifier. Omit or null when creating a new thread via POST /threads/messages; "
+        "required when sending to an existing thread via POST /threads/{thread_id}/messages.",
     )
 
     # Messages

@@ -26,7 +26,6 @@ if sys.platform == "win32":
 import logging
 import os
 from contextlib import asynccontextmanager
-from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import FastAPI
@@ -299,8 +298,6 @@ app.add_middleware(RequestIDMiddleware)
 # Add CORS middleware LAST (will be executed FIRST)
 # This ensures CORS headers are properly set for all requests including OPTIONS preflight
 # Allowed origins loaded from config.yaml
-from src.config.settings import get_allowed_origins
-
 allowed_origins = get_allowed_origins()
 
 logger.info(f"Allowed origins: {allowed_origins}")
@@ -320,11 +317,10 @@ app.add_middleware(
 # Router Registration
 # ============================================================================
 # Import routers
-from src.server.app.workflow import router as workflow_router
-from src.server.app.conversation import workspaces_threads_router, conversations_router, threads_router, messages_router
+from src.server.app.threads import router as threads_router
+from src.server.app.sessions import router as sessions_router
 from src.server.app.cache import router as cache_router
 from src.server.app.utilities import health_router
-from src.server.app.chat import router as chat_router  # Main chat endpoint (v1)
 from src.server.app.workspaces import router as workspaces_router
 from src.server.app.workspace_files import router as workspace_files_router
 from src.server.app.workspace_sandbox import router as workspace_sandbox_router
@@ -339,15 +335,11 @@ from src.server.app.plans import router as plans_router
 from src.server.app.api_keys import router as api_keys_router
 
 # Include all routers
-app.include_router(chat_router)  # /api/v1/chat/* - Main chat endpoint
-app.include_router(workflow_router)  # /api/v1/workflow/* - Workflow state management
+app.include_router(threads_router)  # /api/v1/threads/* - Thread CRUD, messages, control
+app.include_router(sessions_router)  # /api/v1/sessions - Active session stats
 app.include_router(workspaces_router)  # /api/v1/workspaces/* - Workspace CRUD
 app.include_router(workspace_files_router)  # /api/v1/workspaces/{id}/files/* - Live file access
 app.include_router(workspace_sandbox_router)  # /api/v1/workspaces/{id}/sandbox/* - Sandbox stats & packages
-app.include_router(workspaces_threads_router)  # /api/v1/workspaces/{id}/threads|messages - Thread management
-app.include_router(conversations_router)  # /api/v1/conversations/* - User conversations + messages
-app.include_router(threads_router)  # /api/v1/threads/* - Thread utilities (replay)
-app.include_router(messages_router)  # /api/v1/messages/* - Message detail endpoints
 app.include_router(cache_router)  # /api/v1/cache/* - Cache management
 app.include_router(market_data_router)  # /api/v1/market-data/* - Market data proxy
 app.include_router(users_router)  # /api/v1/users/* - User management
