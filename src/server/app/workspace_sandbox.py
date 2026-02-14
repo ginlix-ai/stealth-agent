@@ -37,6 +37,7 @@ _PACKAGE_NAME_RE = re.compile(r"^[a-zA-Z0-9._-]+([<>=!~]+.*)?$")
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _require_workspace_owner(
     workspace: dict[str, Any] | None, *, user_id: str, workspace_id: str
 ) -> None:
@@ -54,10 +55,15 @@ async def _get_sandbox(workspace_id: str, user_id: str) -> Any:
     _require_workspace_owner(workspace, user_id=user_id, workspace_id=workspace_id)
 
     if workspace.get("status") == "flash":
-        raise HTTPException(status_code=400, detail="Flash workspaces do not have a sandbox")
+        raise HTTPException(
+            status_code=400, detail="Flash workspaces do not have a sandbox"
+        )
 
     manager = WorkspaceManager.get_instance()
-    session = await manager.get_session_for_workspace(workspace_id, user_id=user_id)
+    try:
+        session = await manager.get_session_for_workspace(workspace_id, user_id=user_id)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Sandbox not ready: {e}") from None
 
     sandbox = getattr(session, "sandbox", None)
     if sandbox is None:
@@ -69,6 +75,7 @@ async def _get_sandbox(workspace_id: str, user_id: str) -> Any:
 # ---------------------------------------------------------------------------
 # Response models
 # ---------------------------------------------------------------------------
+
 
 class SandboxResources(BaseModel):
     cpu: float | None = None
@@ -128,6 +135,7 @@ class PackageInstallResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Parsing helpers
 # ---------------------------------------------------------------------------
+
 
 def _parse_df_output(stdout: str) -> DiskOverview | None:
     """Parse `df -h /home/daytona` output into a DiskOverview."""
@@ -208,6 +216,7 @@ def _parse_skills_frontmatter(stdout: str) -> list[SkillInfo]:
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.get("/{workspace_id}/sandbox/stats")
 async def get_sandbox_stats(
     workspace_id: str,
@@ -248,7 +257,9 @@ async def get_sandbox_stats(
     # --- 2. Concurrent bash commands for disk & packages ---
     async def _get_disk_usage():
         try:
-            result = await sandbox.execute_bash_command("df -h /home/daytona", timeout=10)
+            result = await sandbox.execute_bash_command(
+                "df -h /home/daytona", timeout=10
+            )
             if result.get("success"):
                 return _parse_df_output(result.get("stdout", ""))
         except Exception as e:
@@ -282,9 +293,9 @@ async def get_sandbox_stats(
         try:
             # Read SKILL.md frontmatter from each skill directory
             cmd = (
-                'for d in /home/daytona/skills/*/; do '
+                "for d in /home/daytona/skills/*/; do "
                 '  [ -f "$d/SKILL.md" ] && echo "=== $(basename "$d") ===" && head -5 "$d/SKILL.md"; '
-                'done 2>/dev/null || true'
+                "done 2>/dev/null || true"
             )
             result = await sandbox.execute_bash_command(cmd, timeout=10)
             if result.get("success"):

@@ -201,13 +201,13 @@ class UserUpdate(UserBase):
     )
 
 
-class PlanResponse(BaseModel):
-    """Nested plan object returned inside UserResponse."""
+class MembershipResponse(BaseModel):
+    """Nested membership object returned inside UserResponse."""
 
-    id: int = Field(description="Plan ID")
-    name: str = Field(description="Plan internal name")
-    display_name: str = Field(description="Plan display name")
-    rank: int = Field(description="Plan rank (0 = lowest)")
+    membership_id: int = Field(description="Membership ID")
+    name: str = Field(description="Membership internal name")
+    display_name: str = Field(description="Membership display name")
+    rank: int = Field(description="Membership rank (0 = lowest)")
 
 
 class UserResponse(UserBase):
@@ -217,7 +217,7 @@ class UserResponse(UserBase):
     onboarding_completed: bool = Field(
         default=False, description="Whether onboarding is completed"
     )
-    plan: PlanResponse = Field(description="User plan details")
+    membership: MembershipResponse = Field(description="User membership details")
     created_at: datetime = Field(description="Creation timestamp")
     updated_at: datetime = Field(description="Last update timestamp")
     last_login_at: Optional[datetime] = Field(None, description="Last login timestamp")
@@ -282,7 +282,7 @@ class UserPreferencesUpdate(UserPreferencesBase):
 class UserPreferencesResponse(UserPreferencesBase):
     """Response model for user preferences."""
 
-    preference_id: UUID = Field(description="Preference record ID")
+    user_preference_id: UUID = Field(description="Preference record ID")
     user_id: str = Field(description="User ID")
     created_at: datetime = Field(description="Creation timestamp")
     updated_at: datetime = Field(description="Last update timestamp")
@@ -387,7 +387,7 @@ class WatchlistItemUpdate(BaseModel):
 class WatchlistItemResponse(WatchlistItemBase):
     """Response model for watchlist item."""
 
-    item_id: UUID = Field(description="Watchlist item ID")
+    watchlist_item_id: UUID = Field(description="Watchlist item ID")
     watchlist_id: UUID = Field(description="Parent watchlist ID")
     user_id: str = Field(description="User ID")
     created_at: datetime = Field(description="Creation timestamp")
@@ -489,7 +489,7 @@ class PortfolioHoldingUpdate(BaseModel):
 class PortfolioHoldingResponse(PortfolioHoldingBase):
     """Response model for portfolio holding."""
 
-    holding_id: UUID = Field(description="Holding entry ID")
+    user_portfolio_id: UUID = Field(description="Holding entry ID")
     user_id: str = Field(description="User ID")
     created_at: datetime = Field(description="Creation timestamp")
     updated_at: datetime = Field(description="Last update timestamp")

@@ -1,10 +1,12 @@
 """Workspace Files API Router.
 
-Provides live file operations against a workspace's Daytona sandbox.
+Provides file operations against a workspace's Daytona sandbox, with DB
+fallback for stopped workspaces (offline file access).
 
 Design goals:
 - Proxy all file access through the backend (UI clients never talk to Daytona directly).
-- Auto-start stopped workspaces.
+- Auto-start stopped workspaces for write operations.
+- Serve files from PostgreSQL when sandbox is stopped (read-only).
 - Support both virtual paths ("results/foo.txt") and absolute sandbox paths
   ("/home/daytona/results/foo.txt").
 - Return virtual paths to clients for a consistent UX.
@@ -19,6 +21,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import logging
 import mimetypes
 import shlex
 from typing import Any
@@ -31,6 +34,9 @@ from fastapi.responses import Response, StreamingResponse
 
 from src.server.database.workspace import get_workspace as db_get_workspace
 from src.server.services.workspace_manager import WorkspaceManager
+from src.server.services.file_persistence_service import FilePersistenceService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["Workspace Files"])
 
@@ -43,7 +49,7 @@ _HIDDEN_DIR_PREFIXES = ("_internal/",)
 # These paths should never appear in listing/completions and should not be readable/downloadable
 # through the workspace file APIs.
 _ALWAYS_HIDDEN_SEGMENTS = ("/__pycache__/",)
-_ALWAYS_HIDDEN_BASENAMES = ("__init__.py",)
+_ALWAYS_HIDDEN_BASENAMES = ("__init__.py", ".file_sync_marker")
 _ALWAYS_HIDDEN_SUFFIXES = (".pyc",)
 
 # Generous but bounded defaults.
@@ -51,14 +57,45 @@ DEFAULT_READ_LIMIT_LINES = 20_000
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50MB
 
 # Known binary file extensions that cannot be read as text
-_BINARY_EXTENSIONS = frozenset({
-    ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".tiff",
-    ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
-    ".exe", ".dll", ".so", ".dylib",
-    ".mp3", ".mp4", ".wav", ".avi", ".mov", ".mkv",
-    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-    ".sqlite", ".db", ".pickle", ".pkl",
-})
+_BINARY_EXTENSIONS = frozenset(
+    {
+        ".pdf",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".ico",
+        ".tiff",
+        ".zip",
+        ".tar",
+        ".gz",
+        ".bz2",
+        ".7z",
+        ".rar",
+        ".exe",
+        ".dll",
+        ".so",
+        ".dylib",
+        ".mp3",
+        ".mp4",
+        ".wav",
+        ".avi",
+        ".mov",
+        ".mkv",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".ppt",
+        ".pptx",
+        ".sqlite",
+        ".db",
+        ".pickle",
+        ".pkl",
+    }
+)
 
 
 def _is_binary(path: str) -> bool:
@@ -82,6 +119,20 @@ def _require_workspace_owner(
 
 def _is_flash_workspace(workspace: dict[str, Any]) -> bool:
     return workspace.get("status") == "flash"
+
+
+async def _acquire_sandbox(workspace_id: str, user_id: str) -> Any:
+    """Get a ready sandbox for the workspace, or raise 503."""
+    manager = WorkspaceManager.get_instance()
+    try:
+        session = await manager.get_session_for_workspace(workspace_id, user_id=user_id)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Sandbox not ready: {e}") from None
+
+    sandbox = getattr(session, "sandbox", None)
+    if sandbox is None:
+        raise HTTPException(status_code=503, detail="Sandbox not available")
+    return sandbox
 
 
 def _to_client_path(sandbox: Any, absolute_path: str) -> str:
@@ -182,7 +233,7 @@ async def list_workspace_files(
         description="If True, wait for sandbox to be ready. If False, return empty list if not ready.",
     ),
 ) -> dict[str, Any]:
-    """List files in a workspace's live sandbox."""
+    """List files in a workspace's sandbox, or from DB if stopped."""
 
     workspace = await db_get_workspace(workspace_id)
     _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
@@ -190,12 +241,28 @@ async def list_workspace_files(
     if _is_flash_workspace(workspace):
         return {"files": [], "sandbox_ready": False, "flash_workspace": True}
 
-    manager = WorkspaceManager.get_instance()
-    session = await manager.get_session_for_workspace(workspace_id, user_id=x_user_id)
+    # DB fallback for stopped workspaces
+    if workspace.get("status") in ("stopped", "stopping"):
+        file_tree = await FilePersistenceService.get_file_tree(workspace_id)
+        # Filter by path prefix if specified
+        normalized_path = _normalize_requested_path(path)
+        if normalized_path:
+            file_tree = [
+                f
+                for f in file_tree
+                if f["path"].startswith(normalized_path + "/")
+                or f["path"] == normalized_path
+            ]
+        files = [f["path"] for f in file_tree]
+        return {
+            "workspace_id": workspace_id,
+            "path": path,
+            "files": files,
+            "sandbox_ready": False,
+            "source": "database",
+        }
 
-    sandbox = getattr(session, "sandbox", None)
-    if sandbox is None:
-        raise HTTPException(status_code=503, detail="Sandbox not available")
+    sandbox = await _acquire_sandbox(workspace_id, x_user_id)
 
     # Fast path: return empty list if sandbox is still initializing and wait_for_sandbox=False
     # This allows CLI autocomplete to populate later without blocking startup
@@ -205,9 +272,12 @@ async def list_workspace_files(
     # aglob_files returns absolute sandbox paths.
     # Allow explicit listing of hidden internal paths (e.g. /view _internal/...).
     allow_denied = _requested_hidden_ok(path)
-    absolute_paths: list[str] = await sandbox.aglob_files(
-        pattern, path=path, allow_denied=allow_denied
-    )
+    try:
+        absolute_paths: list[str] = await sandbox.aglob_files(
+            pattern, path=path, allow_denied=allow_denied
+        )
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Sandbox is still starting")
 
     allow_hidden = _requested_hidden_ok(path)
 
@@ -233,7 +303,12 @@ async def list_workspace_files(
 
         files.append(client_path)
 
-    return {"workspace_id": workspace_id, "path": path, "files": files, "sandbox_ready": True}
+    return {
+        "workspace_id": workspace_id,
+        "path": path,
+        "files": files,
+        "sandbox_ready": True,
+    }
 
 
 @router.get("/{workspace_id}/files/read")
@@ -249,27 +324,61 @@ async def read_workspace_file(
         description="Max lines.",
     ),
 ) -> dict[str, Any]:
-    """Read a file from the workspace's live sandbox."""
+    """Read a file from the workspace's sandbox, or from DB if stopped."""
 
     workspace = await db_get_workspace(workspace_id)
     _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
 
     if _is_flash_workspace(workspace):
-        raise HTTPException(status_code=400, detail="Flash workspaces do not have a sandbox")
+        raise HTTPException(
+            status_code=400, detail="Flash workspaces do not have a sandbox"
+        )
 
-    manager = WorkspaceManager.get_instance()
-    session = await manager.get_session_for_workspace(workspace_id, user_id=x_user_id)
+    # DB fallback for stopped workspaces
+    if workspace.get("status") in ("stopped", "stopping"):
+        normalized_path = _normalize_requested_path(path)
+        if not normalized_path:
+            raise HTTPException(status_code=400, detail="File path is required")
 
-    sandbox = getattr(session, "sandbox", None)
-    if sandbox is None:
-        raise HTTPException(status_code=503, detail="Sandbox not available")
+        file_record = await FilePersistenceService.get_file_content(
+            workspace_id, normalized_path
+        )
+        if not file_record:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        if file_record.get("is_binary"):
+            raise HTTPException(
+                status_code=415,
+                detail="Cannot read binary file as text. Use GET /files/download instead.",
+            )
+
+        text_content = file_record.get("content_text", "")
+        lines = text_content.splitlines()
+        content = "\n".join(lines[offset : offset + limit])
+        mime = file_record.get("mime_type") or "text/plain"
+
+        return {
+            "workspace_id": workspace_id,
+            "path": normalized_path,
+            "offset": offset,
+            "limit": limit,
+            "content": content,
+            "mime": mime,
+            "truncated": False,
+            "source": "database",
+        }
+
+    sandbox = await _acquire_sandbox(workspace_id, x_user_id)
 
     normalized, error = sandbox.validate_and_normalize_path(path)
     if error:
         raise HTTPException(status_code=403, detail=error)
 
     # Download raw bytes first to distinguish "not found" from "binary file"
-    raw_bytes = await sandbox.adownload_file_bytes(normalized)
+    try:
+        raw_bytes = await sandbox.adownload_file_bytes(normalized)
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Sandbox is still starting")
     if raw_bytes is None:
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -316,26 +425,56 @@ async def download_workspace_file(
     x_user_id: CurrentUserId,
     path: str = Query(..., description="File path (virtual or absolute)."),
 ) -> Response:
-    """Download raw bytes from the workspace's live sandbox."""
+    """Download raw bytes from the workspace's sandbox, or from DB if stopped."""
 
     workspace = await db_get_workspace(workspace_id)
     _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
 
     if _is_flash_workspace(workspace):
-        raise HTTPException(status_code=400, detail="Flash workspaces do not have a sandbox")
+        raise HTTPException(
+            status_code=400, detail="Flash workspaces do not have a sandbox"
+        )
 
-    manager = WorkspaceManager.get_instance()
-    session = await manager.get_session_for_workspace(workspace_id, user_id=x_user_id)
+    # DB fallback for stopped workspaces
+    if workspace.get("status") in ("stopped", "stopping"):
+        normalized_path = _normalize_requested_path(path)
+        if not normalized_path:
+            raise HTTPException(status_code=400, detail="File path is required")
 
-    sandbox = getattr(session, "sandbox", None)
-    if sandbox is None:
-        raise HTTPException(status_code=503, detail="Sandbox not available")
+        file_record = await FilePersistenceService.get_file_content(
+            workspace_id, normalized_path
+        )
+        if not file_record:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        if file_record.get("is_binary") and file_record.get("content_binary"):
+            content = file_record["content_binary"]
+            if isinstance(content, memoryview):
+                content = bytes(content)
+        elif file_record.get("content_text") is not None:
+            content = file_record["content_text"].encode("utf-8")
+        else:
+            raise HTTPException(status_code=404, detail="File content not available")
+
+        filename = file_record.get("file_name", "download")
+        mime = file_record.get("mime_type") or "application/octet-stream"
+
+        return StreamingResponse(
+            iter([content]),
+            media_type=mime,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    sandbox = await _acquire_sandbox(workspace_id, x_user_id)
 
     normalized, error = sandbox.validate_and_normalize_path(path)
     if error:
         raise HTTPException(status_code=403, detail=error)
 
-    content = await sandbox.adownload_file_bytes(normalized)
+    try:
+        content = await sandbox.adownload_file_bytes(normalized)
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Sandbox is still starting")
     if content is None:
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -369,14 +508,17 @@ async def upload_workspace_file(
     _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
 
     if _is_flash_workspace(workspace):
-        raise HTTPException(status_code=400, detail="Flash workspaces do not have a sandbox")
+        raise HTTPException(
+            status_code=400, detail="Flash workspaces do not have a sandbox"
+        )
 
-    manager = WorkspaceManager.get_instance()
-    session = await manager.get_session_for_workspace(workspace_id, user_id=x_user_id)
+    if workspace.get("status") in ("stopped", "stopping"):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot upload files while workspace is stopped. Start the workspace first.",
+        )
 
-    sandbox = getattr(session, "sandbox", None)
-    if sandbox is None:
-        raise HTTPException(status_code=503, detail="Sandbox not available")
+    sandbox = await _acquire_sandbox(workspace_id, x_user_id)
 
     dest = path or file.filename
     if not dest:
@@ -390,7 +532,10 @@ async def upload_workspace_file(
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File too large")
 
-    ok = await sandbox.aupload_file_bytes(normalized, content)
+    try:
+        ok = await sandbox.aupload_file_bytes(normalized, content)
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Sandbox is still starting")
     if not ok:
         raise HTTPException(status_code=500, detail="Upload failed")
 
@@ -400,6 +545,134 @@ async def upload_workspace_file(
         "path": client_path,
         "size": len(content),
         "filename": file.filename,
+    }
+
+
+@router.post("/{workspace_id}/files/backup")
+async def backup_workspace_files(
+    workspace_id: str,
+    x_user_id: CurrentUserId,
+) -> dict[str, Any]:
+    """Backup workspace files from sandbox to DB for offline access."""
+
+    workspace = await db_get_workspace(workspace_id)
+    _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
+
+    if _is_flash_workspace(workspace):
+        raise HTTPException(
+            status_code=400, detail="Flash workspaces do not have a sandbox"
+        )
+
+    if workspace.get("status") in ("stopped", "stopping"):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot backup files while workspace is stopped.",
+        )
+
+    sandbox = await _acquire_sandbox(workspace_id, x_user_id)
+
+    try:
+        result = await FilePersistenceService.sync_to_db(workspace_id, sandbox)
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Sandbox not ready: {e}",
+        )
+    return {
+        "workspace_id": workspace_id,
+        "synced": result["synced"],
+        "skipped": result["skipped"],
+        "deleted": result["deleted"],
+        "errors": result["errors"],
+        "total_size": result["total_size"],
+    }
+
+
+@router.get("/{workspace_id}/files/backup-status")
+async def get_backup_status(
+    workspace_id: str,
+    x_user_id: CurrentUserId,
+) -> dict[str, Any]:
+    """Get backup status: compare sandbox files against DB to show what's
+    backed up, modified, or untracked."""
+
+    workspace = await db_get_workspace(workspace_id)
+    _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
+
+    empty = {
+        "workspace_id": workspace_id,
+        "backed_up": [],
+        "modified": [],
+        "untracked": [],
+        "total_backed_up_size": 0,
+    }
+
+    if _is_flash_workspace(workspace):
+        return empty
+
+    from src.server.database.workspace_file import (
+        get_file_metadata_for_sync,
+        get_workspace_total_size,
+    )
+
+    db_meta = await get_file_metadata_for_sync(workspace_id)
+
+    # If sandbox is stopped, everything in DB is "backed_up", nothing else
+    if workspace.get("status") in ("stopped", "stopping"):
+        total_size = await get_workspace_total_size(workspace_id)
+        return {
+            "workspace_id": workspace_id,
+            "backed_up": list(db_meta.keys()),
+            "modified": [],
+            "untracked": [],
+            "total_backed_up_size": total_size,
+        }
+
+    # Sandbox is running — compare sandbox files against DB
+    try:
+        sandbox = await _acquire_sandbox(workspace_id, x_user_id)
+    except HTTPException:
+        # Sandbox not ready — return DB-only info
+        total_size = await get_workspace_total_size(workspace_id)
+        return {
+            "workspace_id": workspace_id,
+            "backed_up": list(db_meta.keys()),
+            "modified": [],
+            "untracked": [],
+            "total_backed_up_size": total_size,
+        }
+
+    # Run find to get current sandbox file metadata
+    sandbox_meta = await FilePersistenceService.list_sandbox_files(sandbox)
+
+    backed_up: list[str] = []
+    modified: list[str] = []
+    untracked: list[str] = []
+
+    for virtual_path, info in sandbox_meta.items():
+        db_entry = db_meta.get(virtual_path)
+        if db_entry is None:
+            untracked.append(virtual_path)
+        else:
+            size_match = db_entry["file_size"] == info["file_size"]
+            mtime_match = (
+                db_entry["mtime_epoch"] is not None
+                and info["mtime"] > 0
+                and abs(db_entry["mtime_epoch"] - info["mtime"]) < 1.0
+            )
+            if size_match and mtime_match:
+                backed_up.append(virtual_path)
+            else:
+                modified.append(virtual_path)
+
+    total_size = await get_workspace_total_size(workspace_id)
+
+    return {
+        "workspace_id": workspace_id,
+        "backed_up": backed_up,
+        "modified": modified,
+        "untracked": untracked,
+        "total_backed_up_size": total_size,
     }
 
 
@@ -419,14 +692,17 @@ async def delete_workspace_files(
     _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
 
     if _is_flash_workspace(workspace):
-        raise HTTPException(status_code=400, detail="Flash workspaces do not have a sandbox")
+        raise HTTPException(
+            status_code=400, detail="Flash workspaces do not have a sandbox"
+        )
 
-    manager = WorkspaceManager.get_instance()
-    session = await manager.get_session_for_workspace(workspace_id, user_id=x_user_id)
+    if workspace.get("status") in ("stopped", "stopping"):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete files while workspace is stopped. Start the workspace first.",
+        )
 
-    sandbox = getattr(session, "sandbox", None)
-    if sandbox is None:
-        raise HTTPException(status_code=503, detail="Sandbox not available")
+    sandbox = await _acquire_sandbox(workspace_id, x_user_id)
 
     errors: list[dict[str, str]] = []
     valid_paths: list[tuple[str, str]] = []  # (normalized, client_path)
@@ -447,7 +723,10 @@ async def delete_workspace_files(
     deleted: list[str] = []
     if valid_paths:
         rm_args = " ".join(shlex.quote(p) for p, _ in valid_paths)
-        result = await sandbox.execute_bash_command(f"rm -f {rm_args}")
+        try:
+            result = await sandbox.execute_bash_command(f"rm -f {rm_args}")
+        except RuntimeError:
+            raise HTTPException(status_code=503, detail="Sandbox is still starting")
         if result.get("success"):
             deleted = [cp for _, cp in valid_paths]
         else:
@@ -459,9 +738,11 @@ async def delete_workspace_files(
                 if r.get("success"):
                     deleted.append(client_path)
                 else:
-                    errors.append({
-                        "path": client_path,
-                        "detail": r.get("stderr", "Delete failed"),
-                    })
+                    errors.append(
+                        {
+                            "path": client_path,
+                            "detail": r.get("stderr", "Delete failed"),
+                        }
+                    )
 
     return {"deleted": deleted, "errors": errors}

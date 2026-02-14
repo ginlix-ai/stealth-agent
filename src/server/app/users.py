@@ -42,7 +42,7 @@ from src.server.models.user import (
     UserUpdate,
     UserWithPreferencesResponse,
 )
-from src.server.services.plan_service import PlanService
+from src.server.services.membership_service import MembershipService
 from src.server.utils.api import CurrentUserId, handle_api_exceptions, raise_not_found
 
 logger = logging.getLogger(__name__)
@@ -50,17 +50,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["Users"])
 
 
-async def enrich_user_with_plan(user_dict: dict) -> dict:
-    """Replace raw plan_id with a plan object for UserResponse serialization."""
-    svc = PlanService.get_instance()
+async def enrich_user_with_membership(user_dict: dict) -> dict:
+    """Replace raw membership_id with a membership object for UserResponse serialization."""
+    svc = MembershipService.get_instance()
     await svc.ensure_loaded()
-    plan_id = user_dict.pop('plan_id', None)
-    plan = svc.get_plan(plan_id) if plan_id else svc.get_default_plan()
-    user_dict['plan'] = {
-        'id': plan.id,
-        'name': plan.name,
-        'display_name': plan.display_name,
-        'rank': plan.rank,
+    membership_id = user_dict.pop('membership_id', None)
+    membership = svc.get_membership(membership_id) if membership_id else svc.get_default_membership()
+    user_dict['membership'] = {
+        'membership_id': membership.membership_id,
+        'name': membership.name,
+        'display_name': membership.display_name,
+        'rank': membership.rank,
     }
     return user_dict
 
@@ -99,7 +99,7 @@ async def sync_user(
         result = await get_user_with_preferences(user_id)
         if not result:
             raise_not_found("User")
-        user_resp = UserResponse.model_validate(await enrich_user_with_plan(result["user"]))
+        user_resp = UserResponse.model_validate(await enrich_user_with_membership(result["user"]))
         pref_resp = None
         if result.get("preferences"):
             pref_resp = UserPreferencesResponse.model_validate(result["preferences"])
@@ -115,7 +115,7 @@ async def sync_user(
                 result = await get_user_with_preferences(user_id)
                 if not result:
                     raise_not_found("User")
-                user_resp = UserResponse.model_validate(await enrich_user_with_plan(result["user"]))
+                user_resp = UserResponse.model_validate(await enrich_user_with_membership(result["user"]))
                 pref_resp = None
                 if result.get("preferences"):
                     pref_resp = UserPreferencesResponse.model_validate(result["preferences"])
@@ -128,7 +128,7 @@ async def sync_user(
         name=body.name,
         avatar_url=body.avatar_url,
     )
-    user_resp = UserResponse.model_validate(await enrich_user_with_plan(user))
+    user_resp = UserResponse.model_validate(await enrich_user_with_membership(user))
     return UserWithPreferencesResponse(user=user_resp, preferences=None)
 
 
@@ -166,7 +166,7 @@ async def create_user(
     )
 
     logger.info(f"Created user {user_id}")
-    return UserResponse.model_validate(await enrich_user_with_plan(user))
+    return UserResponse.model_validate(await enrich_user_with_membership(user))
 
 
 @router.get("/users/me", response_model=UserWithPreferencesResponse)
@@ -191,7 +191,7 @@ async def get_current_user(user_id: CurrentUserId):
     if not result:
         raise_not_found("User")
 
-    user_response = UserResponse.model_validate(await enrich_user_with_plan(result["user"]))
+    user_response = UserResponse.model_validate(await enrich_user_with_membership(result["user"]))
     preferences_response = None
     if result["preferences"]:
         preferences_response = UserPreferencesResponse.model_validate(result["preferences"])
@@ -245,7 +245,7 @@ async def update_current_user(
     # Get preferences for combined response
     preferences = await db_get_user_preferences(user_id)
 
-    user_response = UserResponse.model_validate(await enrich_user_with_plan(user))
+    user_response = UserResponse.model_validate(await enrich_user_with_membership(user))
     preferences_response = None
     if preferences:
         preferences_response = UserPreferencesResponse.model_validate(preferences)

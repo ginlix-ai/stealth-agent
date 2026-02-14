@@ -54,19 +54,17 @@ class WorkspaceThreadsListResponse(BaseModel):
 # ==================== Debug Response Models ====================
 
 class ResponseFullDetail(BaseModel):
-    """Complete response details including state_snapshot and agent_messages."""
+    """Complete response details for debug inspection."""
     response_id: str = Field(..., description="Response ID")
     thread_id: str = Field(..., description="Thread ID")
-    pair_index: int = Field(..., description="Pair index")
+    turn_index: int = Field(..., description="Turn index")
     status: str = Field(..., description="Response status")
     interrupt_reason: Optional[str] = Field(None, description="Interrupt reason")
-    state_snapshot: Optional[Dict[str, Any]] = Field(None, description="Complete LangGraph state snapshot")
-    agent_messages: Optional[Dict[str, Any]] = Field(None, description="Agent messages by agent name")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Response metadata")
     warnings: List[str] = Field(default_factory=list, description="Warning messages")
     errors: List[str] = Field(default_factory=list, description="Error messages")
     execution_time: float = Field(0.0, description="Execution time in seconds")
-    timestamp: datetime = Field(..., description="Response timestamp")
+    created_at: datetime = Field(..., description="Response timestamp")
 
 
 # ==================== Messages API Response Models ====================
@@ -78,93 +76,23 @@ class MessageQuery(BaseModel):
     type: str = Field(..., description="Query type (initial, resume_feedback)")
     feedback_action: Optional[str] = Field(None, description="Feedback action if applicable")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Query metadata")
-    timestamp: datetime = Field(..., description="Query timestamp")
-
-
-class FileSnapshot(BaseModel):
-    """File state snapshot at thread start."""
-    file_id: str = Field(..., description="File ID")
-    content: str = Field(..., description="File contents")
-    line_count: int = Field(..., description="Number of lines in file")
-    updated_in_thread_id: str = Field(..., description="Thread that last modified this file")
-    updated_in_pair_index: int = Field(..., description="Pair index when last modified")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "file_id": "file-uuid-1",
-                "content": "# Tesla Analysis...",
-                "line_count": 250,
-                "updated_in_thread_id": "thread-1-uuid",
-                "updated_in_pair_index": 0
-            }
-        }
-
-
-class FileOperationEvent(BaseModel):
-    """File operation event (SSE-compatible format)."""
-    operation: str = Field(..., description="Operation type: write_file, edit_file, delete")
-    file_path: str = Field(..., description="Full file path (e.g., /report/tesla.md)")
-    content: Optional[str] = Field(None, description="File contents (write_file only, null for edit_file)")
-    line_count: int = Field(..., description="Number of lines in file")
-    agent: str = Field(..., description="Agent that performed operation")
-    thread_id: str = Field(..., description="Thread where operation occurred")
-    pair_index: int = Field(..., description="Query-response pair index")
-    timestamp: datetime = Field(..., description="Operation timestamp")
-    operation_index: int = Field(..., description="Sequential operation index per file (0, 1, 2, ...)")
-
-    # For edit operations
-    old_string: Optional[str] = Field(None, description="For edit_file: string being replaced")
-    new_string: Optional[str] = Field(None, description="For edit_file: replacement string")
-
-    # Metadata
-    tool_call_id: Optional[str] = Field(None, description="LangChain tool call ID")
-    file_id: str = Field(..., description="File ID for tracking")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "operation": "write_file",
-                "file_path": "/report/tesla.md",
-                "content": "# Tesla Analysis...",
-                "line_count": 250,
-                "agent": "coder",
-                "thread_id": "thread-1-uuid",
-                "pair_index": 0,
-                "timestamp": "2025-01-15T10:30:00Z",
-                "old_string": None,
-                "new_string": None,
-                "tool_call_id": "call_abc123",
-                "file_id": "file-uuid-1"
-            }
-        }
+    created_at: datetime = Field(..., description="Query timestamp")
 
 
 class MessageResponse(BaseModel):
-    """Response information for messages endpoint (excludes state_snapshot)."""
+    """Response information for messages endpoint."""
     response_id: str = Field(..., description="Response ID")
     status: str = Field(..., description="Response status (completed, interrupted, error, timeout)")
     interrupt_reason: Optional[str] = Field(None, description="Interrupt reason if applicable")
-    agent_messages: Optional[Dict[str, Any]] = Field(None, description="Agent messages for activity panel")
     execution_time: float = Field(0.0, description="Execution time in seconds")
     warnings: List[str] = Field(default_factory=list, description="Warning messages")
     errors: List[str] = Field(default_factory=list, description="Error messages")
-    timestamp: datetime = Field(..., description="Response timestamp")
-
-    # Filesystem: Snapshot + delta model
-    file_snapshot: Optional[Dict[str, FileSnapshot]] = Field(
-        None,
-        description="File state at thread start (before this thread's operations)"
-    )
-    file_operations: Optional[List[FileOperationEvent]] = Field(
-        None,
-        description="New file operations performed in this thread"
-    )
+    created_at: datetime = Field(..., description="Response timestamp")
 
 
 class ConversationMessage(BaseModel):
     """A single message pair in a conversation/thread (query + response)."""
-    pair_index: int = Field(..., description="Pair index within thread (0-based)")
+    turn_index: int = Field(..., description="Turn index within thread (0-based)")
     thread_id: str = Field(..., description="Thread ID (internal reference)")
     thread_index: int = Field(..., description="Thread index within workspace (0-based)")
     query: MessageQuery = Field(..., description="Query details")
@@ -190,21 +118,20 @@ class WorkspaceMessagesResponse(BaseModel):
                 "name": "Code Analysis Project",
                 "messages": [
                     {
-                        "pair_index": 0,
+                        "turn_index": 0,
                         "thread_id": "thread-1",
                         "thread_index": 0,
                         "query": {
                             "query_id": "query-1",
                             "content": "Analyze the codebase",
                             "type": "initial",
-                            "timestamp": "2025-10-15T21:03:43Z"
+                            "created_at": "2025-10-15T21:03:43Z"
                         },
                         "response": {
                             "response_id": "resp-1",
                             "status": "completed",
-                            "agent_messages": {"planner": [], "researcher": []},
                             "execution_time": 123.45,
-                            "timestamp": "2025-10-15T21:05:47Z"
+                            "created_at": "2025-10-15T21:05:47Z"
                         }
                     }
                 ],

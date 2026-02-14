@@ -86,7 +86,7 @@ async def list_threads(
 
         thread_items = [
             WorkspaceThreadListItem(
-                thread_id=str(thread["thread_id"]),
+                thread_id=str(thread["conversation_thread_id"]),
                 workspace_id=str(thread["workspace_id"]),
                 thread_index=thread["thread_index"],
                 current_status=thread["current_status"],
@@ -152,7 +152,7 @@ async def update_thread_endpoint(thread_id: str, request: ThreadUpdateRequest):
             raise HTTPException(status_code=404, detail=f"Thread not found: {thread_id}")
 
         return WorkspaceThreadListItem(
-            thread_id=str(updated_thread["thread_id"]),
+            thread_id=str(updated_thread["conversation_thread_id"]),
             workspace_id=str(updated_thread["workspace_id"]),
             thread_index=updated_thread["thread_index"],
             current_status=updated_thread["current_status"],
@@ -315,11 +315,11 @@ async def reconnect_to_stream(
 
 @router.get("/{thread_id}/messages/replay")
 async def replay_thread_messages(thread_id: str):
-    """Replay a thread as SSE using persisted streaming_chunks.
+    """Replay a thread as SSE using persisted sse_events.
 
     Stream includes:
-    - user_message: emitted once per pair_index (query content)
-    - message_chunk/tool_* events: emitted from stored streaming_chunks
+    - user_message: emitted once per turn_index (query content)
+    - message_chunk/tool_* events: emitted from stored sse_events
     - replay_done: terminal sentinel
     """
     try:
@@ -329,7 +329,7 @@ async def replay_thread_messages(thread_id: str):
 
         queries, _ = await get_queries_for_thread(thread_id)
         responses, _ = await get_responses_for_thread(thread_id)
-        responses_by_pair = {r.get("pair_index"): r for r in responses if isinstance(r, dict)}
+        responses_by_turn = {r.get("turn_index"): r for r in responses if isinstance(r, dict)}
 
         async def event_generator():
             seq = 0
@@ -338,13 +338,13 @@ async def replay_thread_messages(thread_id: str):
                 if not isinstance(q, dict):
                     continue
 
-                pair_index = q.get("pair_index")
+                turn_index = q.get("turn_index")
                 seq += 1
                 payload = {
                     "thread_id": thread_id,
-                    "pair_index": pair_index,
+                    "turn_index": turn_index,
                     "content": q.get("content"),
-                    "timestamp": q.get("timestamp"),
+                    "timestamp": q.get("created_at"),
                     "metadata": q.get("metadata"),
                 }
                 yield (
@@ -353,15 +353,15 @@ async def replay_thread_messages(thread_id: str):
                     f"data: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
                 )
 
-                response = responses_by_pair.get(pair_index)
+                response = responses_by_turn.get(turn_index)
                 if not response:
                     continue
 
-                streaming_chunks = response.get("streaming_chunks")
-                if not (isinstance(streaming_chunks, list) and streaming_chunks):
+                sse_events = response.get("sse_events")
+                if not (isinstance(sse_events, list) and sse_events):
                     continue
 
-                for item in streaming_chunks:
+                for item in sse_events:
                     if not isinstance(item, dict):
                         continue
                     event_type = item.get("event")
@@ -372,8 +372,8 @@ async def replay_thread_messages(thread_id: str):
                     seq += 1
                     replay_data = dict(data)
                     replay_data.setdefault("thread_id", thread_id)
-                    replay_data["pair_index"] = pair_index
-                    replay_data["response_id"] = str(response.get("response_id"))
+                    replay_data["turn_index"] = turn_index
+                    replay_data["response_id"] = str(response.get("conversation_response_id"))
 
                     yield (
                         f"id: {seq}\n"

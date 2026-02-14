@@ -32,7 +32,7 @@ import logging
 from decimal import Decimal
 from typing import Dict, Any, Optional
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.utils.tracking.infrastructure_costs import (
     calculate_infrastructure_credits,
@@ -255,7 +255,7 @@ class UsagePersistenceService:
         from src.server.database import conversation as qr_db
 
         if timestamp is None:
-            timestamp = datetime.now()
+            timestamp = datetime.now(timezone.utc)
 
         try:
             # Calculate infrastructure credits
@@ -280,10 +280,10 @@ class UsagePersistenceService:
 
             # Build usage record (write-once data, no updates)
             usage_data = {
-                "usage_id": str(uuid4()),
-                "response_id": response_id,
+                "conversation_usage_id": str(uuid4()),
+                "conversation_response_id": response_id,
                 "user_id": self.user_id,
-                "thread_id": self.thread_id,
+                "conversation_thread_id": self.thread_id,
                 "workspace_id": self.workspace_id,
                 "msg_type": final_msg_type,
                 "status": status,
@@ -292,7 +292,7 @@ class UsagePersistenceService:
                 "token_credits": float(self._token_credits),
                 "infrastructure_credits": float(self._infrastructure_credits),
                 "total_credits": float(total_credits),
-                "timestamp": timestamp
+                "created_at": timestamp
             }
 
             # Persist to database (use provided conn for transaction support)

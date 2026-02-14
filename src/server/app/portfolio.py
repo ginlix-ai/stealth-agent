@@ -93,7 +93,7 @@ async def add_portfolio_holding(
 
     await maybe_complete_onboarding(user_id)
 
-    logger.info(f"Added portfolio holding {holding['holding_id']} for user {user_id}")
+    logger.info(f"Added portfolio holding {holding['user_portfolio_id']} for user {user_id}")
     return PortfolioHoldingResponse.model_validate(holding)
 
 
@@ -148,7 +148,7 @@ async def update_portfolio_holding(
         404: Holding not found or not owned by user
     """
     holding = await db_update_portfolio_holding(
-        holding_id=holding_id,
+        user_portfolio_id=holding_id,
         user_id=user_id,
         name=request.name,
         quantity=request.quantity,

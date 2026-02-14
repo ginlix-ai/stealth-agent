@@ -1545,8 +1545,8 @@ class WorkflowStreamHandler:
 
         return self._format_sse_event("credit_usage", event_data)
 
-    def get_streaming_chunks(self) -> Optional[List[Dict[str, Any]]]:
-        """Return merged stream events for persistence."""
+    def get_sse_events(self) -> Optional[List[Dict[str, Any]]]:
+        """Return merged SSE events for persistence."""
         events = self._stream_event_accumulator.get_events()
         return events or None
 

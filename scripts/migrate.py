@@ -2,7 +2,7 @@
 """
 Database migration runner.
 
-Runs SQL migration files from scripts/migrations/ in order.
+Runs SQL and Python migration files from scripts/migrations/ in order.
 Tracks applied migrations in a migrations table.
 
 Usage:
@@ -12,6 +12,7 @@ Usage:
 import os
 import sys
 import asyncio
+import importlib.util
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -27,6 +28,70 @@ from psycopg.rows import dict_row
 
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+
+
+async def _run_sql_migration(cur, migration_file: Path):
+    """Execute a .sql migration file statement by statement."""
+    sql = migration_file.read_text()
+
+    # Split SQL into individual statements, respecting
+    # parenthesized blocks (e.g. CREATE TABLE (...;)).
+    # Only split on ';' at top-level (depth == 0).
+    statements = []
+    buf = []
+    depth = 0
+    for line in sql.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith('--'):
+            continue
+        depth += stripped.count('(') - stripped.count(')')
+        if stripped.endswith(';') and depth <= 0:
+            buf.append(stripped[:-1])  # drop trailing ;
+            stmt = '\n'.join(buf).strip()
+            if stmt:
+                statements.append(stmt)
+            buf = []
+            depth = 0
+        else:
+            buf.append(stripped)
+    # Catch trailing statement without semicolon
+    trailing = '\n'.join(buf).strip()
+    if trailing:
+        statements.append(trailing)
+
+    for i, stmt in enumerate(statements):
+        try:
+            await cur.execute(stmt)
+        except Exception as stmt_err:
+            print(f"   ❌ Statement {i+1} failed: {stmt_err}")
+            print(f"   SQL: {stmt[:200]}...")
+            raise
+
+
+async def _run_python_migration(migration_file: Path):
+    """Import and execute a .py migration file.
+
+    Looks for an async entry point: main() or migrate().
+    The function may return a bool (False = failure) or None (= success).
+    """
+    spec = importlib.util.spec_from_file_location(
+        migration_file.stem, migration_file
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    entry = getattr(mod, "main", None) or getattr(mod, "migrate", None)
+    if entry is None:
+        raise RuntimeError(
+            f"{migration_file.name} has no main() or migrate() function"
+        )
+
+    result = entry()
+    if asyncio.iscoroutine(result):
+        result = await result
+
+    if result is False:
+        raise RuntimeError(f"{migration_file.name} returned failure")
 
 
 async def run_migrations():
@@ -81,7 +146,12 @@ async def run_migrations():
                         print("⚠️  No migrations directory found")
                         return True
 
-                    migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
+                    sql_files = list(MIGRATIONS_DIR.glob("*.sql"))
+                    py_files = list(MIGRATIONS_DIR.glob("*.py"))
+                    migration_files = sorted(
+                        sql_files + py_files,
+                        key=lambda f: f.name
+                    )
 
                     if not migration_files:
                         print("ℹ️  No migration files found")
@@ -97,46 +167,17 @@ async def run_migrations():
                     for migration_file in pending:
                         print(f"\n📝 Applying: {migration_file.name}")
 
-                        sql = migration_file.read_text()
-
                         try:
-                            # Split SQL into individual statements, respecting
-                            # parenthesized blocks (e.g. CREATE TABLE (...;)).
-                            # Only split on ';' at top-level (depth == 0).
-                            statements = []
-                            buf = []
-                            depth = 0
-                            for line in sql.splitlines():
-                                stripped = line.strip()
-                                if not stripped or stripped.startswith('--'):
-                                    continue
-                                depth += stripped.count('(') - stripped.count(')')
-                                if stripped.endswith(';') and depth <= 0:
-                                    buf.append(stripped[:-1])  # drop trailing ;
-                                    stmt = '\n'.join(buf).strip()
-                                    if stmt:
-                                        statements.append(stmt)
-                                    buf = []
-                                    depth = 0
-                                else:
-                                    buf.append(stripped)
-                            # Catch trailing statement without semicolon
-                            trailing = '\n'.join(buf).strip()
-                            if trailing:
-                                statements.append(trailing)
+                            if migration_file.suffix == ".sql":
+                                await _run_sql_migration(cur, migration_file)
+                            else:
+                                await _run_python_migration(migration_file)
 
-                            for i, stmt in enumerate(statements):
-                                try:
-                                    await cur.execute(stmt)
-                                except Exception as stmt_err:
-                                    print(f"   ❌ Statement {i+1} failed: {stmt_err}")
-                                    print(f"   SQL: {stmt[:200]}...")
-                                    raise
                             await cur.execute(
                                 "INSERT INTO _migrations (name) VALUES (%s)",
                                 (migration_file.name,)
                             )
-                            print(f"   ✅ Applied successfully")
+                            print("   ✅ Applied successfully")
                         except Exception as e:
                             print(f"   ❌ Failed: {e}")
                             return False

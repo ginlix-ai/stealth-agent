@@ -293,7 +293,7 @@ async def get_watchlist_items(
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute("""
                 SELECT
-                    wi.item_id, wi.watchlist_id, wi.user_id, wi.symbol,
+                    wi.watchlist_item_id, wi.watchlist_id, wi.user_id, wi.symbol,
                     wi.instrument_type, wi.exchange, wi.name, wi.notes,
                     wi.alert_settings, wi.metadata,
                     wi.created_at, wi.updated_at
@@ -308,14 +308,14 @@ async def get_watchlist_items(
 
 
 async def get_watchlist_item(
-    item_id: str,
+    watchlist_item_id: str,
     user_id: str
 ) -> Optional[Dict[str, Any]]:
     """
     Get a single watchlist item by ID.
 
     Args:
-        item_id: Watchlist item ID
+        watchlist_item_id: Watchlist item ID
         user_id: User ID (for ownership verification)
 
     Returns:
@@ -325,12 +325,12 @@ async def get_watchlist_item(
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute("""
                 SELECT
-                    item_id, watchlist_id, user_id, symbol, instrument_type,
+                    watchlist_item_id, watchlist_id, user_id, symbol, instrument_type,
                     exchange, name, notes, alert_settings, metadata,
                     created_at, updated_at
                 FROM watchlist_items
-                WHERE item_id = %s AND user_id = %s
-            """, (item_id, user_id))
+                WHERE watchlist_item_id = %s AND user_id = %s
+            """, (watchlist_item_id, user_id))
 
             result = await cur.fetchone()
             return dict(result) if result else None
@@ -368,7 +368,7 @@ async def create_watchlist_item(
         ValueError: If item already exists in watchlist (same symbol + instrument_type)
         ValueError: If watchlist doesn't exist or doesn't belong to user
     """
-    item_id = str(uuid4())
+    watchlist_item_id = str(uuid4())
 
     async with get_db_connection() as conn:
         async with conn.cursor(row_factory=dict_row) as cur:
@@ -384,7 +384,7 @@ async def create_watchlist_item(
 
             # Check for existing item with same symbol + instrument_type in this watchlist
             await cur.execute("""
-                SELECT item_id FROM watchlist_items
+                SELECT watchlist_item_id FROM watchlist_items
                 WHERE watchlist_id = %s AND symbol = %s AND instrument_type = %s
             """, (watchlist_id, symbol, instrument_type))
 
@@ -397,17 +397,17 @@ async def create_watchlist_item(
             # Insert new watchlist item
             await cur.execute("""
                 INSERT INTO watchlist_items (
-                    item_id, watchlist_id, user_id, symbol, instrument_type,
+                    watchlist_item_id, watchlist_id, user_id, symbol, instrument_type,
                     exchange, name, notes, alert_settings, metadata,
                     created_at, updated_at
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                 RETURNING
-                    item_id, watchlist_id, user_id, symbol, instrument_type,
+                    watchlist_item_id, watchlist_id, user_id, symbol, instrument_type,
                     exchange, name, notes, alert_settings, metadata,
                     created_at, updated_at
             """, (
-                item_id, watchlist_id, user_id, symbol, instrument_type,
+                watchlist_item_id, watchlist_id, user_id, symbol, instrument_type,
                 exchange, name, notes,
                 Json(alert_settings or {}),
                 Json(metadata or {}),
@@ -422,7 +422,7 @@ async def create_watchlist_item(
 
 
 async def update_watchlist_item(
-    item_id: str,
+    watchlist_item_id: str,
     user_id: str,
     name: Optional[str] = None,
     notes: Optional[str] = None,
@@ -435,7 +435,7 @@ async def update_watchlist_item(
     Only updates fields that are provided (not None).
 
     Args:
-        item_id: Watchlist item ID
+        watchlist_item_id: Watchlist item ID
         user_id: User ID (for ownership verification)
         name: New name
         notes: New notes
@@ -452,18 +452,18 @@ async def update_watchlist_item(
     builder.add_field("metadata", metadata, is_json=True)
 
     if not builder.has_updates():
-        return await get_watchlist_item(item_id, user_id)
+        return await get_watchlist_item(watchlist_item_id, user_id)
 
     returning_columns = [
-        "item_id", "watchlist_id", "user_id", "symbol", "instrument_type",
+        "watchlist_item_id", "watchlist_id", "user_id", "symbol", "instrument_type",
         "exchange", "name", "notes", "alert_settings", "metadata",
         "created_at", "updated_at",
     ]
 
     query, params = builder.build(
         table="watchlist_items",
-        where_clause="item_id = %s AND user_id = %s",
-        where_params=[item_id, user_id],
+        where_clause="watchlist_item_id = %s AND user_id = %s",
+        where_params=[watchlist_item_id, user_id],
         returning_columns=returning_columns,
     )
 
@@ -473,16 +473,16 @@ async def update_watchlist_item(
 
             result = await cur.fetchone()
             if result:
-                logger.info(f"[watchlist_db] update_watchlist_item item_id={item_id}")
+                logger.info(f"[watchlist_db] update_watchlist_item watchlist_item_id={watchlist_item_id}")
             return dict(result) if result else None
 
 
-async def delete_watchlist_item(item_id: str, user_id: str) -> bool:
+async def delete_watchlist_item(watchlist_item_id: str, user_id: str) -> bool:
     """
     Delete a watchlist item.
 
     Args:
-        item_id: Watchlist item ID
+        watchlist_item_id: Watchlist item ID
         user_id: User ID (for ownership verification)
 
     Returns:
@@ -492,10 +492,10 @@ async def delete_watchlist_item(item_id: str, user_id: str) -> bool:
         async with conn.cursor() as cur:
             await cur.execute("""
                 DELETE FROM watchlist_items
-                WHERE item_id = %s AND user_id = %s
-            """, (item_id, user_id))
+                WHERE watchlist_item_id = %s AND user_id = %s
+            """, (watchlist_item_id, user_id))
 
             deleted = cur.rowcount > 0
             if deleted:
-                logger.info(f"[watchlist_db] delete_watchlist_item item_id={item_id}")
+                logger.info(f"[watchlist_db] delete_watchlist_item watchlist_item_id={watchlist_item_id}")
             return deleted

@@ -24,6 +24,7 @@ from src.server.database.workspace import (
     update_workspace_activity,
     update_workspace_status,
 )
+from src.server.services.file_persistence_service import FilePersistenceService
 from src.server.services.sync_user_data import sync_user_data_to_sandbox
 
 logger = logging.getLogger(__name__)
@@ -176,6 +177,75 @@ class WorkspaceManager:
             if user_id:
                 self._user_data_synced.add(workspace_id)
 
+    async def _recover_sandbox(
+        self,
+        workspace_id: str,
+        user_id: str | None,
+        core_config: Any,
+    ) -> Session:
+        """Create a fresh sandbox after the old one was deleted, restore files from DB.
+
+        Returns the new session (already cached and DB-updated).
+        """
+        session = SessionManager.get_session(workspace_id, core_config)
+        await session.initialize()
+        new_sandbox_id = getattr(session.sandbox, "sandbox_id", None)
+
+        await self._sync_sandbox_assets(
+            workspace_id, user_id, session.sandbox, reusing_sandbox=False
+        )
+
+        if session.sandbox:
+            await self._restore_files(workspace_id, session.sandbox)
+
+        await update_workspace_status(
+            workspace_id=workspace_id,
+            status="running",
+            sandbox_id=new_sandbox_id,
+        )
+        self._sessions[workspace_id] = session
+        await update_workspace_activity(workspace_id)
+        return session
+
+    async def _backup_files_to_db(self, workspace_id: str) -> None:
+        """Backup workspace files from sandbox to DB. Non-blocking on failure."""
+        session = self._sessions.get(workspace_id)
+        if not session or not getattr(session, "sandbox", None):
+            return
+        try:
+            result = await FilePersistenceService.sync_to_db(
+                workspace_id, session.sandbox
+            )
+            logger.info(f"File backup completed for {workspace_id}: {result}")
+        except Exception as e:
+            logger.warning(f"File backup failed for {workspace_id}: {e}")
+
+    async def _restore_files(self, workspace_id: str, sandbox: Any) -> None:
+        """Restore backed-up files from DB to sandbox. Non-blocking on failure."""
+        try:
+            result = await FilePersistenceService.restore_to_sandbox(
+                workspace_id, sandbox
+            )
+            logger.info(
+                f"Restored {result['restored']} files to sandbox for {workspace_id}"
+            )
+        except Exception as e:
+            logger.warning(f"File restore failed for {workspace_id}: {e}")
+
+    async def _maybe_restore_files(self, workspace_id: str, sandbox: Any) -> None:
+        """Restore files if sync marker is missing. Non-blocking on failure."""
+        try:
+            await FilePersistenceService.maybe_restore(workspace_id, sandbox)
+        except Exception as e:
+            logger.warning(f"File restore check failed for {workspace_id}: {e}")
+
+    async def _sync_tools(self, workspace_id: str, sandbox: Any) -> None:
+        """Sync tools to sandbox. Non-blocking on failure."""
+        try:
+            await sandbox.sync_tools()
+        except Exception as e:
+            logger.warning(f"Tool sync failed for {workspace_id}: {e}")
+
     async def create_workspace(
         self,
         user_id: str,
@@ -309,7 +379,9 @@ class WorkspaceManager:
                 elif not session.sandbox.is_ready():
                     # Sandbox still initializing (lazy init in progress)
                     # Operations that need sandbox will wait via _wait_ready()
-                    logger.info(f"Sandbox still initializing for {workspace_id}, skipping sync")
+                    logger.info(
+                        f"Sandbox still initializing for {workspace_id}, skipping sync"
+                    )
                     await update_workspace_activity(workspace_id)
                     return session
                 else:
@@ -318,17 +390,19 @@ class WorkspaceManager:
 
                     # Complete deferred sync for lazy-initialized workspaces
                     if workspace_id in self._pending_lazy_sync:
-                        logger.info(f"Completing deferred sync for lazy-init workspace {workspace_id}")
-                        await self._sync_sandbox_assets(
-                            workspace_id, workspace_user_id, session.sandbox, reusing_sandbox=True
+                        logger.info(
+                            f"Completing deferred sync for lazy-init workspace {workspace_id}"
                         )
+                        await self._sync_sandbox_assets(
+                            workspace_id,
+                            workspace_user_id,
+                            session.sandbox,
+                            reusing_sandbox=True,
+                        )
+                        await self._maybe_restore_files(workspace_id, session.sandbox)
                         self._pending_lazy_sync.discard(workspace_id)
 
-                    try:
-                        await session.sandbox.sync_tools()
-                    except Exception as e:
-                        logger.warning(f"Tool sync failed for cached session {workspace_id}: {e}")
-
+                    await self._sync_tools(workspace_id, session.sandbox)
                     await self._sync_user_data_if_needed(
                         workspace_id, workspace_user_id, session.sandbox
                     )
@@ -345,45 +419,37 @@ class WorkspaceManager:
 
             elif status == "running":
                 # Re-fetch session from SessionManager
-                logger.debug(
-                    f"Workspace {workspace_id} status is running, getting session from SessionManager"
-                )
                 core_config = self.config.to_core_config()
                 session = SessionManager.get_session(workspace_id, core_config)
-                logger.debug(
-                    f"Session for {workspace_id}: initialized={session._initialized}, has_sandbox={session.sandbox is not None}"
-                )
 
                 if not session._initialized:
                     # Session was dropped, reinitialize with existing sandbox
                     sandbox_id = workspace.get("sandbox_id")
-                    await session.initialize(sandbox_id=sandbox_id)
+                    try:
+                        await session.initialize(sandbox_id=sandbox_id)
+                    except RuntimeError as e:
+                        if "Failed to find sandbox" in str(e) or "deleted" in str(e):
+                            logger.warning(
+                                f"Sandbox {sandbox_id} gone for workspace "
+                                f"{workspace_id}. Creating fresh sandbox."
+                            )
+                            return await self._recover_sandbox(
+                                workspace_id, workspace_user_id, core_config
+                            )
+                        raise
 
-                    # Sync skills and user data in parallel
                     await self._sync_sandbox_assets(
                         workspace_id,
                         workspace_user_id,
                         session.sandbox,
                         reusing_sandbox=sandbox_id is not None,
                     )
-
                     if session.sandbox:
-                        try:
-                            await session.sandbox.sync_tools()
-                        except Exception as e:
-                            logger.warning(
-                                f"Tool sync failed for session {workspace_id}: {e}"
-                            )
+                        await self._sync_tools(workspace_id, session.sandbox)
                 else:
                     if session.sandbox:
                         await session.sandbox.ensure_sandbox_ready()
-                        try:
-                            await session.sandbox.sync_tools()
-                        except Exception as e:
-                            logger.warning(
-                                f"Tool sync failed for session {workspace_id}: {e}"
-                            )
-                    # Session was already initialized - sync user data if not already synced
+                        await self._sync_tools(workspace_id, session.sandbox)
                     await self._sync_user_data_if_needed(
                         workspace_id, workspace_user_id, session.sandbox
                     )
@@ -467,37 +533,49 @@ class WorkspaceManager:
             core_config = self.config.to_core_config()
             session = SessionManager.get_session(workspace_id, core_config)
 
-            # Initialize with existing sandbox_id
-            if lazy_init:
-                # Fast path: start sandbox in background
-                # Skip sync operations - they'll happen on next request when sandbox is ready
-                # Track that this workspace needs sync when sandbox becomes ready
-                await session.initialize_lazy(sandbox_id=sandbox_id)
-                self._pending_lazy_sync.add(workspace_id)
-                logger.info(f"Session lazy-initialized for workspace {workspace_id}")
-            else:
-                await session.initialize(sandbox_id=sandbox_id)
-                logger.info(f"Session initialized for workspace {workspace_id}")
+            sandbox_gone = False
 
-                # Sync skills and user data in parallel (only for non-lazy init)
+            # Try to reconnect to existing sandbox
+            try:
+                if lazy_init:
+                    await session.initialize_lazy(sandbox_id=sandbox_id)
+                    self._pending_lazy_sync.add(workspace_id)
+                    logger.info(
+                        f"Session lazy-initialized for workspace {workspace_id}"
+                    )
+                else:
+                    await session.initialize(sandbox_id=sandbox_id)
+                    logger.info(f"Session initialized for workspace {workspace_id}")
+            except RuntimeError as e:
+                if "Failed to find sandbox" in str(e) or "deleted" in str(e):
+                    sandbox_gone = True
+                    logger.warning(
+                        f"Sandbox {sandbox_id} no longer exists for workspace "
+                        f"{workspace_id}. Creating fresh sandbox."
+                    )
+                else:
+                    raise
+
+            # Sandbox was deleted — recover with fresh one
+            if sandbox_gone:
+                return await self._recover_sandbox(
+                    workspace_id, user_id, core_config
+                )
+
+            # Existing sandbox reconnected successfully — sync assets
+            if not lazy_init:
                 await self._sync_sandbox_assets(
                     workspace_id, user_id, session.sandbox, reusing_sandbox=True
                 )
-
                 if session.sandbox:
-                    try:
-                        await session.sandbox.sync_tools()
-                    except Exception as e:
-                        logger.warning(
-                            f"Tool sync failed for restarted workspace {workspace_id}: {e}"
-                        )
+                    await self._maybe_restore_files(workspace_id, session.sandbox)
+                    await self._sync_tools(workspace_id, session.sandbox)
 
             # Update status to running
             await update_workspace_status(
                 workspace_id=workspace_id,
                 status="running",
             )
-            logger.info(f"Status updated to running for workspace {workspace_id}")
 
             # Cache session
             self._sessions[workspace_id] = session
@@ -544,6 +622,9 @@ class WorkspaceManager:
             )
 
             try:
+                # Backup files to DB before stopping sandbox
+                await self._backup_files_to_db(workspace_id)
+
                 # Stop the session (stops sandbox, preserves data)
                 session = self._sessions.get(workspace_id)
                 if session:
@@ -598,6 +679,9 @@ class WorkspaceManager:
             logger.info(f"Deleting workspace {workspace_id}")
 
             try:
+                # Backup files to DB before deleting (if sandbox is accessible)
+                await self._backup_files_to_db(workspace_id)
+
                 # Stop and cleanup session if running
                 session = self._sessions.get(workspace_id)
                 if session:

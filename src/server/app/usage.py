@@ -14,7 +14,7 @@ from src.server.utils.api import CurrentUserId
 from src.server.services.usage_limiter import UsageLimiter
 from src.server.database.redemption import redeem_code
 from src.server.models.user import RedeemCodeRequest, RedeemCodeResponse
-from src.server.services.plan_service import PlanService
+from src.server.services.membership_service import MembershipService
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +29,12 @@ async def get_usage_status(user_id: CurrentUserId):
     Returns plan info, credit usage, and workspace usage.
     When limits are disabled, returns limits_enabled=false.
     """
-    svc = PlanService.get_instance()
+    svc = MembershipService.get_instance()
     await svc.ensure_loaded()
 
-    def _plan_obj(plan_info):
+    def _membership_obj(plan_info):
         return {
-            'id': plan_info.id,
+            'membership_id': plan_info.membership_id,
             'name': plan_info.name,
             'display_name': plan_info.display_name,
             'rank': plan_info.rank,
@@ -47,17 +47,18 @@ async def get_usage_status(user_id: CurrentUserId):
     if not UsageLimiter.is_enabled():
         return {
             'limits_enabled': False,
-            'plan': _plan_obj(svc.get_default_plan()),
+            'membership': _membership_obj(svc.get_default_membership()),
             'credits': {'used': 0.0, 'limit': -1, 'remaining': -1},
             'workspaces': {'active': 0, 'limit': -1, 'remaining': -1},
             'byok_enabled': byok_enabled,
         }
 
-    plan = await UsageLimiter.get_user_plan(user_id)
+    plan = await UsageLimiter.get_user_membership(user_id)
     daily_credit_limit = plan.daily_credits
     workspace_limit = plan.max_active_workspaces
 
-    used_credits = await UsageLimiter.get_daily_credit_usage(user_id)
+    user_tz = await UsageLimiter.get_user_timezone(user_id)
+    used_credits = await UsageLimiter.get_daily_credit_usage(user_id, user_tz)
     active_workspaces = await UsageLimiter.get_active_workspace_count(user_id)
 
     credits_remaining = max(0.0, daily_credit_limit - used_credits) if daily_credit_limit != -1 else -1
@@ -65,7 +66,7 @@ async def get_usage_status(user_id: CurrentUserId):
 
     return {
         'limits_enabled': True,
-        'plan': _plan_obj(plan),
+        'membership': _membership_obj(plan),
         'credits': {
             'used': round(used_credits, 2),
             'limit': daily_credit_limit,

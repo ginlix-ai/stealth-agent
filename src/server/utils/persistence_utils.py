@@ -96,25 +96,25 @@ def get_tool_usage_from_handler(
     return tool_usage
 
 
-def get_streaming_chunks_from_handler(
+def get_sse_events_from_handler(
     metadata: Dict[str, Any],
     context: str,
     thread_id: str
 ) -> Optional[List[Dict[str, Any]]]:
-    """Extract merged streaming chunks from handler if available."""
+    """Extract merged SSE events from handler if available."""
     try:
         handler = metadata.get("handler")
-        if handler and hasattr(handler, "get_streaming_chunks"):
-            chunks = handler.get_streaming_chunks()
-            if chunks:
+        if handler and hasattr(handler, "get_sse_events"):
+            events = handler.get_sse_events()
+            if events:
                 logger.debug(
-                    f"[WorkflowPersistence] Captured streaming chunks at {context}: "
-                    f"thread_id={thread_id} events={len(chunks)}"
+                    f"[WorkflowPersistence] Captured SSE events at {context}: "
+                    f"thread_id={thread_id} events={len(events)}"
                 )
-            return chunks
+            return events
     except Exception as e:
         logger.warning(
-            f"[WorkflowPersistence] Failed to get streaming chunks at {context} "
+            f"[WorkflowPersistence] Failed to get SSE events at {context} "
             f"thread_id={thread_id}: {e}"
         )
 

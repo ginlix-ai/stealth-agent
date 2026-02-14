@@ -8,9 +8,6 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List
-from uuid import uuid4
-import psycopg
-from psycopg.rows import dict_row
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +73,7 @@ class ResultLogger:
             Structured log with query_response_pairs array
         """
         query_response_pair = {
-            "pair_index": 0,
+            "turn_index": 0,
             "query_id": session_data["query_id"],
             "query": session_data["query"],
             "response_id": session_data["response_id"],
@@ -114,12 +111,12 @@ class ResultLogger:
         with open(log_path, 'r', encoding='utf-8') as f:
             existing_log = json.load(f)
 
-        # Calculate next pair_index based on existing pairs
+        # Calculate next turn_index based on existing pairs
         next_index = len(existing_log["query_response_pairs"])
 
         # Create new query-response pair
         new_pair = {
-            "pair_index": next_index,
+            "turn_index": next_index,
             "query_id": session_data["query_id"],
             "query": session_data["query"],
             "response_id": session_data["response_id"],
@@ -269,7 +266,6 @@ class ResultLogger:
     async def save_to_database(
         self,
         session_data: Dict[str, Any],
-        state_snapshot: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
         Save workflow result to PostgreSQL database.
@@ -278,7 +274,6 @@ class ResultLogger:
 
         Args:
             session_data: Dictionary with query_id, query, response_id, response, thread_id
-            state_snapshot: Optional LangGraph state snapshot (StateSnapshot.values)
 
         Returns:
             True if successful, False otherwise
@@ -315,11 +310,11 @@ class ResultLogger:
                             conn=conn
                         )
 
-                # Step 2: Calculate pair_index for this thread
-                pair_index = await qr_db.get_next_pair_index(thread_id, conn=conn)
+                # Step 2: Calculate turn_index for this thread
+                turn_index = await qr_db.get_next_turn_index(thread_id, conn=conn)
 
                 # Step 3: Check if thread exists, create if not (backup for cases where eager creation didn't happen)
-                if pair_index == 0 and conversation_id:
+                if turn_index == 0 and conversation_id:
                     # Check if thread already exists (may have been created eagerly)
                     async with conn.cursor() as cur:
                         await cur.execute("""
@@ -345,14 +340,14 @@ class ResultLogger:
                 query_timestamp = datetime.fromisoformat(query_timestamp_str) if query_timestamp_str else datetime.now()
 
                 await qr_db.create_query(
-                    query_id=session_data["query_id"],
-                    thread_id=thread_id,
-                    pair_index=pair_index,
+                    conversation_query_id=session_data["query_id"],
+                    conversation_thread_id=thread_id,
+                    turn_index=turn_index,
                     content=query_data.get("content", ""),
                     query_type=query_data.get("type", "unknown"),
                     feedback_action=query_data.get("feedback_action"),
                     metadata=query_data.get("metadata", {}),
-                    timestamp=query_timestamp,
+                    created_at=query_timestamp,
                     conn=conn
                 )
 
@@ -362,25 +357,23 @@ class ResultLogger:
                 response_timestamp = datetime.fromisoformat(response_timestamp_str) if response_timestamp_str else datetime.now()
 
                 await qr_db.create_response(
-                    response_id=session_data["response_id"],
-                    thread_id=thread_id,
-                    pair_index=pair_index,
+                    conversation_response_id=session_data["response_id"],
+                    conversation_thread_id=thread_id,
+                    turn_index=turn_index,
                     status=response_data.get("status", "unknown"),
                     interrupt_reason=response_data.get("interrupt_reason"),
-                    agent_messages=response_data.get("agent_messages"),
                     metadata=response_data.get("metadata", {}),
-                    state_snapshot=state_snapshot,
                     warnings=response_data.get("warnings", []),
                     errors=response_data.get("errors", []),
                     execution_time=response_data.get("execution_time"),
-                    timestamp=response_timestamp,
+                    created_at=response_timestamp,
                     conn=conn
                 )
 
                 # Step 6: Update thread status
                 await qr_db.update_thread_status(thread_id, response_data.get("status", "unknown"), conn=conn)
 
-            logger.info(f"Saved query-response pair (pair_index={pair_index}) to database for thread_id={thread_id}")
+            logger.info(f"Saved query-response pair (turn_index={turn_index}) to database for thread_id={thread_id}")
             return True
 
         except Exception as e:
@@ -392,14 +385,12 @@ class ResultLogger:
     async def save_result_async(
         self,
         session_data: Dict[str, Any],
-        state_snapshot: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
         Async version of save_result with database support.
 
         Args:
             session_data: Dictionary containing all session data
-            state_snapshot: Optional LangGraph state snapshot (StateSnapshot.values)
 
         Returns:
             True if at least one save succeeded
@@ -413,7 +404,7 @@ class ResultLogger:
 
         # Save to database
         if self.db_enabled:
-            if await self.save_to_database(session_data, state_snapshot):
+            if await self.save_to_database(session_data):
                 success_count += 1
 
         return success_count > 0

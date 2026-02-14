@@ -113,14 +113,14 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Redis cache initialization failed: {e}")
         logger.warning("Server will continue without caching")
 
-    # Initialize PlanService (load plans from DB into memory)
+    # Initialize MembershipService (load memberships from DB into memory)
     try:
-        from src.server.services.plan_service import PlanService
-        plan_svc = PlanService.get_instance()
-        await plan_svc.refresh()
+        from src.server.services.membership_service import MembershipService
+        membership_svc = MembershipService.get_instance()
+        await membership_svc.refresh()
     except Exception as e:
-        logger.warning(f"PlanService initialization failed: {e}")
-        logger.warning("Using fallback plan definitions")
+        logger.warning(f"MembershipService initialization failed: {e}")
+        logger.warning("Using fallback membership definitions")
 
     # Start BackgroundTaskManager cleanup task
     try:
@@ -331,7 +331,7 @@ from src.server.app.portfolio import router as portfolio_router
 from src.server.app.infoflow import router as infoflow_router
 from src.server.app.sec_proxy import router as sec_proxy_router
 from src.server.app.usage import router as usage_router
-from src.server.app.plans import router as plans_router
+from src.server.app.memberships import router as memberships_router
 from src.server.app.api_keys import router as api_keys_router
 
 # Include all routers
@@ -348,6 +348,6 @@ app.include_router(portfolio_router)  # /api/v1/users/me/portfolio/* - Portfolio
 app.include_router(infoflow_router)  # /api/v1/infoflow/* - InfoFlow content feed
 app.include_router(sec_proxy_router)  # /api/v1/sec-proxy/* - SEC EDGAR document proxy
 app.include_router(usage_router)  # /api/v1/usage/* - Usage limits and code redemption
-app.include_router(plans_router)  # /api/v1/plans - Plan definitions (public)
+app.include_router(memberships_router)  # /api/v1/memberships - Membership definitions (public)
 app.include_router(api_keys_router)  # /api/v1/users/me/api-keys + /api/v1/models - BYOK & model config
 app.include_router(health_router)  # /health - Health check

@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 
 from src.server.auth.jwt_bearer import _AUTH_ENABLED
 from src.config.settings import get_usage_limits_config
-from src.server.services.plan_service import PlanService, PlanInfo
+from src.server.services.membership_service import MembershipService, MembershipInfo
 
 logger = logging.getLogger(__name__)
 
@@ -39,56 +39,92 @@ class UsageLimiter:
     # =====================================================================
 
     @staticmethod
-    async def get_user_plan(user_id: str) -> PlanInfo:
+    async def get_user_membership(user_id: str) -> MembershipInfo:
         """
-        Get user's PlanInfo with Redis caching (caches plan_id).
+        Get user's MembershipInfo with Redis caching (caches membership_id).
 
-        Falls back to DB lookup on cache miss. Returns default plan on any error.
+        Falls back to DB lookup on cache miss. Returns default membership on any error.
         """
-        svc = PlanService.get_instance()
+        svc = MembershipService.get_instance()
         await svc.ensure_loaded()
-        default = svc.get_default_plan()
+        default = svc.get_default_membership()
 
         if not UsageLimiter.is_enabled():
             return default
 
-        cache_key = f"user:plan:{user_id}"
+        cache_key = f"user:membership:{user_id}"
         config = get_usage_limits_config()
-        cache_ttl = config.get('plan_cache_ttl', 300)
+        cache_ttl = config.get('membership_cache_ttl', config.get('plan_cache_ttl', 300))
 
-        # Try Redis cache first (stores plan_id as int)
+        # Try Redis cache first (stores membership_id as int)
         try:
             from src.utils.cache.redis_cache import get_cache_client
             cache = get_cache_client()
             if cache.client:
                 cached = await cache.client.get(cache_key)
                 if cached:
-                    plan_id = int(cached.decode() if isinstance(cached, bytes) else cached)
-                    return svc.get_plan(plan_id)
+                    membership_id = int(cached.decode() if isinstance(cached, bytes) else cached)
+                    return svc.get_membership(membership_id)
         except Exception as e:
             logger.debug(f"[usage_limiter] Redis cache read failed: {e}")
 
-        # Cache miss — query DB for plan_id
+        # Cache miss — query DB for membership_id
         try:
             from src.server.database.user import get_user
             user = await get_user(user_id)
-            plan_id = user.get('plan_id') if user else None
+            membership_id = user.get('membership_id') if user else None
         except Exception as e:
             logger.warning(f"[usage_limiter] DB lookup failed for {user_id}: {e}")
             return default
 
-        plan = svc.get_plan(plan_id)
+        membership = svc.get_membership(membership_id)
 
-        # Write back to cache (store plan_id)
+        # Write back to cache (store membership_id)
         try:
             from src.utils.cache.redis_cache import get_cache_client
             cache = get_cache_client()
             if cache.client:
-                await cache.client.set(cache_key, str(plan.id), ex=cache_ttl)
+                await cache.client.set(cache_key, str(membership.membership_id), ex=cache_ttl)
         except Exception as e:
             logger.debug(f"[usage_limiter] Redis cache write failed: {e}")
 
-        return plan
+        return membership
+
+    @staticmethod
+    async def get_user_timezone(user_id: str) -> str:
+        """Get user's timezone with Redis caching. Defaults to UTC."""
+        cache_key = f"user:timezone:{user_id}"
+
+        # Try Redis cache
+        try:
+            from src.utils.cache.redis_cache import get_cache_client
+            cache = get_cache_client()
+            if cache.client:
+                cached = await cache.client.get(cache_key)
+                if cached:
+                    return cached.decode() if isinstance(cached, bytes) else cached
+        except Exception:
+            pass
+
+        # Cache miss — query DB
+        tz = "UTC"
+        try:
+            from src.server.database.user import get_user
+            user = await get_user(user_id)
+            tz = (user.get('timezone') or "UTC") if user else "UTC"
+        except Exception as e:
+            logger.debug(f"[usage_limiter] Failed to get timezone for {user_id}: {e}")
+
+        # Write back to cache
+        try:
+            from src.utils.cache.redis_cache import get_cache_client
+            cache = get_cache_client()
+            if cache.client:
+                await cache.client.set(cache_key, tz, ex=300)
+        except Exception:
+            pass
+
+        return tz
 
     @staticmethod
     async def flush_plan_cache(user_id: str) -> None:
@@ -125,15 +161,20 @@ class UsageLimiter:
                 'burst_count': 0, 'burst_limit': -1,
             }
 
-        plan = await UsageLimiter.get_user_plan(user_id)
+        plan = await UsageLimiter.get_user_membership(user_id)
         daily_credit_limit = plan.daily_credits
         max_concurrent = plan.max_concurrent_requests
 
         # --- Layer 1: DB credit check ---
         if daily_credit_limit != -1:
-            used_credits = await UsageLimiter.get_daily_credit_usage(user_id)
+            user_tz = await UsageLimiter.get_user_timezone(user_id)
+            used_credits = await UsageLimiter.get_daily_credit_usage(user_id, user_tz)
             if used_credits >= daily_credit_limit:
-                now = datetime.now(timezone.utc)
+                try:
+                    from zoneinfo import ZoneInfo
+                    now = datetime.now(ZoneInfo(user_tz))
+                except Exception:
+                    now = datetime.now(timezone.utc)
                 next_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
                 retry_after = int((next_midnight - now).total_seconds())
                 return {
@@ -232,11 +273,12 @@ class UsageLimiter:
     # =====================================================================
 
     @staticmethod
-    async def get_daily_credit_usage(user_id: str) -> float:
+    async def get_daily_credit_usage(user_id: str, user_tz: str = "UTC") -> float:
         """
-        Get today's total credits consumed from conversation_usage (DB truth).
+        Get today's total credits consumed from conversation_usages (DB truth).
 
-        Used for both limit checking and reporting.
+        Uses the user's timezone to determine "today" so the daily window
+        resets at midnight in their local time, not midnight UTC.
         """
         try:
             from src.server.database.conversation import get_db_connection
@@ -246,11 +288,11 @@ class UsageLimiter:
                     await cur.execute(
                         """
                         SELECT COALESCE(SUM(total_credits), 0) as total
-                        FROM conversation_usage
+                        FROM conversation_usages
                         WHERE user_id = %s
-                          AND timestamp >= (CURRENT_DATE AT TIME ZONE 'UTC')
+                          AND created_at >= (CURRENT_DATE AT TIME ZONE %s)
                         """,
-                        (user_id,),
+                        (user_id, user_tz),
                     )
                     result = await cur.fetchone()
                     return float(result['total']) if result else 0.0
@@ -273,7 +315,7 @@ class UsageLimiter:
         if not UsageLimiter.is_enabled():
             return {'allowed': True, 'current': 0, 'limit': -1, 'remaining': -1}
 
-        plan = await UsageLimiter.get_user_plan(user_id)
+        plan = await UsageLimiter.get_user_membership(user_id)
         max_workspaces = plan.max_active_workspaces
 
         if max_workspaces == -1:

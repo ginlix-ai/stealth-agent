@@ -34,10 +34,10 @@ async def get_user_portfolio(user_id: str) -> List[Dict[str, Any]]:
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute("""
                 SELECT
-                    holding_id, user_id, symbol, instrument_type, exchange,
+                    user_portfolio_id, user_id, symbol, instrument_type, exchange,
                     name, quantity, average_cost, currency, account_name,
                     notes, metadata, first_purchased_at, created_at, updated_at
-                FROM user_portfolio
+                FROM user_portfolios
                 WHERE user_id = %s
                 ORDER BY created_at DESC
             """, (user_id,))
@@ -47,14 +47,14 @@ async def get_user_portfolio(user_id: str) -> List[Dict[str, Any]]:
 
 
 async def get_portfolio_holding(
-    holding_id: str,
+    user_portfolio_id: str,
     user_id: str
 ) -> Optional[Dict[str, Any]]:
     """
     Get a single portfolio holding by ID.
 
     Args:
-        holding_id: Portfolio holding ID
+        user_portfolio_id: Portfolio holding ID
         user_id: User ID (for ownership verification)
 
     Returns:
@@ -64,12 +64,12 @@ async def get_portfolio_holding(
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute("""
                 SELECT
-                    holding_id, user_id, symbol, instrument_type, exchange,
+                    user_portfolio_id, user_id, symbol, instrument_type, exchange,
                     name, quantity, average_cost, currency, account_name,
                     notes, metadata, first_purchased_at, created_at, updated_at
-                FROM user_portfolio
-                WHERE holding_id = %s AND user_id = %s
-            """, (holding_id, user_id))
+                FROM user_portfolios
+                WHERE user_portfolio_id = %s AND user_id = %s
+            """, (user_portfolio_id, user_id))
 
             result = await cur.fetchone()
             return dict(result) if result else None
@@ -112,14 +112,14 @@ async def create_portfolio_holding(
     Raises:
         ValueError: If holding already exists (same symbol + instrument_type + account_name)
     """
-    holding_id = str(uuid4())
+    user_portfolio_id = str(uuid4())
 
     async with get_db_connection() as conn:
         async with conn.cursor(row_factory=dict_row) as cur:
             # Check for existing holding with same symbol + instrument_type + account_name
             # IS NOT DISTINCT FROM handles NULL comparisons properly
             await cur.execute("""
-                SELECT holding_id FROM user_portfolio
+                SELECT user_portfolio_id FROM user_portfolios
                 WHERE user_id = %s AND symbol = %s AND instrument_type = %s
                 AND account_name IS NOT DISTINCT FROM %s
             """, (user_id, symbol, instrument_type, account_name))
@@ -134,18 +134,18 @@ async def create_portfolio_holding(
 
             # Insert new portfolio holding
             await cur.execute("""
-                INSERT INTO user_portfolio (
-                    holding_id, user_id, symbol, instrument_type, exchange,
+                INSERT INTO user_portfolios (
+                    user_portfolio_id, user_id, symbol, instrument_type, exchange,
                     name, quantity, average_cost, currency, account_name,
                     notes, metadata, first_purchased_at, created_at, updated_at
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                 RETURNING
-                    holding_id, user_id, symbol, instrument_type, exchange,
+                    user_portfolio_id, user_id, symbol, instrument_type, exchange,
                     name, quantity, average_cost, currency, account_name,
                     notes, metadata, first_purchased_at, created_at, updated_at
             """, (
-                holding_id, user_id, symbol, instrument_type, exchange,
+                user_portfolio_id, user_id, symbol, instrument_type, exchange,
                 name, quantity, average_cost, currency, account_name,
                 notes,
                 Json(metadata or {}),
@@ -161,7 +161,7 @@ async def create_portfolio_holding(
 
 
 async def update_portfolio_holding(
-    holding_id: str,
+    user_portfolio_id: str,
     user_id: str,
     name: Optional[str] = None,
     quantity: Optional[Decimal] = None,
@@ -177,7 +177,7 @@ async def update_portfolio_holding(
     Only updates fields that are provided (not None).
 
     Args:
-        holding_id: Portfolio holding ID
+        user_portfolio_id: Portfolio holding ID
         user_id: User ID (for ownership verification)
         name: New name
         quantity: New quantity
@@ -200,18 +200,18 @@ async def update_portfolio_holding(
     builder.add_field("first_purchased_at", first_purchased_at)
 
     if not builder.has_updates():
-        return await get_portfolio_holding(holding_id, user_id)
+        return await get_portfolio_holding(user_portfolio_id, user_id)
 
     returning_columns = [
-        "holding_id", "user_id", "symbol", "instrument_type", "exchange",
+        "user_portfolio_id", "user_id", "symbol", "instrument_type", "exchange",
         "name", "quantity", "average_cost", "currency", "account_name",
         "notes", "metadata", "first_purchased_at", "created_at", "updated_at",
     ]
 
     query, params = builder.build(
-        table="user_portfolio",
-        where_clause="holding_id = %s AND user_id = %s",
-        where_params=[holding_id, user_id],
+        table="user_portfolios",
+        where_clause="user_portfolio_id = %s AND user_id = %s",
+        where_params=[user_portfolio_id, user_id],
         returning_columns=returning_columns,
     )
 
@@ -223,17 +223,17 @@ async def update_portfolio_holding(
             if result:
                 logger.info(
                     f"[portfolio_db] update_portfolio_holding "
-                    f"holding_id={holding_id}"
+                    f"user_portfolio_id={user_portfolio_id}"
                 )
             return dict(result) if result else None
 
 
-async def delete_portfolio_holding(holding_id: str, user_id: str) -> bool:
+async def delete_portfolio_holding(user_portfolio_id: str, user_id: str) -> bool:
     """
     Delete a portfolio holding.
 
     Args:
-        holding_id: Portfolio holding ID
+        user_portfolio_id: Portfolio holding ID
         user_id: User ID (for ownership verification)
 
     Returns:
@@ -242,14 +242,14 @@ async def delete_portfolio_holding(holding_id: str, user_id: str) -> bool:
     async with get_db_connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute("""
-                DELETE FROM user_portfolio
-                WHERE holding_id = %s AND user_id = %s
-            """, (holding_id, user_id))
+                DELETE FROM user_portfolios
+                WHERE user_portfolio_id = %s AND user_id = %s
+            """, (user_portfolio_id, user_id))
 
             deleted = cur.rowcount > 0
             if deleted:
                 logger.info(
                     f"[portfolio_db] delete_portfolio_holding "
-                    f"holding_id={holding_id}"
+                    f"user_portfolio_id={user_portfolio_id}"
                 )
             return deleted

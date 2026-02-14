@@ -11,7 +11,7 @@ from typing import Any, Dict
 from psycopg.rows import dict_row
 
 from src.server.database.conversation import get_db_connection
-from src.server.services.plan_service import PlanService
+from src.server.services.membership_service import MembershipService
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +27,8 @@ async def redeem_code(user_id: str, code: str) -> Dict[str, Any]:
     4. User hasn't already redeemed this code
     5. Code tier is >= user's current tier (no downgrade)
 
-    On success: updates users.plan_id, increments current_redemptions,
-    inserts redemption_history row (with plan names for audit).
+    On success: updates users.membership_id, increments current_redemptions,
+    inserts redemption_histories row (with plan names for audit).
 
     Args:
         user_id: The user redeeming the code
@@ -42,7 +42,7 @@ async def redeem_code(user_id: str, code: str) -> Dict[str, Any]:
     """
     code = code.strip().upper()
 
-    svc = PlanService.get_instance()
+    svc = MembershipService.get_instance()
     await svc.ensure_loaded()
 
     async with get_db_connection() as conn:
@@ -76,38 +76,38 @@ async def redeem_code(user_id: str, code: str) -> Dict[str, Any]:
 
                 # 4. Check double-redeem
                 await cur.execute(
-                    "SELECT id FROM redemption_history WHERE code = %s AND user_id = %s",
+                    "SELECT redemption_id FROM redemption_histories WHERE code = %s AND user_id = %s",
                     (code, user_id),
                 )
                 if await cur.fetchone():
                     raise ValueError("You have already redeemed this code")
 
-                # 5. Get user's current plan_id
+                # 5. Get user's current membership_id
                 await cur.execute(
-                    "SELECT plan_id FROM users WHERE user_id = %s FOR UPDATE",
+                    "SELECT membership_id FROM users WHERE user_id = %s FOR UPDATE",
                     (user_id,),
                 )
                 user_row = await cur.fetchone()
                 if not user_row:
                     raise ValueError("User not found")
 
-                current_plan_id = user_row['plan_id']
-                target_plan_id = code_row['plan_id']
+                current_membership_id = user_row['membership_id']
+                target_membership_id = code_row['membership_id']
 
-                # Resolve to PlanInfo for rank comparison and name display
-                current_plan = svc.get_plan(current_plan_id)
-                target_plan = svc.get_plan(target_plan_id)
+                # Resolve to MembershipInfo for rank comparison and name display
+                current_plan = svc.get_membership(current_membership_id)
+                target_plan = svc.get_membership(target_membership_id)
 
                 # No downgrade check
                 if target_plan.rank <= current_plan.rank:
-                    if target_plan_id == current_plan_id:
+                    if target_membership_id == current_membership_id:
                         raise ValueError(f"You are already on the {current_plan.display_name} plan")
                     raise ValueError(f"Cannot downgrade from {current_plan.display_name} to {target_plan.display_name}")
 
                 # All checks passed — apply the upgrade
                 await cur.execute(
-                    "UPDATE users SET plan_id = %s, updated_at = NOW() WHERE user_id = %s",
-                    (target_plan_id, user_id),
+                    "UPDATE users SET membership_id = %s, updated_at = NOW() WHERE user_id = %s",
+                    (target_membership_id, user_id),
                 )
 
                 await cur.execute(
@@ -117,7 +117,7 @@ async def redeem_code(user_id: str, code: str) -> Dict[str, Any]:
 
                 # Audit trail uses plan names (strings) for readability
                 await cur.execute("""
-                    INSERT INTO redemption_history (code, user_id, previous_plan, new_plan)
+                    INSERT INTO redemption_histories (code, user_id, previous_plan, new_plan)
                     VALUES (%s, %s, %s, %s)
                 """, (code, user_id, current_plan.name, target_plan.name))
 

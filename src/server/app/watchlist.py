@@ -338,7 +338,7 @@ async def add_watchlist_item(
     await maybe_complete_onboarding(user_id)
 
     logger.info(
-        f"Added item {item['item_id']} to watchlist {resolved_id} for user {user_id}"
+        f"Added item {item['watchlist_item_id']} to watchlist {resolved_id} for user {user_id}"
     )
     return WatchlistItemResponse.model_validate(item)
 
@@ -413,7 +413,7 @@ async def update_watchlist_item(
         raise_not_found("Watchlist item")
 
     item = await db_update_watchlist_item(
-        item_id=item_id,
+        watchlist_item_id=item_id,
         user_id=user_id,
         name=request.name,
         notes=request.notes,

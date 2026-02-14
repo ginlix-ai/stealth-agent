@@ -58,11 +58,10 @@ from src.config.settings import (
     get_redis_ttl_workflow_events,
 )
 from src.utils.cache.redis_cache import get_cache_client
-from src.utils.tracking import serialize_agent_messages
 from src.server.utils.persistence_utils import (
     get_token_usage_from_callback,
     get_tool_usage_from_handler,
-    get_streaming_chunks_from_handler,
+    get_sse_events_from_handler,
     calculate_execution_time,
 )
 
@@ -818,33 +817,9 @@ class BackgroundTaskManager:
             if workspace_id and user_id:
                 try:
                     from src.server.services.conversation_persistence_service import ConversationPersistenceService
-                    from src.utils.tracking import ExecutionTracker
-                    from src.server.models.workflow import serialize_state_snapshot
 
                     persistence_service = ConversationPersistenceService.get_instance(thread_id)
                     persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
-
-                    # Get tracking context for partial data
-                    tracking_context = ExecutionTracker.get_context()
-                    raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
-                    agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
-
-                    agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
-
-                    # Get state snapshot and serialize
-                    state_snapshot = None
-                    try:
-                        if graph:
-                            snapshot = await asyncio.wait_for(
-                                graph.aget_state({"configurable": {"thread_id": thread_id}}),
-                                timeout=10.0,
-                            )
-                            if snapshot and snapshot.values:
-                                state_snapshot = serialize_state_snapshot(snapshot.values)
-                    except asyncio.TimeoutError:
-                        logger.warning(f"[WorkflowPersistence] aget_state timed out getting snapshot for {thread_id}")
-                    except Exception as state_error:
-                        logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
 
                     # Get token usage and per_call_records from token_callback
                     _, per_call_records = get_token_usage_from_callback(
@@ -856,15 +831,15 @@ class BackgroundTaskManager:
                         metadata, "interrupt", thread_id
                     )
 
-                    # Get streaming chunks for persistence (plan description, reasoning, etc.)
-                    streaming_chunks = get_streaming_chunks_from_handler(
+                    # Get SSE events for persistence (plan description, reasoning, etc.)
+                    sse_events = get_sse_events_from_handler(
                         metadata, "interrupt", thread_id
                     )
 
-                    # Determine actual interrupt reason from streaming chunks
+                    # Determine actual interrupt reason from SSE events
                     interrupt_reason = "plan_review_required"  # default fallback
-                    if streaming_chunks:
-                        for chunk in streaming_chunks:
+                    if sse_events:
+                        for chunk in sse_events:
                             if chunk.get("event") == "interrupt":
                                 chunk_data = chunk.get("data", {})
                                 action_requests = chunk_data.get("action_requests", [])
@@ -886,13 +861,11 @@ class BackgroundTaskManager:
 
                     await persistence_service.persist_interrupt(
                         interrupt_reason=interrupt_reason,
-                        state_snapshot=state_snapshot,
-                        agent_messages=agent_messages,
                         execution_time=execution_time,
                         metadata=persist_metadata,
                         per_call_records=per_call_records,
                         tool_usage=tool_usage,
-                        streaming_chunks=streaming_chunks
+                        sse_events=sse_events
                     )
                     logger.info(f"[WorkflowPersistence] Workflow {thread_id} paused for human feedback")
 
@@ -962,34 +935,9 @@ class BackgroundTaskManager:
         if workspace_id and user_id:
             try:
                 from src.server.services.conversation_persistence_service import ConversationPersistenceService
-                from src.utils.tracking import ExecutionTracker
-                from src.server.models.workflow import serialize_state_snapshot
 
                 persistence_service = ConversationPersistenceService.get_instance(thread_id)
                 persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
-
-                # Get partial data before failure
-                tracking_context = ExecutionTracker.get_context()
-                raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
-                agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
-
-                # Serialize agent messages with agent_index
-                agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
-
-                # Get state snapshot with timeout protection
-                state_snapshot = None
-                try:
-                    if graph:
-                        snapshot = await asyncio.wait_for(
-                            graph.aget_state({"configurable": {"thread_id": thread_id}}),
-                            timeout=10.0,
-                        )
-                        if snapshot and snapshot.values:
-                            state_snapshot = serialize_state_snapshot(snapshot.values)
-                except asyncio.TimeoutError:
-                    logger.warning(f"[WorkflowPersistence] aget_state timed out getting snapshot for {thread_id}")
-                except Exception as state_error:
-                    logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
 
                 # Calculate execution time
                 execution_time = calculate_execution_time(metadata)
@@ -1004,7 +952,7 @@ class BackgroundTaskManager:
                     metadata, "error", thread_id
                 )
 
-                streaming_chunks = get_streaming_chunks_from_handler(
+                sse_events = get_sse_events_from_handler(
                     metadata, "error", thread_id
                 )
 
@@ -1019,12 +967,10 @@ class BackgroundTaskManager:
                 await persistence_service.persist_error(
                     error_message=error,
                     errors=[error],
-                    state_snapshot=state_snapshot,
-                    agent_messages=agent_messages,
                     execution_time=execution_time,
                     per_call_records=per_call_records,
                     tool_usage=tool_usage,
-                    streaming_chunks=streaming_chunks,
+                    sse_events=sse_events,
                     metadata=persist_metadata
                 )
                 logger.info(f"[WorkflowPersistence] Error persisted for thread_id={thread_id}")
@@ -1073,8 +1019,6 @@ class BackgroundTaskManager:
         if workspace_id and user_id:
             try:
                 from src.server.services.conversation_persistence_service import ConversationPersistenceService
-                from src.utils.tracking import ExecutionTracker
-                from src.server.models.workflow import serialize_state_snapshot
 
                 persistence_service = ConversationPersistenceService.get_instance(
                     thread_id,
@@ -1082,26 +1026,6 @@ class BackgroundTaskManager:
                     user_id=user_id
                 )
                 persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
-
-                tracking_context = ExecutionTracker.get_context()
-                raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
-                agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
-
-                agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
-
-                state_snapshot = None
-                try:
-                    if graph:
-                        snapshot = await asyncio.wait_for(
-                            graph.aget_state({"configurable": {"thread_id": thread_id}}),
-                            timeout=10.0,
-                        )
-                        if snapshot and snapshot.values:
-                            state_snapshot = serialize_state_snapshot(snapshot.values)
-                except asyncio.TimeoutError:
-                    logger.warning(f"[WorkflowPersistence] aget_state timed out getting snapshot for {thread_id}")
-                except Exception as state_error:
-                    logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
 
                 _, per_call_records = get_token_usage_from_callback(
                     metadata, "interrupt", thread_id
@@ -1111,7 +1035,7 @@ class BackgroundTaskManager:
                     metadata, "interrupt", thread_id
                 )
 
-                streaming_chunks = get_streaming_chunks_from_handler(
+                sse_events = get_sse_events_from_handler(
                     metadata, "interrupt", thread_id
                 )
 
@@ -1127,13 +1051,11 @@ class BackgroundTaskManager:
 
                 response_id = await persistence_service.persist_interrupt(
                     interrupt_reason="soft_interrupt",
-                    state_snapshot=state_snapshot,
-                    agent_messages=agent_messages,
                     execution_time=execution_time,
                     metadata=persist_metadata,
                     per_call_records=per_call_records,
                     tool_usage=tool_usage,
-                    streaming_chunks=streaming_chunks
+                    sse_events=sse_events
                 )
                 logger.info(f"[WorkflowPersistence] Soft interrupt persisted for thread_id={thread_id}")
 
@@ -1151,7 +1073,7 @@ class BackgroundTaskManager:
                         self._collect_subagent_results_after_interrupt(
                             thread_id=thread_id,
                             response_id=response_id,
-                            original_chunks=streaming_chunks or [],
+                            original_chunks=sse_events or [],
                             bg_registry=bg_registry,
                             workspace_id=workspace_id,
                             user_id=user_id,
@@ -1320,8 +1242,8 @@ class BackgroundTaskManager:
         persistence_service = ConversationPersistenceService.get_instance(
             thread_id, workspace_id=workspace_id, user_id=user_id,
         )
-        await persistence_service.update_streaming_chunks(
-            response_id=response_id, streaming_chunks=updated_chunks,
+        await persistence_service.update_sse_events(
+            response_id=response_id, sse_events=updated_chunks,
         )
 
     async def _mark_cancelled(self, thread_id: str):
@@ -1360,34 +1282,9 @@ class BackgroundTaskManager:
         if workspace_id and user_id:
             try:
                 from src.server.services.conversation_persistence_service import ConversationPersistenceService
-                from src.utils.tracking import ExecutionTracker
-                from src.server.models.workflow import serialize_state_snapshot
 
                 persistence_service = ConversationPersistenceService.get_instance(thread_id)
                 persistence_service._on_pair_persisted = lambda: self.clear_event_buffer(thread_id)
-
-                # Get partial data before cancellation
-                tracking_context = ExecutionTracker.get_context()
-                raw_agent_messages = tracking_context.agent_messages if tracking_context else {}
-                agent_execution_index = tracking_context.agent_execution_index if tracking_context else {}
-
-                # Serialize agent messages with agent_index
-                agent_messages = serialize_agent_messages(raw_agent_messages, agent_execution_index)
-
-                # Get state snapshot with timeout protection
-                state_snapshot = None
-                try:
-                    if graph:
-                        snapshot = await asyncio.wait_for(
-                            graph.aget_state({"configurable": {"thread_id": thread_id}}),
-                            timeout=10.0,
-                        )
-                        if snapshot and snapshot.values:
-                            state_snapshot = serialize_state_snapshot(snapshot.values)
-                except asyncio.TimeoutError:
-                    logger.warning(f"[WorkflowPersistence] aget_state timed out getting snapshot for {thread_id}")
-                except Exception as state_error:
-                    logger.warning(f"[WorkflowPersistence] Failed to get state snapshot: {state_error}")
 
                 # Calculate token usage AND keep per_call_records
                 _, per_call_records = get_token_usage_from_callback(
@@ -1399,7 +1296,7 @@ class BackgroundTaskManager:
                     metadata, "cancellation", thread_id
                 )
 
-                streaming_chunks = get_streaming_chunks_from_handler(
+                sse_events = get_sse_events_from_handler(
                     metadata, "cancellation", thread_id
                 )
 
@@ -1416,13 +1313,11 @@ class BackgroundTaskManager:
                 }
 
                 await persistence_service.persist_cancelled(
-                    state_snapshot=state_snapshot,
-                    agent_messages=agent_messages,
                     execution_time=execution_time,
                     metadata=persist_metadata,
                     per_call_records=per_call_records,
                     tool_usage=tool_usage,
-                    streaming_chunks=streaming_chunks
+                    sse_events=sse_events
                 )
                 logger.info(f"[WorkflowPersistence] Cancellation persisted for thread_id={thread_id}")
             except Exception as persist_error:

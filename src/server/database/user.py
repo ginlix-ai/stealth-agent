@@ -67,7 +67,7 @@ async def create_user(
                 VALUES (%s, %s, %s, %s, %s, %s, FALSE, NOW(), NOW())
                 RETURNING
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, plan_id, created_at, updated_at, last_login_at
+                    onboarding_completed, membership_id, created_at, updated_at, last_login_at
             """, (user_id, email, name, avatar_url, timezone, locale))
 
             result = await cur.fetchone()
@@ -75,7 +75,7 @@ async def create_user(
             # Ensure a preferences row exists so the user can configure
             # models/BYOK without completing onboarding first.
             await cur.execute("""
-                INSERT INTO user_preferences (preference_id, user_id, created_at, updated_at)
+                INSERT INTO user_preferences (user_preference_id, user_id, created_at, updated_at)
                 VALUES (gen_random_uuid(), %s, NOW(), NOW())
                 ON CONFLICT (user_id) DO NOTHING
             """, (user_id,))
@@ -91,7 +91,7 @@ async def find_user_by_email(email: str) -> Optional[Dict[str, Any]]:
             await cur.execute("""
                 SELECT
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, plan_id, created_at, updated_at, last_login_at
+                    onboarding_completed, membership_id, created_at, updated_at, last_login_at
                 FROM users
                 WHERE email = %s
                 LIMIT 1
@@ -113,7 +113,7 @@ async def migrate_user_id(old_user_id: str, new_user_id: str) -> Optional[Dict[s
                 WHERE user_id = %s
                 RETURNING
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, plan_id, created_at, updated_at, last_login_at
+                    onboarding_completed, membership_id, created_at, updated_at, last_login_at
             """, (new_user_id, old_user_id))
             result = await cur.fetchone()
             if result:
@@ -148,14 +148,14 @@ async def create_user_from_auth(
                     updated_at = NOW()
                 RETURNING
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, plan_id, created_at, updated_at, last_login_at
+                    onboarding_completed, membership_id, created_at, updated_at, last_login_at
             """, (user_id, email, name, avatar_url))
             result = await cur.fetchone()
 
             # Ensure a preferences row exists so the user can configure
             # models/BYOK without completing onboarding first.
             await cur.execute("""
-                INSERT INTO user_preferences (preference_id, user_id, created_at, updated_at)
+                INSERT INTO user_preferences (user_preference_id, user_id, created_at, updated_at)
                 VALUES (gen_random_uuid(), %s, NOW(), NOW())
                 ON CONFLICT (user_id) DO NOTHING
             """, (user_id,))
@@ -179,7 +179,7 @@ async def get_user(user_id: str) -> Optional[Dict[str, Any]]:
             await cur.execute("""
                 SELECT
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, plan_id, created_at, updated_at, last_login_at
+                    onboarding_completed, membership_id, created_at, updated_at, last_login_at
                 FROM users
                 WHERE user_id = %s
             """, (user_id,))
@@ -230,7 +230,7 @@ async def update_user(
 
     returning_columns = [
         "user_id", "email", "name", "avatar_url", "timezone", "locale",
-        "onboarding_completed", "plan_id", "created_at", "updated_at", "last_login_at",
+        "onboarding_completed", "membership_id", "created_at", "updated_at", "last_login_at",
     ]
 
     query, params = builder.build(
@@ -292,7 +292,7 @@ async def upsert_user(
                     updated_at = NOW()
                 RETURNING
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, plan_id, created_at, updated_at, last_login_at
+                    onboarding_completed, membership_id, created_at, updated_at, last_login_at
             """, (user_id, email, name, avatar_url, timezone, locale))
 
             result = await cur.fetchone()
@@ -317,7 +317,7 @@ async def get_user_preferences(user_id: str) -> Optional[Dict[str, Any]]:
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute("""
                 SELECT
-                    preference_id, user_id,
+                    user_preference_id, user_id,
                     risk_preference, investment_preference,
                     agent_preference, other_preference,
                     created_at, updated_at
@@ -376,7 +376,7 @@ async def upsert_user_preferences(
     Returns:
         Updated preferences dict
     """
-    preference_id = str(uuid4())
+    user_preference_id = str(uuid4())
 
     # Split each preference into updates and deletes
     risk_updates, risk_deletes = _split_updates_and_deletes(risk_preference)
@@ -390,7 +390,7 @@ async def upsert_user_preferences(
                 # Replace mode: completely replace the JSONB field (only for provided preferences)
                 await cur.execute("""
                     INSERT INTO user_preferences (
-                        preference_id, user_id,
+                        user_preference_id, user_id,
                         risk_preference, investment_preference,
                         agent_preference, other_preference,
                         created_at, updated_at
@@ -404,12 +404,12 @@ async def upsert_user_preferences(
                         other_preference = CASE WHEN %s THEN %s::jsonb ELSE user_preferences.other_preference END,
                         updated_at = NOW()
                     RETURNING
-                        preference_id, user_id,
+                        user_preference_id, user_id,
                         risk_preference, investment_preference,
                         agent_preference, other_preference,
                         created_at, updated_at
                 """, (
-                    preference_id, user_id,
+                    user_preference_id, user_id,
                     Json(risk_updates or {}),
                     Json(inv_updates or {}),
                     Json(agent_updates or {}),
@@ -424,7 +424,7 @@ async def upsert_user_preferences(
                 # Merge mode: use JSONB merge (||) to add/update, remove deleted keys (- text[])
                 await cur.execute("""
                     INSERT INTO user_preferences (
-                        preference_id, user_id,
+                        user_preference_id, user_id,
                         risk_preference, investment_preference,
                         agent_preference, other_preference,
                         created_at, updated_at
@@ -438,12 +438,12 @@ async def upsert_user_preferences(
                         other_preference = (COALESCE(user_preferences.other_preference, '{}'::jsonb) - %s::text[]) || COALESCE(%s::jsonb, '{}'::jsonb),
                         updated_at = NOW()
                     RETURNING
-                        preference_id, user_id,
+                        user_preference_id, user_id,
                         risk_preference, investment_preference,
                         agent_preference, other_preference,
                         created_at, updated_at
                 """, (
-                    preference_id, user_id,
+                    user_preference_id, user_id,
                     Json(risk_updates or {}),
                     Json(inv_updates or {}),
                     Json(agent_updates or {}),
@@ -496,8 +496,8 @@ async def get_user_with_preferences(user_id: str) -> Optional[Dict[str, Any]]:
             await cur.execute("""
                 SELECT
                     u.user_id, u.email, u.name, u.avatar_url, u.timezone, u.locale,
-                    u.onboarding_completed, u.plan_id, u.created_at, u.updated_at, u.last_login_at,
-                    p.preference_id, p.risk_preference, p.investment_preference,
+                    u.onboarding_completed, u.membership_id, u.created_at, u.updated_at, u.last_login_at,
+                    p.user_preference_id, p.risk_preference, p.investment_preference,
                     p.agent_preference, p.other_preference,
                     p.created_at as pref_created_at, p.updated_at as pref_updated_at
                 FROM users u
@@ -518,16 +518,16 @@ async def get_user_with_preferences(user_id: str) -> Optional[Dict[str, Any]]:
                 'timezone': result['timezone'],
                 'locale': result['locale'],
                 'onboarding_completed': result['onboarding_completed'],
-                'plan_id': result['plan_id'],
+                'membership_id': result['membership_id'],
                 'created_at': result['created_at'],
                 'updated_at': result['updated_at'],
                 'last_login_at': result['last_login_at'],
             }
 
             preferences = None
-            if result['preference_id']:
+            if result['user_preference_id']:
                 preferences = {
-                    'preference_id': result['preference_id'],
+                    'user_preference_id': result['user_preference_id'],
                     'user_id': result['user_id'],
                     'risk_preference': result['risk_preference'],
                     'investment_preference': result['investment_preference'],

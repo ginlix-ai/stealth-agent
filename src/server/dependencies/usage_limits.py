@@ -47,7 +47,7 @@ async def enforce_chat_limit(
 
     if byok:
         # BYOK bypasses credit limit, but still enforce burst guard
-        plan = await UsageLimiter.get_user_plan(user_id)
+        plan = await UsageLimiter.get_user_membership(user_id)
         if plan.max_concurrent_requests != -1:
             burst_result = await UsageLimiter._check_burst_guard(
                 user_id, plan.max_concurrent_requests

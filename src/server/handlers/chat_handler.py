@@ -40,13 +40,8 @@ from src.server.services.conversation_persistence_service import (
 from src.utils.tracking import (
     TokenTrackingManager,
     ExecutionTracker,
-    serialize_agent_message,
 )
-from src.server.models.workflow import serialize_state_snapshot
 from src.tools.decorators import ToolUsageTracker
-
-# File operation tracking
-from src.server.services.file_logger import FileOperationLogger
 
 from src.server.utils.skill_context import (
     parse_skill_contexts,
@@ -249,7 +244,7 @@ async def astream_flash_workflow(
         # Ensure thread exists in database
         await qr_db.ensure_thread_exists(
             workspace_id=workspace_id,
-            thread_id=thread_id,
+            conversation_thread_id=thread_id,
             user_id=user_id,
             initial_query=user_input,
             initial_status="in_progress",
@@ -382,14 +377,14 @@ async def astream_flash_workflow(
                     token_callback.per_call_records if token_callback else None
                 )
                 tool_usage = handler.get_tool_usage() if handler else None
-                streaming_chunks = handler.get_streaming_chunks() if handler else None
+                sse_events = handler.get_sse_events() if handler else None
 
                 await persistence_service.persist_completion(
                     metadata={"msg_type": "flash"},
                     execution_time=execution_time,
                     per_call_records=per_call_records,
                     tool_usage=tool_usage,
-                    streaming_chunks=streaming_chunks,
+                    sse_events=sse_events,
                 )
                 logger.debug(f"[FLASH_CHAT] Completion persisted: thread_id={thread_id}")
             except Exception as persist_error:
@@ -411,7 +406,7 @@ async def astream_flash_workflow(
                     token_callback.per_call_records if token_callback else None
                 )
                 tool_usage = handler.get_tool_usage() if handler else None
-                streaming_chunks = handler.get_streaming_chunks() if handler else None
+                sse_events = handler.get_sse_events() if handler else None
 
                 await persistence_service.persist_error(
                     error_message=str(e),
@@ -419,7 +414,7 @@ async def astream_flash_workflow(
                     metadata={"msg_type": "flash"},
                     per_call_records=per_call_records,
                     tool_usage=tool_usage,
-                    streaming_chunks=streaming_chunks,
+                    sse_events=sse_events,
                 )
             except Exception as persist_error:
                 logger.error(f"[FLASH_CHAT] Failed to persist error: {persist_error}")
@@ -506,7 +501,7 @@ async def astream_ptc_workflow(
         # Ensure thread exists in database (linked to workspace)
         await qr_db.ensure_thread_exists(
             workspace_id=workspace_id,
-            thread_id=thread_id,
+            conversation_thread_id=thread_id,
             user_id=user_id,
             initial_query=user_input,
             initial_status="in_progress",
@@ -518,8 +513,8 @@ async def astream_ptc_workflow(
             thread_id=thread_id, workspace_id=workspace_id, user_id=user_id
         )
 
-        # Get current pair_index for this thread (will be used by file logger)
-        current_pair_index = await persistence_service.get_or_calculate_pair_index()
+        # Get current turn_index for this thread (will be used by file logger)
+        current_turn_index = await persistence_service.get_or_calculate_turn_index()
 
         # Persist query start
         feedback_action = None
@@ -619,15 +614,6 @@ async def astream_ptc_workflow(
         subagents = request.subagents_enabled or config.subagents_enabled
         sandbox_id = None
 
-        # File operation logger for audit trail
-        file_logger = FileOperationLogger(
-            workspace_id=workspace_id,
-            thread_id=thread_id,
-            pair_index=current_pair_index,
-            agent="ptc_agent",
-        )
-        operation_callback = file_logger.create_sync_callback()
-
         # Use WorkspaceManager for workspace-based sessions
         logger.info(f"[PTC_CHAT] Using workspace: {workspace_id}")
         workspace_manager = WorkspaceManager.get_instance()
@@ -649,7 +635,7 @@ async def astream_ptc_workflow(
             session=session,
             config=config,
             subagent_names=subagents,
-            operation_callback=operation_callback,
+            operation_callback=None,
             checkpointer=setup.checkpointer,
             background_registry=background_registry,
             user_id=user_id,
@@ -891,42 +877,9 @@ async def astream_ptc_workflow(
                 if handler:
                     _tool_usage = handler.get_tool_usage()
 
-                # Get tracking context and serialize agent messages
-                tracking_context = ExecutionTracker.get_context()
-                _agent_messages = {}
-                if tracking_context and tracking_context.agent_messages:
-                    for agent_name, msgs in tracking_context.agent_messages.items():
-                        _agent_messages[agent_name] = [
-                            serialize_agent_message(msg) for msg in msgs
-                        ]
-                    logger.debug(
-                        f"[PTC_COMPLETE] Serialized {sum(len(m) for m in _agent_messages.values())} "
-                        f"messages from {len(_agent_messages)} agents"
-                    )
-
-                state_snapshot = None
-                try:
-                    snapshot = await asyncio.wait_for(
-                        ptc_graph.aget_state(
-                            {"configurable": {"thread_id": thread_id}}
-                        ),
-                        timeout=10.0,
-                    )
-                    if snapshot and snapshot.values:
-                        state_snapshot = serialize_state_snapshot(snapshot.values)
-                except asyncio.TimeoutError:
-                    logger.error(
-                        f"[PTC_COMPLETE] aget_state timed out for {thread_id}"
-                    )
-                except Exception as state_error:
-                    logger.warning(
-                        f"[PTC_COMPLETE] Failed to get state snapshot: {state_error}"
-                    )
-
                 # Persist completion to database
-                _streaming_chunks = handler.get_streaming_chunks() if handler else None
+                _sse_events = handler.get_sse_events() if handler else None
                 await _persistence_service.persist_completion(
-                    agent_messages=_agent_messages or None,
                     metadata={
                         "workspace_id": request.workspace_id,
                         "sandbox_id": sandbox_id,
@@ -934,11 +887,10 @@ async def astream_ptc_workflow(
                         "timezone": timezone_str,
                         "msg_type": "ptc",
                     },
-                    state_snapshot=state_snapshot,
                     execution_time=execution_time,
                     per_call_records=_per_call_records,
                     tool_usage=_tool_usage,
-                    streaming_chunks=_streaming_chunks,
+                    sse_events=_sse_events,
                 )
 
                 # Mark completed in Redis tracker
@@ -1033,29 +985,10 @@ async def astream_ptc_workflow(
                 )
                 _tool_usage = handler.get_tool_usage() if handler else None
 
-                state_snapshot = None
-                try:
-                    snapshot = await asyncio.wait_for(
-                        ptc_graph.aget_state(
-                            {"configurable": {"thread_id": thread_id}}
-                        ),
-                        timeout=10.0,
-                    )
-                    if snapshot and snapshot.values:
-                        state_snapshot = serialize_state_snapshot(snapshot.values)
-                except asyncio.TimeoutError:
-                    logger.error(
-                        f"[PTC_CHAT] aget_state timed out during cancellation for {thread_id}"
-                    )
-                except Exception as state_error:
-                    logger.warning(
-                        f"[PTC_CHAT] Failed to get state snapshot for cancellation: {state_error}"
-                    )
-
                 # Persist cancellation to database
                 try:
-                    _streaming_chunks = (
-                        handler.get_streaming_chunks() if handler else None
+                    _sse_events = (
+                        handler.get_sse_events() if handler else None
                     )
                     await persistence_service.persist_cancelled(
                         execution_time=time.time() - start_time,
@@ -1063,10 +996,9 @@ async def astream_ptc_workflow(
                             "workspace_id": request.workspace_id,
                             "msg_type": "ptc",
                         },
-                        state_snapshot=state_snapshot,
                         per_call_records=_per_call_records,
                         tool_usage=_tool_usage,
-                        streaming_chunks=_streaming_chunks,
+                        sse_events=_sse_events,
                     )
                 except Exception as persist_error:
                     logger.error(
@@ -1117,25 +1049,6 @@ async def astream_ptc_workflow(
         # Get token/tool usage for billing even on errors
         _per_call_records = token_callback.per_call_records if token_callback else None
         _tool_usage = handler.get_tool_usage() if handler else None
-
-        state_snapshot = None
-        try:
-            snapshot = await asyncio.wait_for(
-                ptc_graph.aget_state(
-                    {"configurable": {"thread_id": thread_id}}
-                ),
-                timeout=10.0,
-            )
-            if snapshot and snapshot.values:
-                state_snapshot = serialize_state_snapshot(snapshot.values)
-        except asyncio.TimeoutError:
-            logger.error(
-                f"[PTC_CHAT] aget_state timed out after error for {thread_id}"
-            )
-        except Exception as state_error:
-            logger.warning(
-                f"[PTC_CHAT] Failed to get state snapshot after error: {state_error}"
-            )
 
         # Non-recoverable error types (code bugs, config issues)
         non_recoverable_types = (
@@ -1230,8 +1143,8 @@ async def astream_ptc_workflow(
                 if persistence_service:
                     try:
                         error_msg = f"Max retries exceeded ({retry_count}/{MAX_RETRIES}): {type(e).__name__}: {str(e)}"
-                        _streaming_chunks = (
-                            handler.get_streaming_chunks() if handler else None
+                        _sse_events = (
+                            handler.get_sse_events() if handler else None
                         )
                         await persistence_service.persist_error(
                             error_message=error_msg,
@@ -1241,10 +1154,9 @@ async def astream_ptc_workflow(
                                 "workspace_id": request.workspace_id,
                                 "msg_type": "ptc",
                             },
-                            state_snapshot=state_snapshot,
                             per_call_records=_per_call_records,
                             tool_usage=_tool_usage,
-                            streaming_chunks=_streaming_chunks,
+                            sse_events=_sse_events,
                         )
                     except Exception as persist_error:
                         logger.error(
@@ -1291,8 +1203,8 @@ async def astream_ptc_workflow(
             # Persist error to database
             if persistence_service:
                 try:
-                    _streaming_chunks = (
-                        handler.get_streaming_chunks() if handler else None
+                    _sse_events = (
+                        handler.get_sse_events() if handler else None
                     )
                     await persistence_service.persist_error(
                         error_message=str(e),
@@ -1301,10 +1213,9 @@ async def astream_ptc_workflow(
                             "workspace_id": request.workspace_id,
                             "msg_type": "ptc",
                         },
-                        state_snapshot=state_snapshot,
                         per_call_records=_per_call_records,
                         tool_usage=_tool_usage,
-                        streaming_chunks=_streaming_chunks,
+                        sse_events=_sse_events,
                     )
                 except Exception as persist_error:
                     logger.error(f"[PTC_CHAT] Failed to persist error: {persist_error}")

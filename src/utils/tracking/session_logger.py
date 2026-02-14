@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from langchain_core.messages import AIMessage
 
-from .core import ExecutionTracker, add_cost_to_token_usage, calculate_cost_from_per_call_records, serialize_agent_message
+from .core import ExecutionTracker, add_cost_to_token_usage, calculate_cost_from_per_call_records
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,6 @@ class SessionLogger:
     - Token usage extraction and cost calculation
     - Final report extraction from agent messages
     - Response status determination
-    - State snapshot serialization
     - Session data building
     - Result logging to database/file
     """
@@ -72,7 +71,6 @@ class SessionLogger:
             # Import required modules
             from src.llms.result_logger import get_result_logger
             from src.llms import format_llm_content
-            from src.server.models.workflow import serialize_state_snapshot
             # Generate IDs for query-response pair
             result_logger = get_result_logger()
             query_id = str(uuid4())
@@ -149,7 +147,7 @@ class SessionLogger:
             # Determine response status and interrupt reason
             response_status = "completed" if success else "error"
             interrupt_reason = None
-            final_state = None  # Initialize for state snapshot extraction
+            final_state = None
 
             # Check final state for interrupt
             try:
@@ -162,26 +160,6 @@ class SessionLogger:
                         interrupt_reason = "plan_review_required"
             except Exception as e:
                 logger.debug(f"Could not retrieve final state for interrupt detection: {e}")
-
-            # Extract state snapshot for database logging
-            raw_state = final_state.values if (final_state and hasattr(final_state, 'values')) else None
-
-            # Serialize state snapshot to make it JSON-safe before storing in database
-            state_snapshot = serialize_state_snapshot(raw_state) if raw_state else None
-
-            if state_snapshot:
-                logger.debug(f"State snapshot serialized for thread_id={thread_id}, keys={list(state_snapshot.keys())}")
-            else:
-                logger.debug(f"No state snapshot available for thread_id={thread_id}")
-
-            # Serialize agent messages if available
-            organized_messages = {}
-            if tracking_context and tracking_context.agent_messages:
-                for agent_name, msgs in tracking_context.agent_messages.items():
-                    organized_messages[agent_name] = [
-                        {**serialize_agent_message(msg), "message_index": idx}
-                        for idx, msg in enumerate(msgs)
-                    ]
 
             # Build session data with query-response structure
             session_data = {
@@ -199,7 +177,6 @@ class SessionLogger:
                     "status": response_status,
                     "interrupt_reason": interrupt_reason,
                     "token_usage": token_usage_with_cost,
-                    "agent_messages": organized_messages,
                     "execution_metrics": tracking_context.metrics if tracking_context else {},
                     "warnings": tracking_context.warnings if tracking_context else [],
                     "errors": tracking_context.errors if tracking_context else [],
@@ -213,8 +190,8 @@ class SessionLogger:
             }
 
             # Save result log
-            await result_logger.save_result_async(session_data, state_snapshot)
-            logger.info(f"Execution log saved for thread_id={thread_id} (state_snapshot={'captured' if state_snapshot else 'not available'})")
+            await result_logger.save_result_async(session_data)
+            logger.info(f"Execution log saved for thread_id={thread_id}")
 
         except Exception as log_error:
             logger.error(f"Failed to save execution log for thread_id={thread_id}: {log_error}")
