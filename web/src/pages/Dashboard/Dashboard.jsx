@@ -52,9 +52,28 @@ const RESEARCH_ITEMS = [
     { title: 'Retail Sales Slump Takes Toll on Market, Stocks Dip', time: '10 min ago' },
   ];
 
-// Module-level: user clicked Ignore on onboarding dialog this session
-// Resets on page refresh (module reload)
-let onboardingDismissedThisSession = false;
+const ONBOARDING_IGNORE_STORAGE_KEY = 'langalpha-onboarding-ignored-at';
+const ONBOARDING_IGNORE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function isOnboardingIgnoredFor24h() {
+  try {
+    const stored = localStorage.getItem(ONBOARDING_IGNORE_STORAGE_KEY);
+    if (!stored) return false;
+    const timestamp = parseInt(stored, 10);
+    if (Number.isNaN(timestamp)) return false;
+    return Date.now() - timestamp < ONBOARDING_IGNORE_MS;
+  } catch {
+    return false;
+  }
+}
+
+function setOnboardingIgnoredFor24h() {
+  try {
+    localStorage.setItem(ONBOARDING_IGNORE_STORAGE_KEY, String(Date.now()));
+  } catch (e) {
+    console.warn('[Dashboard] Could not persist onboarding ignore', e);
+  }
+}
 
 // Module-level caches (survive navigation, clear on page refresh)
 let popularCache = null; // { items, hasMore, offset }
@@ -253,7 +272,7 @@ function Dashboard() {
   /**
    * Check onboarding completion status on every Dashboard mount.
    * Refetches so we pick up onboarding_completed after ChatAgent completes it.
-   * Only shows dialog if onboarding is incomplete AND user hasn't clicked Ignore this session.
+   * Only shows dialog if onboarding is incomplete AND user hasn't clicked Ignore for 24h (persisted in localStorage).
    */
   useEffect(() => {
     const checkOnboarding = async () => {
@@ -265,7 +284,7 @@ function Dashboard() {
           setShowOnboardingDialog(false);
           return;
         }
-        if (onboardingCompleted === false && !onboardingDismissedThisSession) {
+        if (onboardingCompleted === false && !isOnboardingIgnoredFor24h()) {
           setShowOnboardingDialog(true);
         }
       } catch (error) {
@@ -346,13 +365,13 @@ function Dashboard() {
             <button
               type="button"
               onClick={() => {
-                onboardingDismissedThisSession = true;
+                setOnboardingIgnoredFor24h();
                 setShowOnboardingDialog(false);
               }}
               className="px-4 py-2 rounded-md text-sm font-medium transition-colors hover:bg-white/10"
               style={{ color: 'var(--color-text-primary)' }}
             >
-              Ignore
+              Ignore for 24 hours
             </button>
             <button
               type="button"
