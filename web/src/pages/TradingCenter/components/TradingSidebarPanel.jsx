@@ -187,8 +187,8 @@ function TradingSidebarPanel({ activeSymbol, onSymbolClick }) {
               </div>
             )
             : isWatchlist
-              ? renderRows(currentRows, 'item_id', 'changePercent', watchlist.handleDelete)
-              : renderRows(currentRows, 'holding_id', 'unrealizedPlPercent', handlePortfolioDelete)}
+              ? renderRows(currentRows, 'watchlist_item_id', 'changePercent', watchlist.handleDelete)
+              : renderRows(currentRows, 'user_portfolio_id', 'unrealizedPlPercent', handlePortfolioDelete)}
       </div>
 
       {/* Footer */}

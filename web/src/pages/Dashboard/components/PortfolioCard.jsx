@@ -120,7 +120,7 @@ function PortfolioCard({
                     </tr>
                   ))
                 : rows.map((row) => (
-                    <tr key={row.holding_id ?? row.symbol} className="transition-colors" style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
+                    <tr key={row.user_portfolio_id ?? row.symbol} className="transition-colors" style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
                       <td className="py-2.5 px-2 font-normal" style={{ color: 'var(--color-text-primary)' }}>{row.symbol}</td>
                       <td className="py-2.5 px-2 font-normal tabular-nums" style={{ color: 'var(--color-text-primary)' }}>
                         {row.quantity != null ? Number(row.quantity).toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'}
@@ -131,26 +131,26 @@ function PortfolioCard({
                       <td className="py-2.5 px-2 font-normal tabular-nums" style={{ color: row.unrealizedPlPercent != null ? (row.isPositive ? 'var(--color-profit)' : 'var(--color-loss)') : 'var(--color-text-primary)' }}>
                         {row.unrealizedPlPercent != null ? (row.isPositive ? '+' : '') + Number(row.unrealizedPlPercent).toFixed(2) + '%' : '—'}
                       </td>
-                      {hasRealHoldings && row.holding_id ? (
+                      {hasRealHoldings && row.user_portfolio_id ? (
                         <td className="py-2.5 px-2 relative">
                           <div className="relative inline-block">
                             <button
                               type="button"
-                              onClick={(e) => { e.stopPropagation(); setMenuOpenId((id) => (id === row.holding_id ? null : row.holding_id)); }}
+                              onClick={(e) => { e.stopPropagation(); setMenuOpenId((id) => (id === row.user_portfolio_id ? null : row.user_portfolio_id)); }}
                               className="p-1 rounded hover:opacity-80"
                               style={{ color: 'var(--color-text-secondary)' }}
                               aria-label="More options"
                             >
                               <MoreVertical className="h-4 w-4" />
                             </button>
-                            {menuOpenId === row.holding_id && (
+                            {menuOpenId === row.user_portfolio_id && (
                               <>
                                 <div className="fixed inset-0 z-40" aria-hidden onClick={() => setMenuOpenId(null)} />
                                 <div className="absolute right-0 top-full z-50 mt-0.5 min-w-[120px] rounded border py-1 shadow-lg" style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}>
                                   <button type="button" onClick={(e) => { e.stopPropagation(); handleEdit(row); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-white/10" style={{ color: 'var(--color-text-primary)' }}>
                                     <Pencil className="h-3.5 w-3.5" style={{ color: 'var(--color-text-secondary)' }} /> Edit
                                   </button>
-                                  <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(String(row.holding_id)); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-white/10" style={{ color: 'var(--color-text-primary)' }}>
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(String(row.user_portfolio_id)); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-white/10" style={{ color: 'var(--color-text-primary)' }}>
                                     <Trash2 className="h-3.5 w-3.5" style={{ color: 'var(--color-text-secondary)' }} /> Delete
                                   </button>
                                 </div>

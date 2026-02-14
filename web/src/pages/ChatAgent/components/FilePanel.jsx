@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
-import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download, Upload, Folder, ChevronRight, ChevronDown, ArrowUpDown, AlertTriangle, Trash2, CheckSquare, Square } from 'lucide-react';
+import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download, Upload, Folder, ChevronRight, ChevronDown, ArrowUpDown, AlertTriangle, Trash2, CheckSquare, Square, HardDrive } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { readWorkspaceFile, downloadWorkspaceFile, downloadWorkspaceFileAsArrayBuffer, triggerFileDownload, uploadWorkspaceFile, deleteWorkspaceFiles } from '../utils/api';
+import { readWorkspaceFile, downloadWorkspaceFile, downloadWorkspaceFileAsArrayBuffer, triggerFileDownload, uploadWorkspaceFile, deleteWorkspaceFiles, backupWorkspaceFiles, getBackupStatus } from '../utils/api';
 import { stripLineNumbers } from './toolDisplayConfig';
 import Markdown from './Markdown';
 import DocumentErrorBoundary from './viewers/DocumentErrorBoundary';
@@ -185,6 +185,48 @@ function FilePanel({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+
+  // Backup (file persistence) state
+  // backedUpSet: files unchanged since last backup
+  // modifiedSet: files changed since last backup
+  // untracked files = everything else (not in either set)
+  const [backedUpSet, setBackedUpSet] = useState(new Set());
+  const [modifiedSet, setModifiedSet] = useState(new Set());
+  const [backingUp, setBackingUp] = useState(false);
+  const [backupResult, setBackupResult] = useState(null);
+
+  const updateBackupStatus = useCallback((data) => {
+    setBackedUpSet(new Set(data.backed_up || []));
+    setModifiedSet(new Set(data.modified || []));
+  }, []);
+
+  // Fetch backup status on mount and when files change
+  useEffect(() => {
+    if (!workspaceId) return;
+    getBackupStatus(workspaceId)
+      .then(updateBackupStatus)
+      .catch(() => {});
+  }, [workspaceId, files, updateBackupStatus]);
+
+  const handleBackup = useCallback(async () => {
+    if (!workspaceId || backingUp) return;
+    setBackingUp(true);
+    setBackupResult(null);
+    try {
+      const result = await backupWorkspaceFiles(workspaceId);
+      setBackupResult(result);
+      // Refresh backup status
+      const status = await getBackupStatus(workspaceId);
+      updateBackupStatus(status);
+      setTimeout(() => setBackupResult(null), 3000);
+    } catch (err) {
+      const msg = err?.response?.data?.detail || err?.message || 'Backup failed';
+      setBackupResult({ error: msg });
+      setTimeout(() => setBackupResult(null), 4000);
+    } finally {
+      setBackingUp(false);
+    }
+  }, [workspaceId, backingUp, updateBackupStatus]);
 
   const availableTypes = useMemo(() => getAvailableTypes(files), [files]);
 
@@ -514,6 +556,14 @@ function FilePanel({
                 onChange={handleFileInputChange}
               />
               <button
+                onClick={handleBackup}
+                className="file-panel-icon-btn"
+                title="Backup files to database"
+                disabled={backingUp}
+              >
+                <HardDrive className={`h-3.5 w-3.5 ${backingUp ? 'animate-pulse' : ''}`} />
+              </button>
+              <button
                 onClick={onRefreshFiles}
                 className="file-panel-icon-btn"
                 title="Refresh"
@@ -614,6 +664,25 @@ function FilePanel({
             <X className="h-3 w-3" />
           </button>
         </div>
+      )}
+
+      {/* Backup result notification */}
+      {backupResult && (
+        <div className={`file-panel-backup-result ${backupResult.error ? 'error' : ''}`}>
+          <span>
+            {backupResult.error
+              ? backupResult.error
+              : `Backed up ${backupResult.synced} file${backupResult.synced !== 1 ? 's' : ''}${backupResult.skipped ? `, ${backupResult.skipped} unchanged` : ''}`}
+          </span>
+          <button onClick={() => setBackupResult(null)} className="file-panel-icon-btn" style={{ padding: 2 }}>
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
+      {/* Backup progress (indeterminate) */}
+      {backingUp && (
+        <div className="file-panel-progress-indeterminate" />
       )}
 
       {/* Filter & Sort toolbar — only in file list view */}
@@ -828,6 +897,12 @@ function FilePanel({
                               <Icon className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.5)' }} />
                             )}
                             <span className="text-sm truncate" style={{ color: '#FFFFFF' }}>{name}</span>
+                            {!selectMode && (backedUpSet.has(filePath) || modifiedSet.has(filePath)) && (
+                              <span
+                                className={`file-panel-backup-dot ${backedUpSet.has(filePath) ? 'backed-up' : 'modified'}`}
+                                title={backedUpSet.has(filePath) ? 'Backed up' : 'Modified since last backup'}
+                              />
+                            )}
                           </div>
                         );
                       })}

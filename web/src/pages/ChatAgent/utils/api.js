@@ -347,6 +347,26 @@ export async function sendHitlResponse(workspaceId, threadId, hitlResponse, onEv
   );
 }
 
+/**
+ * Backup workspace files from sandbox to DB for offline access
+ * @param {string} workspaceId
+ * @returns {Promise<Object>} { synced, skipped, deleted, errors, total_size }
+ */
+export async function backupWorkspaceFiles(workspaceId) {
+  const { data } = await api.post(`/api/v1/workspaces/${workspaceId}/files/backup`);
+  return data;
+}
+
+/**
+ * Get backup status: which files are saved in DB
+ * @param {string} workspaceId
+ * @returns {Promise<Object>} { persisted_files: {path: hash}, total_size }
+ */
+export async function getBackupStatus(workspaceId) {
+  const { data } = await api.get(`/api/v1/workspaces/${workspaceId}/files/backup-status`);
+  return data;
+}
+
 export async function deleteWorkspaceFiles(workspaceId, paths) {
   const { data } = await api.delete(`/api/v1/workspaces/${workspaceId}/files`, {
     data: { paths },

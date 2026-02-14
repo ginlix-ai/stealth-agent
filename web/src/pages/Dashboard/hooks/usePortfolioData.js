@@ -46,7 +46,7 @@ export function usePortfolioData() {
           const marketValue = q * price;
           const plPct = ac != null && ac > 0 ? ((price - ac) / ac) * 100 : null;
           return {
-            holding_id: h.holding_id,
+            user_portfolio_id: h.user_portfolio_id,
             symbol: sym,
             quantity: q,
             average_cost: ac,
@@ -149,13 +149,13 @@ export function usePortfolioData() {
   }, []);
 
   const handleUpdate = useCallback(async () => {
-    if (!editRow?.holding_id) return;
+    if (!editRow?.user_portfolio_id) return;
     const q = Number(editForm.quantity);
     const ac = Number(editForm.averageCost);
     if (!Number.isFinite(q) || q <= 0 || !Number.isFinite(ac) || ac <= 0) return;
     try {
       await updatePortfolioHolding(
-        editRow.holding_id,
+        editRow.user_portfolio_id,
         {
           quantity: q,
           average_cost: ac,

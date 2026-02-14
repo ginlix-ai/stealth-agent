@@ -209,10 +209,10 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       console.log('[History] Loading history for thread:', threadIdToUse);
 
       // Track pairs being processed - use Map to handle multiple pairs
-      const assistantMessagesByPair = new Map(); // Map<pair_index, assistantMessageId>
-      const pairStateByPair = new Map(); // Map<pair_index, { contentOrderCounter, reasoningId, toolCallId }>
+      const assistantMessagesByPair = new Map(); // Map<turn_index, assistantMessageId>
+      const pairStateByPair = new Map(); // Map<turn_index, { contentOrderCounter, reasoningId, toolCallId }>
       
-      // Track the currently active pair for artifacts (which don't have pair_index)
+      // Track the currently active pair for artifacts (which don't have turn_index)
       // This ensures artifacts get the correct chronological order
       let currentActivePairIndex = null;
       let currentActivePairState = null;
@@ -231,14 +231,14 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         const eventType = event.event;
         const contentType = event.content_type;
         const hasRole = event.role !== undefined;
-        const hasPairIndex = event.pair_index !== undefined;
+        const hasPairIndex = event.turn_index !== undefined;
         
         // Check if this is a subagent event - filter it out from main chat view
         const isSubagent = isSubagentHistoryEvent(event);
         
-        // Update current active pair when we see an event with pair_index
+        // Update current active pair when we see an event with turn_index
         if (hasPairIndex) {
-          const pairIndex = event.pair_index;
+          const pairIndex = event.turn_index;
           currentActivePairIndex = pairIndex;
           currentActivePairState = pairStateByPair.get(pairIndex);
           console.log('[History] Updated active pair to:', pairIndex, 'counter:', currentActivePairState?.contentOrderCounter);
@@ -321,11 +321,11 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           return;
         }
 
-        // Handle queued_message_injected events from streaming_chunks
+        // Handle queued_message_injected events from sse_events
         if (eventType === 'queued_message_injected' && hasPairIndex) {
           handleHistoryQueuedMessageInjected({
             event,
-            pairIndex: event.pair_index,
+            pairIndex: event.turn_index,
             assistantMessagesByPair,
             pairStateByPair,
             refs: { newMessagesStartIndexRef, historyMessagesRef },
@@ -413,7 +413,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             pendingHistoryInterrupt = null;
           }
 
-          const pairIndex = event.pair_index;
+          const pairIndex = event.turn_index;
           const refs = {
             recentlySentTracker: recentlySentTrackerRef.current,
             currentMessageRef,
@@ -435,12 +435,12 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
         // Handle message_chunk events (assistant messages)
         if (eventType === 'message_chunk' && hasRole && event.role === 'assistant' && hasPairIndex) {
-          const pairIndex = event.pair_index;
+          const pairIndex = event.turn_index;
           const currentAssistantMessageId = assistantMessagesByPair.get(pairIndex);
           const pairState = pairStateByPair.get(pairIndex);
 
           if (!currentAssistantMessageId || !pairState) {
-            console.warn('[History] Received message_chunk for unknown pair_index:', pairIndex);
+            console.warn('[History] Received message_chunk for unknown turn_index:', pairIndex);
             return;
           }
 
@@ -498,7 +498,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         }
 
         // Handle artifact events (e.g., todo_update)
-        // In history replay, artifacts DO have pair_index, so we can use it directly
+        // In history replay, artifacts DO have turn_index, so we can use it directly
         if (eventType === 'artifact') {
           const artifactType = event.artifact_type;
           if (artifactType === 'todo_update') {
@@ -516,9 +516,9 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               });
             }
 
-            // Artifacts in history replay have pair_index - use it!
+            // Artifacts in history replay have turn_index - use it!
             if (hasPairIndex) {
-              const pairIndex = event.pair_index;
+              const pairIndex = event.turn_index;
               // Update active pair tracking
               currentActivePairIndex = pairIndex;
               currentActivePairState = pairStateByPair.get(pairIndex);
@@ -527,7 +527,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               const pairState = pairStateByPair.get(pairIndex);
 
               if (!currentAssistantMessageId || !pairState) {
-                console.warn('[History] Received artifact for unknown pair_index:', pairIndex);
+                console.warn('[History] Received artifact for unknown turn_index:', pairIndex);
                 return;
               }
 
@@ -541,8 +541,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 setMessages,
               });
             } else {
-              // Fallback: artifacts without pair_index (shouldn't happen in history, but handle gracefully)
-              console.warn('[History] Artifact without pair_index, using active pair fallback');
+              // Fallback: artifacts without turn_index (shouldn't happen in history, but handle gracefully)
+              console.warn('[History] Artifact without turn_index, using active pair fallback');
               let targetAssistantMessageId = null;
               let targetPairState = null;
 
@@ -573,7 +573,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
         // Handle tool_calls events
         if (eventType === 'tool_calls' && hasPairIndex) {
-          const pairIndex = event.pair_index;
+          const pairIndex = event.turn_index;
           // Update active pair tracking
           currentActivePairIndex = pairIndex;
           currentActivePairState = pairStateByPair.get(pairIndex);
@@ -582,7 +582,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           const pairState = pairStateByPair.get(pairIndex);
 
           if (!currentAssistantMessageId || !pairState) {
-            console.warn('[History] Received tool_calls for unknown pair_index:', pairIndex);
+            console.warn('[History] Received tool_calls for unknown turn_index:', pairIndex);
             return;
           }
 
@@ -626,7 +626,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
         // Handle tool_call_result events
         if (eventType === 'tool_call_result' && hasPairIndex) {
-          const pairIndex = event.pair_index;
+          const pairIndex = event.turn_index;
           // Update active pair tracking
           currentActivePairIndex = pairIndex;
           currentActivePairState = pairStateByPair.get(pairIndex);
@@ -635,7 +635,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           const pairState = pairStateByPair.get(pairIndex);
 
           if (!currentAssistantMessageId || !pairState) {
-            console.warn('[History] Received tool_call_result for unknown pair_index:', pairIndex);
+            console.warn('[History] Received tool_call_result for unknown turn_index:', pairIndex);
             return;
           }
 
@@ -705,7 +705,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
         // Handle interrupt events during history replay
         if (eventType === 'interrupt') {
-          const pairIndex = event.pair_index ?? currentActivePairIndex;
+          const pairIndex = event.turn_index ?? currentActivePairIndex;
           const interruptAssistantId = pairIndex != null ? assistantMessagesByPair.get(pairIndex) : null;
           const pairState = pairIndex != null ? pairStateByPair.get(pairIndex) : null;
 
@@ -795,7 +795,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           }
         } else if (eventType === 'credit_usage') {
           // credit_usage indicates the end of one conversation pair
-          console.log('[History] Credit usage event (end of pair):', event.pair_index);
+          console.log('[History] Credit usage event (end of pair):', event.turn_index);
         } else if (!eventType) {
           // Fallback: Handle events without event type
           if (event.thread_id && !hasRole && !contentType) {

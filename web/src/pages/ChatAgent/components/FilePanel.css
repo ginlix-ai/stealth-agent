@@ -289,3 +289,41 @@
     0% { transform: scale(0.92); opacity: 0.6; }
     100% { transform: scale(1); opacity: 1; }
   }
+
+  /* ====== Backup Status Dot ====== */
+  .file-panel-backup-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-left: auto;
+    transition: all 0.2s ease;
+  }
+  .file-panel-backup-dot.backed-up {
+    background-color: rgba(74, 222, 128, 0.6);
+    border: 1px solid rgba(74, 222, 128, 0.4);
+    box-shadow: 0 0 4px rgba(74, 222, 128, 0.2);
+  }
+  .file-panel-backup-dot.modified {
+    background-color: rgba(251, 191, 36, 0.7);
+    border: 1px solid rgba(251, 191, 36, 0.5);
+    box-shadow: 0 0 4px rgba(251, 191, 36, 0.25);
+  }
+
+  /* ====== Backup Result Notification ====== */
+  .file-panel-backup-result {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #86efac;
+    background-color: rgba(34, 197, 94, 0.1);
+    flex-shrink: 0;
+    animation: confirm-pulse 0.3s ease-out;
+  }
+  .file-panel-backup-result.error {
+    color: #fca5a5;
+    background-color: rgba(220, 38, 38, 0.12);
+  }

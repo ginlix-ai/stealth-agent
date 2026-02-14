@@ -30,7 +30,7 @@ function UserConfigPanel({ isOpen, onClose, onResetOnboarding }) {
   const [analysisFocus, setAnalysisFocus] = useState('');
   const [outputStyle, setOutputStyle] = useState('');
 
-  const [plan, setPlan] = useState({ id: 1, name: 'free', display_name: 'Free', rank: 0 });
+  const [membership, setMembership] = useState({ membership_id: 1, name: 'free', display_name: 'Free', rank: 0 });
   const [redeemInput, setRedeemInput] = useState('');
   const [isRedeeming, setIsRedeeming] = useState(false);
   const [redeemError, setRedeemError] = useState(null);
@@ -120,7 +120,7 @@ function UserConfigPanel({ isOpen, onClose, onResetOnboarding }) {
         setName(userData.user.name || '');
         setTimezone(userData.user.timezone || '');
         setLocale(userData.user.locale || '');
-        setPlan(userData.user.plan || { id: 1, name: 'free', display_name: 'Free', rank: 0 });
+        setMembership(userData.user.membership || { membership_id: 1, name: 'free', display_name: 'Free', rank: 0 });
         const url = userData.user.avatar_url;
         const version = userData.user.updated_at;
         setAvatarUrl(url ? `${url}?v=${version}` : null);
@@ -534,9 +534,9 @@ function UserConfigPanel({ isOpen, onClose, onResetOnboarding }) {
                     <div className="flex items-center gap-3 mb-3">
                       <span
                         className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase"
-                        style={getPlanBadgeStyle(plan.rank ?? 0)}
+                        style={getPlanBadgeStyle(membership.rank ?? 0)}
                       >
-                        {plan.display_name || plan.name || 'Free'}
+                        {membership.display_name || membership.name || 'Free'}
                       </span>
                     </div>
 

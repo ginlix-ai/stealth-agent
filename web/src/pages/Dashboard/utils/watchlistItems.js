@@ -38,7 +38,7 @@ export async function addWatchlistItem(watchlistId, payload) {
 
 /**
  * @param {string} watchlistId - "default" or UUID
- * @param {string} itemId - item_id
+ * @param {string} itemId - watchlist_item_id
  * @param {object} payload - { name?, notes?, alert_settings?, metadata? }
  */
 export async function updateWatchlistItem(watchlistId, itemId, payload) {

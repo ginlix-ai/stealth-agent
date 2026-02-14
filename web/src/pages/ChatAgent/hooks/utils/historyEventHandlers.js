@@ -26,8 +26,8 @@ export function isSubagentHistoryEvent(event) {
  * @param {Object} params - Handler parameters
  * @param {Object} params.event - The history event
  * @param {number} params.pairIndex - The pair index
- * @param {Map} params.assistantMessagesByPair - Map of pair_index to assistant message ID
- * @param {Map} params.pairStateByPair - Map of pair_index to pair state
+ * @param {Map} params.assistantMessagesByPair - Map of turn_index to assistant message ID
+ * @param {Map} params.pairStateByPair - Map of turn_index to pair state
  * @param {Object} params.refs - Refs object with recentlySentTracker, currentMessageRef, newMessagesStartIndexRef, historyMessagesRef
  * @param {Array} params.messages - Current messages array
  * @param {Function} params.setMessages - State setter for messages
@@ -65,7 +65,7 @@ export function handleHistoryUserMessage({
           toolCallId: null,
         });
       }
-      // Map pair_index to the streaming assistant message ID
+      // Map turn_index to the streaming assistant message ID
       assistantMessagesByPair.set(pairIndex, currentMessageRef.current);
       return true;
     }
@@ -491,8 +491,8 @@ export function handleHistoryToolCallResult({ assistantMessageId, toolCallId, re
  * @param {Object} params - Handler parameters
  * @param {Object} params.event - The history event (contains messages array)
  * @param {number} params.pairIndex - The pair index
- * @param {Map} params.assistantMessagesByPair - Map of pair_index to assistant message ID
- * @param {Map} params.pairStateByPair - Map of pair_index to pair state
+ * @param {Map} params.assistantMessagesByPair - Map of turn_index to assistant message ID
+ * @param {Map} params.pairStateByPair - Map of turn_index to pair state
  * @param {Object} params.refs - Refs object with newMessagesStartIndexRef, historyMessagesRef
  * @param {Function} params.setMessages - State setter for messages
  */

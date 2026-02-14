@@ -28,7 +28,7 @@ export async function addPortfolioHolding(payload) {
 }
 
 /**
- * @param {string} id - holding_id
+ * @param {string} id - user_portfolio_id
  * @param {object} payload - { quantity?, average_cost?, name?, currency?, notes?, first_purchased_at? }
  */
 export async function updatePortfolioHolding(id, payload) {

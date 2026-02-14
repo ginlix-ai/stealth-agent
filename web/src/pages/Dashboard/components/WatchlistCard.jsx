@@ -5,7 +5,7 @@ import { ScrollArea } from '../../../components/ui/scroll-area';
 
 /**
  * Watchlist panel: table. Add modal is handled separately via AddWatchlistItemDialog.
- * rows = [{ item_id?, symbol, price, change, changePercent, isPositive }]
+ * rows = [{ watchlist_item_id?, symbol, price, change, changePercent, isPositive }]
  */
 function WatchlistCard({
   rows = [],
@@ -52,7 +52,7 @@ function WatchlistCard({
                     </tr>
                   ))
                 : rows.map((item) => (
-                    <tr key={item.item_id ?? item.symbol} className="transition-colors" style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
+                    <tr key={item.watchlist_item_id ?? item.symbol} className="transition-colors" style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
                       <td className="py-2.5 px-2 font-normal" style={{ color: 'var(--color-text-primary)' }}>{item.symbol}</td>
                       <td className="py-2.5 px-2 font-normal tabular-nums" style={{ color: 'var(--color-text-primary)' }}>
                         {Number(item.price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -64,24 +64,24 @@ function WatchlistCard({
                         {(item.isPositive ? '+' : '') + Number(item.changePercent).toFixed(2) + '%'}
                       </td>
                       <td className="py-2.5 px-2 relative">
-                        {item.item_id ? (
+                        {item.watchlist_item_id ? (
                           <div className="relative inline-block">
                             <button
                               type="button"
-                              onClick={(e) => { e.stopPropagation(); setMenuOpenId((id) => (id === item.item_id ? null : item.item_id)); }}
+                              onClick={(e) => { e.stopPropagation(); setMenuOpenId((id) => (id === item.watchlist_item_id ? null : item.watchlist_item_id)); }}
                               className="p-1 rounded hover:opacity-80"
                               style={{ color: 'var(--color-text-secondary)' }}
                               aria-label="More options"
                             >
                               <MoreVertical className="h-4 w-4" />
                             </button>
-                            {menuOpenId === item.item_id && (
+                            {menuOpenId === item.watchlist_item_id && (
                               <>
                                 <div className="fixed inset-0 z-40" aria-hidden onClick={() => setMenuOpenId(null)} />
                                 <div className="absolute right-0 top-full z-50 mt-0.5 min-w-[120px] rounded border py-1 shadow-lg" style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}>
                                   <button
                                     type="button"
-                                    onClick={(e) => { e.stopPropagation(); handleDelete(String(item.item_id)); }}
+                                    onClick={(e) => { e.stopPropagation(); handleDelete(String(item.watchlist_item_id)); }}
                                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-white/10"
                                     style={{ color: 'var(--color-text-primary)' }}
                                   >

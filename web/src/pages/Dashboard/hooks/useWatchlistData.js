@@ -41,7 +41,7 @@ export function useWatchlistData() {
             const sym = String(i.symbol || '').trim().toUpperCase();
             const p = bySym[sym] || {};
             return {
-              item_id: i.item_id,
+              watchlist_item_id: i.watchlist_item_id,
               symbol: sym,
               price: p.price ?? 0,
               change: p.change ?? 0,
