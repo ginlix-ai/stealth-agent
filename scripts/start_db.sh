@@ -15,18 +15,18 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
 fi
 
 # Configuration (use environment variables with defaults)
-POSTGRES_CONTAINER="ptc-postgres"
+POSTGRES_CONTAINER="langalpha-postgresql"
 POSTGRES_IMAGE="postgres:18"
 POSTGRES_PORT="${DB_PORT:-5432}"
 POSTGRES_USER="${DB_USER:-postgres}"
 POSTGRES_PASSWORD="${DB_PASSWORD:-postgres}"
 POSTGRES_DB="${DB_NAME:-postgres}"
-POSTGRES_VOLUME="ptc-postgres-data"
+POSTGRES_VOLUME="langalpha-postgresql-data"
 
-REDIS_CONTAINER="ptc-redis"
+REDIS_CONTAINER="langalpha-redis"
 REDIS_IMAGE="redis:7-alpine"
 REDIS_PORT="${REDIS_PORT:-6379}"
-REDIS_VOLUME="ptc-redis-data"
+REDIS_VOLUME="langalpha-redis-data"
 
 # Colors for output
 RED='\033[0;31m'
@@ -151,6 +151,18 @@ wait_for_redis() {
     return 1
 }
 
+# Ensure the target database exists (POSTGRES_DB only works on first container init)
+ensure_database() {
+    log_info "Ensuring database '$POSTGRES_DB' exists..."
+    docker exec "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -tc \
+        "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'" | grep -q 1 \
+        && log_info "Database '$POSTGRES_DB' already exists" \
+        || {
+            log_info "Creating database '$POSTGRES_DB'..."
+            docker exec "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -c "CREATE DATABASE \"$POSTGRES_DB\""
+        }
+}
+
 # Setup database tables
 setup_tables() {
     log_info "Setting up database tables..."
@@ -163,20 +175,12 @@ setup_tables() {
         log_warn "setup_checkpoint_tables.py not found, skipping..."
     fi
 
-    # Run conversation tables setup
-    if [ -f "$SCRIPT_DIR/setup_conversation_tables.py" ]; then
-        log_info "Running setup_conversation_tables.py..."
-        python "$SCRIPT_DIR/setup_conversation_tables.py"
+    # Run unified table setup (all application tables)
+    if [ -f "$SCRIPT_DIR/setup_tables.py" ]; then
+        log_info "Running setup_tables.py..."
+        python "$SCRIPT_DIR/setup_tables.py"
     else
-        log_warn "setup_conversation_tables.py not found, skipping..."
-    fi
-
-    # Run user tables setup
-    if [ -f "$SCRIPT_DIR/setup_user_tables.py" ]; then
-        log_info "Running setup_user_tables.py..."
-        python "$SCRIPT_DIR/setup_user_tables.py"
-    else
-        log_warn "setup_user_tables.py not found, skipping..."
+        log_warn "setup_tables.py not found, skipping..."
     fi
 
     log_info "Database tables setup complete"
@@ -201,7 +205,8 @@ main() {
 
     echo ""
 
-    # Setup tables if database was newly created
+    # Ensure database exists, then setup tables
+    ensure_database
     setup_tables
 
     echo ""

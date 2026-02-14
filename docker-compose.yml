@@ -3,7 +3,7 @@ services:
     image: postgres:18
     restart: unless-stopped
     volumes:
-      - ptc-postgres-data:/var/lib/postgresql
+      - langalpha-postgresql-data:/var/lib/postgresql
     environment:
       PGDATA: /var/lib/postgresql/data
       POSTGRES_USER: ${DB_USER:-ptc_agent_prod}
@@ -21,7 +21,7 @@ services:
     restart: unless-stopped
     command: redis-server --requirepass ${REDIS_PASSWORD}
     volumes:
-      - ptc-redis-data:/data
+      - langalpha-redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s
@@ -54,5 +54,5 @@ services:
         condition: service_healthy
 
 volumes:
-  ptc-postgres-data:
-  ptc-redis-data:
+  langalpha-postgresql-data:
+  langalpha-redis-data:
