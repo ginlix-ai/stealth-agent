@@ -132,7 +132,7 @@ const DashboardHeader = ({ title = 'LangAlpha', onStockSearch, onResetOnboarding
   return (
     <>
       <div className="flex items-center justify-between px-5 py-1.5" style={{ backgroundColor: 'var(--color-bg-elevated)', borderBottom: '1px solid var(--color-border-muted)' }}>
-        <h1 className="dashboard-title-font text-base font-medium" style={{ color: 'var(--color-text-primary)', letterSpacing: '0.15px' }}>{title}</h1>
+        <h1 className="dashboard-header-title dashboard-title-font text-base font-medium" style={{ color: 'var(--color-text-primary)', letterSpacing: '0.15px' }}>{title}</h1>
         <div className="flex items-center gap-4 flex-1 max-w-md mx-8">
           <div className="dashboard-search-wrapper" ref={dropdownRef}>
             <form 

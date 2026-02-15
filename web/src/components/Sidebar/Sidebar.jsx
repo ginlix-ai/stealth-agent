@@ -5,6 +5,15 @@ import logo from '../../assets/img/logo.svg';
 import { getChatSession } from '../../pages/ChatAgent/hooks/utils/chatSessionRestore';
 import './Sidebar.css';
 
+/**
+ * Sidebar — Main app navigation
+ *
+ * Layout is responsive (see Sidebar.css):
+ * - Desktop (≥768px): vertical bar on left, logo + 3 nav icons
+ * - Mobile (<768px): horizontal bar at bottom, 3 nav icons only
+ *
+ * Navigation logic is identical for both layouts.
+ */
 function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -44,7 +53,7 @@ function Sidebar() {
 
   return (
     <aside className="sidebar">
-      {/* Logo */}
+      {/* Logo — visible on desktop only; hidden via CSS on mobile */}
       <div className="sidebar-logo" onClick={() => navigate('/dashboard')} style={{ cursor: 'pointer' }}>
         <img src={logo} alt="Logo" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
       </div>

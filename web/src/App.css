@@ -1,5 +1,6 @@
 /* ============================================
    App-Level Layout Styles
+   Breakpoint: 768px (matches Sidebar)
    ============================================ */
 
 .app-layout {
@@ -9,13 +10,33 @@
   position: relative;
 }
 
-.app-main {
-  width: 100%;
-  min-height: 100vh;
-  padding-left: 72px;
-  background-color: hsl(var(--bg-main));
-  overflow: auto;
-  box-sizing: border-box;
+/* ----------------------------------------
+   DESKTOP — Main content offset for left sidebar
+   ---------------------------------------- */
+@media (min-width: 768px) {
+  .app-main {
+    width: 100%;
+    min-height: 100vh;
+    padding-left: 72px;
+    background-color: hsl(var(--bg-main));
+    overflow: auto;
+    box-sizing: border-box;
+  }
+}
+
+/* ----------------------------------------
+   MOBILE — Main content offset for bottom nav bar
+   ---------------------------------------- */
+@media (max-width: 767px) {
+  .app-main {
+    width: 100%;
+    min-height: 100vh;
+    padding-left: 0;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0));
+    background-color: hsl(var(--bg-main));
+    overflow: auto;
+    box-sizing: border-box;
+  }
 }
 
 .main {

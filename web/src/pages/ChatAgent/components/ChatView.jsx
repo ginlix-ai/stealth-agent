@@ -743,7 +743,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <h1 className="text-base font-semibold whitespace-nowrap dashboard-title-font" style={{ color: '#FFFFFF' }}>
+            <h1 className="hidden md:block text-base font-semibold whitespace-nowrap dashboard-title-font" style={{ color: '#FFFFFF' }}>
               LangAlpha
             </h1>
             {isLoadingHistory ? (

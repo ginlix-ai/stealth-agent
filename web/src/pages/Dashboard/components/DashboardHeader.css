@@ -1,4 +1,13 @@
-/* Dashboard Header Search Styles */
+/* Dashboard Header Styles */
+
+/* Hide project title on mobile — applies to all pages using DashboardHeader */
+@media (max-width: 767px) {
+  .dashboard-header-title {
+    display: none;
+  }
+}
+
+/* Search styles */
 
 .dashboard-search-wrapper {
   position: relative;
