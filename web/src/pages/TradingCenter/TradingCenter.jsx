@@ -13,7 +13,7 @@ import { useTradingChat } from './hooks/useTradingChat';
 import { findOrCreateDefaultWorkspace } from '../Dashboard/utils/workspace';
 import { getWorkspaces } from '../ChatAgent/utils/api';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
-import { Loader2, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Loader2, ArrowLeft, RefreshCw, ChevronDown, MessageSquare } from 'lucide-react';
 import CompanyOverviewPanel from './components/CompanyOverviewPanel';
 
 const QUICK_QUERIES = [
@@ -49,6 +49,19 @@ function TradingCenter() {
   const [mode, setMode] = useState('fast');
   const [workspaces, setWorkspaces] = useState([]);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(null);
+
+  // Mobile: tab to switch between stock info and chart tools (same space)
+  const [mobileHeaderTab, setMobileHeaderTab] = useState('info');
+  const [isMobileView, setIsMobileView] = useState(false);
+  // Mobile: chat panel visible only after user sends; can minimize/reopen without unmounting
+  const [mobileChatPanelMinimized, setMobileChatPanelMinimized] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 767px)');
+    const handler = () => setIsMobileView(mql.matches);
+    handler();
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
 
   const pickRandomQueries = useCallback((symbol) => {
     const shuffled = [...QUICK_QUERIES].sort(() => Math.random() - 0.5);
@@ -345,6 +358,14 @@ function TradingCenter() {
     setChartImageDesc(null);
   }, [handleFastModeSend, navigate, toast, chartImage, chartImageDesc, mode, selectedWorkspaceId]);
 
+  const handleSendAndShowPanel = useCallback(
+    (message, planMode, attachments) => {
+      handleSendMessage(message, planMode, attachments);
+      if (isMobileView) setMobileChatPanelMinimized(false);
+    },
+    [handleSendMessage, isMobileView]
+  );
+
   const handleSidebarSymbolClick = useCallback((symbol) => {
     setSelectedStock(symbol);
     setSelectedStockDisplay(null);
@@ -400,7 +421,27 @@ function TradingCenter() {
     <div className="trading-center-container">
       <DashboardHeader title="LangAlpha" onStockSearch={handleStockSearch} />
       <div className="trading-content-wrapper">
-        <div className="trading-left-panel">
+        <div
+          className={`trading-left-panel${isMobileView ? ` mobile-tab-${mobileHeaderTab}` : ''}`}
+        >
+          {isMobileView && (
+            <div className="trading-mobile-tab-bar">
+              <button
+                type="button"
+                className={`trading-mobile-tab-btn${mobileHeaderTab === 'info' ? ' trading-mobile-tab-btn-active' : ''}`}
+                onClick={() => setMobileHeaderTab('info')}
+              >
+                Info
+              </button>
+              <button
+                type="button"
+                className={`trading-mobile-tab-btn${mobileHeaderTab === 'tools' ? ' trading-mobile-tab-btn-active' : ''}`}
+                onClick={() => setMobileHeaderTab('tools')}
+              >
+                Chart tools
+              </button>
+            </div>
+          )}
           <StockHeader
             symbol={selectedStock}
             stockInfo={stockInfo}
@@ -433,32 +474,64 @@ function TradingCenter() {
             />
           </div>
         </div>
-        <TradingSidebarPanel
-          activeSymbol={selectedStock}
-          onSymbolClick={handleSidebarSymbolClick}
-        />
+        <div className="trading-sidebar-wrapper">
+          <TradingSidebarPanel
+            activeSymbol={selectedStock}
+            onSymbolClick={handleSidebarSymbolClick}
+          />
+        </div>
         <div className="trading-resize-handle" onMouseDown={handleDragStart} />
-        <div className="trading-right-panel" style={{ width: chatPanelWidth }}>
+        <div
+          className={`trading-right-panel${isMobileView && (messages.length === 0 || mobileChatPanelMinimized) ? ' mobile-chat-panel-hidden' : ''}`}
+          style={{ width: chatPanelWidth }}
+        >
           <div className="trading-right-panel-inner">
-            <TradingPanel
-              messages={messages}
-              isLoading={isLoading}
-              error={error}
-            />
-            {messages.length === 0 && (
-              <div className="trading-quick-queries">
-                {quickQueries.map((q, i) => (
-                  <button key={i} className="trading-quick-query-card" onClick={() => handleQuickQuery(q)}>
-                    {q}
-                  </button>
-                ))}
-                <button className="trading-quick-query-shuffle" onClick={handleShuffleQueries} title="Show different suggestions">
-                  <RefreshCw size={13} />
+            {isMobileView && messages.length > 0 && !mobileChatPanelMinimized && (
+              <div className="trading-mobile-chat-header">
+                <span className="trading-mobile-chat-header-title">Chat</span>
+                <button
+                  type="button"
+                  className="trading-mobile-chat-minimize-btn"
+                  onClick={() => setMobileChatPanelMinimized(true)}
+                  title="Minimize"
+                >
+                  <ChevronDown className="w-4 h-4" />
+                  Minimize
                 </button>
               </div>
             )}
+            <div className="trading-panel-area">
+              <TradingPanel
+                messages={messages}
+                isLoading={isLoading}
+                error={error}
+              />
+              {messages.length === 0 && (
+                <div className="trading-quick-queries">
+                  {quickQueries.map((q, i) => (
+                    <button key={i} className="trading-quick-query-card" onClick={() => handleQuickQuery(q)}>
+                      {q}
+                    </button>
+                  ))}
+                  <button className="trading-quick-query-shuffle" onClick={handleShuffleQueries} title="Show different suggestions">
+                    <RefreshCw size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+            {isMobileView && messages.length > 0 && mobileChatPanelMinimized && (
+              <button
+                type="button"
+                className="trading-mobile-show-chat-btn"
+                onClick={() => setMobileChatPanelMinimized(false)}
+                title="Show chat"
+              >
+                <MessageSquare className="w-4 h-4" />
+                Show chat
+              </button>
+            )}
             <ChatInput
-              onSend={handleSendMessage}
+              onSend={handleSendAndShowPanel}
               isLoading={isLoading}
               mode={mode}
               onModeChange={setMode}

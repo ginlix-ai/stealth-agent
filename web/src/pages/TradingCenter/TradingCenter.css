@@ -84,6 +84,15 @@ body.col-resizing * {
   gap: 12px;
 }
 
+/* Desktop: messages area fills space, ChatInput sticks to bottom */
+.trading-panel-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* Empty state area below chat input: placeholder and background when no messages */
 .trading-chat-empty {
   flex: 1;
@@ -182,4 +191,173 @@ body.col-resizing * {
 
 .trading-center-container::-webkit-scrollbar-thumb:hover {
   background: #3a3f55;
+}
+
+/* Mobile tab bar: switch between Info and Chart tools (hidden on desktop) */
+.trading-mobile-tab-bar {
+  display: none;
+  flex-shrink: 0;
+}
+
+.trading-mobile-tab-btn {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.trading-mobile-tab-btn:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.trading-mobile-tab-btn:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.trading-mobile-tab-btn-active {
+  background: rgba(97, 85, 245, 0.25);
+  color: #fff;
+}
+
+/* ----------------------------------------
+   MOBILE (< 768px) — Different arrangement
+   StockHeader (top) → TradingChart → ChatInput
+   Tab to switch Info vs Chart tools in same space
+   TradingPanel hidden
+   ---------------------------------------- */
+@media (max-width: 767px) {
+  .trading-mobile-tab-bar {
+    display: flex;
+    gap: 2px;
+    padding: 0 12px 8px;
+    margin-right: 48px;
+  }
+
+  .trading-content-wrapper {
+    flex-direction: column;
+  }
+
+  .trading-left-panel {
+    order: 1;
+    flex: 1;
+    min-height: 0;
+    max-height: 66vh;
+  }
+
+  /* When "Chart tools" is selected, hide StockHeader so tools use the space */
+  .trading-left-panel.mobile-tab-tools .stock-header {
+    display: none;
+  }
+
+  /* When "Info" is selected, hide chart toolbar so StockHeader uses the space */
+  .trading-left-panel.mobile-tab-info .chart-tools,
+  .trading-left-panel.mobile-tab-info .chart-tools-intervals {
+    display: none;
+  }
+
+  /* Sidebar wrapper — fixed on right, floats above content when expanded */
+  .trading-sidebar-wrapper {
+    position: fixed;
+    right: 0;
+    top: 52px;
+    bottom: calc(64px + env(safe-area-inset-bottom, 0));
+    z-index: 100;
+    order: 0;
+    pointer-events: none;
+  }
+
+  .trading-sidebar-wrapper > * {
+    pointer-events: auto;
+  }
+
+  .trading-resize-handle {
+    display: none;
+  }
+
+  .trading-right-panel {
+    order: 2;
+    flex: 0 0 auto;
+    width: 100% !important;
+    max-width: 100%;
+    padding: 12px;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    min-height: 200px;
+  }
+
+  .trading-right-panel-inner {
+    min-height: 176px;
+  }
+
+  /* Cap chat responses height so the panel never occupies the full screen */
+  .trading-panel-area {
+    max-height: 50vh;
+  }
+
+  /* Hide chat responses only when no messages yet or user minimized (panel stays mounted) */
+  .trading-right-panel.mobile-chat-panel-hidden .trading-panel-area {
+    display: none;
+  }
+
+  .trading-mobile-chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 8px 8px 0 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    flex-shrink: 0;
+  }
+
+  .trading-mobile-chat-header-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+
+  .trading-mobile-chat-minimize-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .trading-mobile-chat-minimize-btn:hover {
+    color: var(--color-text-primary);
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .trading-mobile-show-chat-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-accent-primary);
+    background: rgba(97, 85, 245, 0.15);
+    border: 1px solid rgba(97, 85, 245, 0.35);
+    border-radius: 8px;
+    cursor: pointer;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .trading-mobile-show-chat-btn:hover {
+    background: rgba(97, 85, 245, 0.25);
+    border-color: rgba(97, 85, 245, 0.5);
+  }
 }
