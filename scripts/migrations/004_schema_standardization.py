@@ -905,7 +905,7 @@ async def step14_create_workspace_files(cur):
 
 async def step15_verification(cur):
     """Verify final state of the schema."""
-    print("\n== Step 14: Verification ==")
+    print("\n== Step 15: Verification ==")
 
     # Tables that should exist
     expected_tables = [
@@ -928,7 +928,6 @@ async def step15_verification(cur):
     # Tables that should NOT exist
     dropped_tables = [
         'workspace_file_operations',
-        'workspace_files',
         'workspace_filesystems',
         'plans',
         'conversation_thread',

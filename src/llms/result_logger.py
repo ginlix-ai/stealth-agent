@@ -318,7 +318,7 @@ class ResultLogger:
                     # Check if thread already exists (may have been created eagerly)
                     async with conn.cursor() as cur:
                         await cur.execute("""
-                            SELECT thread_id FROM conversation_thread WHERE thread_id = %s
+                            SELECT conversation_thread_id FROM conversation_threads WHERE conversation_thread_id = %s
                         """, (thread_id,))
                         thread_exists = await cur.fetchone()
 
