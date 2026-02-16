@@ -139,7 +139,12 @@ class PTCSandbox:
                 raise RuntimeError("Sandbox not initialized")
             return
 
-        await self._ready_event.wait()
+        try:
+            await asyncio.wait_for(self._ready_event.wait(), timeout=300)
+        except asyncio.TimeoutError:
+            raise RuntimeError(
+                "Sandbox initialization timed out after 300s"
+            )
 
         if self._init_error:
             raise RuntimeError(f"Sandbox initialization failed: {self._init_error}")
@@ -1091,12 +1096,19 @@ class PTCSandbox:
         allow_reconnect: bool = True,
         retries: int = 5,
         initial_delay_s: float = 0.25,
+        total_timeout: float = 120.0,
         **kwargs: Any,
     ) -> Any:
+        deadline = time.monotonic() + total_timeout
         delay_s = initial_delay_s
         reconnected = False
 
         for attempt in range(1, retries + 1):
+            if time.monotonic() > deadline:
+                raise SandboxTransientError(
+                    f"Daytona call timed out after {total_timeout}s"
+                )
+
             try:
                 return await func(*args, **kwargs)
             except Exception as e:
@@ -1138,7 +1150,12 @@ class PTCSandbox:
                     attempt=attempt,
                     error=str(e),
                 )
-                await asyncio.sleep(delay_s)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise SandboxTransientError(
+                        f"Daytona call timed out after {total_timeout}s"
+                    ) from e
+                await asyncio.sleep(min(delay_s, remaining))
                 delay_s *= 2
 
         raise SandboxTransientError("Transient sandbox transport error")
@@ -2499,7 +2516,7 @@ class PTCSandbox:
             return output.split("\n")
 
         except Exception as e:
-            logger.debug("Async glob failed", pattern=pattern, path=path, error=str(e))
+            logger.warning("Async glob failed", pattern=pattern, path=path, error=str(e))
             return []
 
     async def agrep_content(
