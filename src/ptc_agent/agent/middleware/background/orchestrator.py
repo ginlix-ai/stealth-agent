@@ -11,7 +11,10 @@ from typing import Any
 import structlog
 from langchain_core.messages import HumanMessage
 
-from ptc_agent.agent.middleware.background.middleware import BackgroundSubagentMiddleware
+from ptc_agent.agent.middleware.background.middleware import (
+    BackgroundSubagentMiddleware,
+)
+from ptc_agent.agent.middleware.background.utils import build_message_checker
 
 logger = structlog.get_logger(__name__)
 
@@ -111,17 +114,25 @@ class BackgroundSubagentOrchestrator:
                 notification_message = HumanMessage(content=notification)
 
                 # Preserve all state keys from the previous run, not just messages.
-                current_state = {**result, "messages": [*messages, notification_message]}
+                current_state = {
+                    **result,
+                    "messages": [*messages, notification_message],
+                }
                 continue
 
             # If there are still pending background tasks, wait for them.
             if self.middleware.registry.has_pending_tasks():
+                thread_id = (config.get("configurable") or {}).get("thread_id")
+                checker = await build_message_checker(thread_id)
                 logger.info(
                     "Waiting for pending background tasks",
                     pending_count=self.middleware.registry.pending_count,
                     timeout=self.middleware.timeout,
                 )
-                await self.middleware.registry.wait_for_all(timeout=self.middleware.timeout)
+                await self.middleware.registry.wait_for_all(
+                    timeout=self.middleware.timeout,
+                    message_checker=checker,
+                )
 
                 notification = await self.check_and_get_notification()
                 if notification:
@@ -134,7 +145,10 @@ class BackgroundSubagentOrchestrator:
                     notification_message = HumanMessage(content=notification)
 
                     # Preserve all state keys from the previous run, not just messages.
-                    current_state = {**result, "messages": [*messages, notification_message]}
+                    current_state = {
+                        **result,
+                        "messages": [*messages, notification_message],
+                    }
                     continue
 
             logger.debug(
@@ -217,7 +231,9 @@ class BackgroundSubagentOrchestrator:
             )
 
             # Stream the agent with all parameters - agent turn ends after streaming
-            async for event in self.agent.astream(current_state, config, **stream_kwargs):
+            async for event in self.agent.astream(
+                current_state, config, **stream_kwargs
+            ):
                 yield event
 
             # Single source of truth for "agent awareness" is check_and_get_notification().
@@ -240,7 +256,10 @@ class BackgroundSubagentOrchestrator:
                 messages = state_values.get("messages", [])
 
                 notification_message = HumanMessage(content=notification)
-                current_state = {**state_values, "messages": [*messages, notification_message]}
+                current_state = {
+                    **state_values,
+                    "messages": [*messages, notification_message],
+                }
                 continue
 
             # After streaming completes, check for pending background tasks
@@ -257,11 +276,16 @@ class BackgroundSubagentOrchestrator:
                 return
 
             # Wait for all background tasks to complete
+            thread_id = (config.get("configurable") or {}).get("thread_id")
+            checker = await build_message_checker(thread_id)
             logger.info(
                 "Waiting for pending background tasks after stream",
                 pending_count=self.middleware.registry.pending_count,
             )
-            await self.middleware.registry.wait_for_all(timeout=self.middleware.timeout)
+            await self.middleware.registry.wait_for_all(
+                timeout=self.middleware.timeout,
+                message_checker=checker,
+            )
 
             notification = await self.check_and_get_notification()
             if not notification:
@@ -283,7 +307,10 @@ class BackgroundSubagentOrchestrator:
             messages = state_values.get("messages", [])
 
             notification_message = HumanMessage(content=notification)
-            current_state = {**state_values, "messages": [*messages, notification_message]}
+            current_state = {
+                **state_values,
+                "messages": [*messages, notification_message],
+            }
 
             # NOTE: Do NOT clear registry here - agent needs to call TaskOutput()
             # to retrieve results in the next iteration.
@@ -295,8 +322,7 @@ class BackgroundSubagentOrchestrator:
             Notification string prompting agent to call TaskOutput()
         """
         completed_tasks = [
-            task for task in self.middleware.registry._tasks.values()
-            if task.completed
+            task for task in self.middleware.registry._tasks.values() if task.completed
         ]
         return self._format_notification_for_tasks(completed_tasks)
 
@@ -345,12 +371,15 @@ class BackgroundSubagentOrchestrator:
             "pending": len(pending),
             "completed": len(completed),
             "pending_tasks": [
-                {"id": t.display_id, "type": t.subagent_type, "description": t.description[:50]}
+                {
+                    "id": t.display_id,
+                    "type": t.subagent_type,
+                    "description": t.description[:50],
+                }
                 for t in pending
             ],
             "completed_tasks": [
-                {"id": t.display_id, "type": t.subagent_type}
-                for t in completed
+                {"id": t.display_id, "type": t.subagent_type} for t in completed
             ],
         }
 

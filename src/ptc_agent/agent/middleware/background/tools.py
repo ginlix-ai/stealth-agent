@@ -11,10 +11,18 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 from langchain_core.tools import StructuredTool
+from langgraph.config import get_config
+
+from ptc_agent.agent.middleware.background.utils import build_message_checker
 
 if TYPE_CHECKING:
-    from ptc_agent.agent.middleware.background.middleware import BackgroundSubagentMiddleware
-    from ptc_agent.agent.middleware.background.registry import BackgroundTask, BackgroundTaskRegistry
+    from ptc_agent.agent.middleware.background.middleware import (
+        BackgroundSubagentMiddleware,
+    )
+    from ptc_agent.agent.middleware.background.registry import (
+        BackgroundTask,
+        BackgroundTaskRegistry,
+    )
 
 logger = structlog.get_logger(__name__)
 
@@ -69,6 +77,10 @@ def create_wait_tool(middleware: BackgroundSubagentMiddleware) -> StructuredTool
         """
         registry = middleware.registry
 
+        # Build a message checker so waits can be interrupted by user messages
+        thread_id = get_config().get("configurable", {}).get("thread_id")
+        checker = await build_message_checker(thread_id)
+
         if task_number is not None:
             # Wait for specific task
             logger.info(
@@ -76,10 +88,18 @@ def create_wait_tool(middleware: BackgroundSubagentMiddleware) -> StructuredTool
                 task_number=task_number,
                 timeout=timeout,
             )
-            result = await registry.wait_for_specific(task_number, timeout)
+            result = await registry.wait_for_specific(
+                task_number, timeout, message_checker=checker
+            )
             task = await registry.get_by_number(task_number)
 
             if task:
+                # Check if interrupted by a queued user message
+                if isinstance(result, dict) and result.get("status") == "interrupted":
+                    return (
+                        f"Wait interrupted: new user message has been queued. "
+                        f"**{task.display_id}** ({task.subagent_type}) still running in background."
+                    )
                 # Check if still running (wait timed out but task continues)
                 if isinstance(result, dict) and result.get("status") == "timeout":
                     # Don't mark as seen - task is still running
@@ -95,7 +115,7 @@ def create_wait_tool(middleware: BackgroundSubagentMiddleware) -> StructuredTool
             return f"Task-{task_number} not found"
         # Wait for all tasks
         logger.info("Waiting for all background tasks", timeout=timeout)
-        results = await registry.wait_for_all(timeout=timeout)
+        results = await registry.wait_for_all(timeout=timeout, message_checker=checker)
         # Don't store in _pending_results - results are returned directly
         # to the agent via the tool response. Storing them would cause
         # the orchestrator to inject a duplicate HumanMessage later.
@@ -103,9 +123,39 @@ def create_wait_tool(middleware: BackgroundSubagentMiddleware) -> StructuredTool
         if not results:
             return "No background tasks were pending."
 
+        # Check for interruption
+        any_interrupted = any(
+            isinstance(r, dict) and r.get("status") == "interrupted"
+            for r in results.values()
+        )
+        if any_interrupted:
+            still_running = [
+                registry.get_by_id(tid)
+                for tid, r in results.items()
+                if isinstance(r, dict) and r.get("status") == "interrupted"
+            ]
+            running_names = ", ".join(f"**{t.display_id}**" for t in still_running if t)
+            completed_parts = []
+            for tid, r in results.items():
+                t = registry.get_by_id(tid)
+                if t and not (isinstance(r, dict) and r.get("status") == "interrupted"):
+                    t.result_seen = True
+                    completed_parts.append(
+                        f"### {t.display_id} ({t.subagent_type}) - completed\n"
+                        f"{_format_result(r)}\n"
+                    )
+            output = (
+                f"Wait interrupted: new user message has been queued. "
+                f"Still running in background: {running_names}.\n\n"
+            )
+            if completed_parts:
+                output += "\n".join(completed_parts)
+            return output
+
         # Count completed vs still running
         completed_count = sum(
-            1 for r in results.values()
+            1
+            for r in results.values()
             if not (isinstance(r, dict) and r.get("status") == "timeout")
         )
         running_count = len(results) - completed_count
@@ -120,7 +170,9 @@ def create_wait_tool(middleware: BackgroundSubagentMiddleware) -> StructuredTool
         for task_id, result in results.items():
             task = registry.get_by_id(task_id)
             if task:
-                is_running = isinstance(result, dict) and result.get("status") == "timeout"
+                is_running = (
+                    isinstance(result, dict) and result.get("status") == "timeout"
+                )
                 if not is_running:
                     task.result_seen = True  # Mark as seen only if completed
                 status = "still running" if is_running else "completed"
@@ -292,10 +344,7 @@ def _format_task_progress(task: BackgroundTask) -> str:
     tool_summary = f" | {task.total_tool_calls} tool calls"
     if task.tool_call_counts:
         # Show top 3 tools
-        top_tools = sorted(
-            task.tool_call_counts.items(),
-            key=lambda x: -x[1]
-        )[:3]
+        top_tools = sorted(task.tool_call_counts.items(), key=lambda x: -x[1])[:3]
         tool_details = ", ".join(f"{t}: {c}" for t, c in top_tools)
         tool_summary += f" ({tool_details})"
 

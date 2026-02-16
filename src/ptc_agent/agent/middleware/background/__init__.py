@@ -10,8 +10,16 @@ from ptc_agent.agent.middleware.background.middleware import (
     current_background_agent_id,
     current_background_task_id,
 )
-from ptc_agent.agent.middleware.background.orchestrator import BackgroundSubagentOrchestrator
-from ptc_agent.agent.middleware.background.registry import BackgroundTask, BackgroundTaskRegistry
+from ptc_agent.agent.middleware.background.orchestrator import (
+    BackgroundSubagentOrchestrator,
+)
+from ptc_agent.agent.middleware.background.registry import (
+    BackgroundTask,
+    BackgroundTaskRegistry,
+)
+from ptc_agent.agent.middleware.background.subagent_message_queue import (
+    SubagentMessageQueueMiddleware,
+)
 from ptc_agent.agent.middleware.background.tools import (
     create_task_output_tool,
     create_wait_tool,
@@ -22,6 +30,7 @@ __all__ = [
     "BackgroundSubagentOrchestrator",
     "BackgroundTask",
     "BackgroundTaskRegistry",
+    "SubagentMessageQueueMiddleware",
     "ToolCallCounterMiddleware",
     "create_task_output_tool",
     "create_wait_tool",

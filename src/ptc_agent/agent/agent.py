@@ -42,6 +42,8 @@ from ptc_agent.agent.middleware import (
     LargeResultEvictionMiddleware,
     # Message queue middleware
     MessageQueueMiddleware,
+    # Subagent message queue middleware
+    SubagentMessageQueueMiddleware,
 )
 from ptc_agent.agent.skills import SKILL_REGISTRY
 from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
@@ -387,19 +389,21 @@ class PTCAgent:
         # before any other middleware runs)
         main_only_middleware.append(MessageQueueMiddleware())
 
+        # Create counter middleware for tracking subagent tool calls
+        # (Created early so it can be passed to BackgroundSubagentMiddleware)
+        _bg_registry = background_registry or BackgroundTaskRegistry()
+        counter_middleware = ToolCallCounterMiddleware(registry=_bg_registry)
+
         # Create background subagent middleware (must be created before subagents)
         background_middleware = BackgroundSubagentMiddleware(
             timeout=background_timeout,
             enabled=True,
-            registry=background_registry,
+            registry=_bg_registry,
+            counter_middleware=counter_middleware,
         )
         main_only_middleware.append(background_middleware)
         # Add background management tools (wait, task_progress)
         tools.extend(background_middleware.tools)
-        # Create counter middleware for tracking subagent tool calls
-        counter_middleware = ToolCallCounterMiddleware(
-            registry=background_middleware.registry
-        )
         logger.info(
             "Background subagent execution enabled",
             timeout=background_timeout,
@@ -503,9 +507,12 @@ class PTCAgent:
         summarization = SummarizationMiddleware()
 
         # Subagent middleware (shared only, no SubAgentMiddleware/BackgroundSubagentMiddleware/HITL)
+        # SubagentMessageQueueMiddleware is first so follow-up messages are
+        # visible before any other middleware runs.
         subagent_middleware = [
             m
             for m in [
+                SubagentMessageQueueMiddleware(registry=background_middleware.registry),
                 *skills_middleware,
                 LargeResultEvictionMiddleware(backend=backend),
                 *shared_middleware,
@@ -530,6 +537,8 @@ class PTCAgent:
                     system_prompt=None,  # Disable verbose TASK_SYSTEM_PROMPT injection
                     default_middleware=subagent_middleware,
                     general_purpose_agent=True,
+                    registry=background_middleware.registry,
+                    checkpointer=checkpointer,
                 ),
                 *shared_middleware,
                 *main_only_middleware,

@@ -75,6 +75,11 @@ from ptc_agent.agent.middleware.message_queue import (
     MessageQueueMiddleware,
 )
 
+# Subagent message queue middleware
+from ptc_agent.agent.middleware.background.subagent_message_queue import (
+    SubagentMessageQueueMiddleware,
+)
+
 # Subagent middleware
 from ptc_agent.agent.middleware.subagents import (
     CompiledSubAgent,
@@ -118,6 +123,8 @@ __all__ = [
     "LargeResultEvictionMiddleware",
     # Message queue
     "MessageQueueMiddleware",
+    # Subagent message queue
+    "SubagentMessageQueueMiddleware",
     # Subagent middleware
     "CompiledSubAgent",
     "SubAgent",

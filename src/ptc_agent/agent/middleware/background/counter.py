@@ -58,7 +58,22 @@ class ToolCallCounterMiddleware(AgentMiddleware):
         super().__init__()
         self.tools = []  # No additional tools
         self.registry = registry
-        self._emitted_identity: set[str] = set()  # task_ids that already emitted identity event
+        self._emitted_identity: set[str] = (
+            set()
+        )  # task_ids that already emitted identity event
+
+    def clear_identity(self, task_id: str) -> None:
+        """Remove a task_id from the emitted identity set.
+
+        Called when resuming a completed subagent so that the
+        ``subagent_identity`` event is re-emitted on the resumed
+        invocation's first model call, allowing the streaming handler
+        to register new namespace UUID mappings.
+
+        Args:
+            task_id: The task identifier to clear
+        """
+        self._emitted_identity.discard(task_id)
 
     async def awrap_model_call(
         self,
@@ -112,54 +127,65 @@ class ToolCallCounterMiddleware(AgentMiddleware):
 
                     # Emit reasoning chunk if present
                     if formatted.get("reasoning"):
-                        await self.registry.append_captured_event(task_id, {
-                            "event": "message_chunk",
-                            "data": {
-                                "agent": agent_id,
-                                "id": msg_id,
-                                "role": "assistant",
-                                "content": formatted["reasoning"],
-                                "content_type": "reasoning",
-                                "finish_reason": None,
+                        await self.registry.append_captured_event(
+                            task_id,
+                            {
+                                "event": "message_chunk",
+                                "data": {
+                                    "agent": agent_id,
+                                    "id": msg_id,
+                                    "role": "assistant",
+                                    "content": formatted["reasoning"],
+                                    "content_type": "reasoning",
+                                    "finish_reason": None,
+                                },
+                                "ts": time.time(),
                             },
-                            "ts": time.time(),
-                        })
+                        )
 
                     # Emit text chunk if present
                     if formatted.get("text"):
-                        await self.registry.append_captured_event(task_id, {
-                            "event": "message_chunk",
-                            "data": {
-                                "agent": agent_id,
-                                "id": msg_id,
-                                "role": "assistant",
-                                "content": formatted["text"],
-                                "content_type": "text",
-                                "finish_reason": "tool_calls" if tool_calls else "stop",
+                        await self.registry.append_captured_event(
+                            task_id,
+                            {
+                                "event": "message_chunk",
+                                "data": {
+                                    "agent": agent_id,
+                                    "id": msg_id,
+                                    "role": "assistant",
+                                    "content": formatted["text"],
+                                    "content_type": "text",
+                                    "finish_reason": "tool_calls"
+                                    if tool_calls
+                                    else "stop",
+                                },
+                                "ts": time.time(),
                             },
-                            "ts": time.time(),
-                        })
+                        )
 
                     if tool_calls:
-                        await self.registry.append_captured_event(task_id, {
-                            "event": "tool_calls",
-                            "data": {
-                                "agent": agent_id,
-                                "id": msg_id,
-                                "role": "assistant",
-                                "tool_calls": [
-                                    {
-                                        "name": tc["name"],
-                                        "args": tc.get("args", {}),
-                                        "id": tc["id"],
-                                        "type": "tool_call",
-                                    }
-                                    for tc in tool_calls
-                                ],
-                                "finish_reason": "tool_calls",
+                        await self.registry.append_captured_event(
+                            task_id,
+                            {
+                                "event": "tool_calls",
+                                "data": {
+                                    "agent": agent_id,
+                                    "id": msg_id,
+                                    "role": "assistant",
+                                    "tool_calls": [
+                                        {
+                                            "name": tc["name"],
+                                            "args": tc.get("args", {}),
+                                            "id": tc["id"],
+                                            "type": "tool_call",
+                                        }
+                                        for tc in tool_calls
+                                    ],
+                                    "finish_reason": "tool_calls",
+                                },
+                                "ts": time.time(),
                             },
-                            "ts": time.time(),
-                        })
+                        )
             except Exception:
                 pass  # Never break the agent for capture failures
 
@@ -217,36 +243,50 @@ class ToolCallCounterMiddleware(AgentMiddleware):
             try:
                 agent_id = self._get_agent_id(task_id)
                 if isinstance(result, ToolMessage):
-                    content = result.content if isinstance(result.content, str) else str(result.content)
-                    await self.registry.append_captured_event(task_id, {
-                        "event": "tool_call_result",
-                        "data": {
-                            "agent": agent_id,
-                            "id": getattr(result, "id", ""),
-                            "role": "assistant",
-                            "tool_call_id": result.tool_call_id,
-                            "content": content[:4096],
-                            "content_type": "text",
+                    content = (
+                        result.content
+                        if isinstance(result.content, str)
+                        else str(result.content)
+                    )
+                    await self.registry.append_captured_event(
+                        task_id,
+                        {
+                            "event": "tool_call_result",
+                            "data": {
+                                "agent": agent_id,
+                                "id": getattr(result, "id", ""),
+                                "role": "assistant",
+                                "tool_call_id": result.tool_call_id,
+                                "content": content[:4096],
+                                "content_type": "text",
+                            },
+                            "ts": time.time(),
                         },
-                        "ts": time.time(),
-                    })
+                    )
                 elif isinstance(result, Command):
                     msgs = (result.update or {}).get("messages", [])
                     for msg in msgs:
                         if isinstance(msg, ToolMessage):
-                            content = msg.content if isinstance(msg.content, str) else str(msg.content)
-                            await self.registry.append_captured_event(task_id, {
-                                "event": "tool_call_result",
-                                "data": {
-                                    "agent": agent_id,
-                                    "id": getattr(msg, "id", ""),
-                                    "role": "assistant",
-                                    "tool_call_id": msg.tool_call_id,
-                                    "content": content[:4096],
-                                    "content_type": "text",
+                            content = (
+                                msg.content
+                                if isinstance(msg.content, str)
+                                else str(msg.content)
+                            )
+                            await self.registry.append_captured_event(
+                                task_id,
+                                {
+                                    "event": "tool_call_result",
+                                    "data": {
+                                        "agent": agent_id,
+                                        "id": getattr(msg, "id", ""),
+                                        "role": "assistant",
+                                        "tool_call_id": msg.tool_call_id,
+                                        "content": content[:4096],
+                                        "content_type": "text",
+                                    },
+                                    "ts": time.time(),
                                 },
-                                "ts": time.time(),
-                            })
+                            )
             except Exception:
                 pass  # Never break the agent for capture failures
 

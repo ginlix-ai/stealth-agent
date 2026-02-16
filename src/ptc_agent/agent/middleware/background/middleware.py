@@ -6,8 +6,9 @@ allowing the main agent to continue working without blocking.
 
 import asyncio
 import contextvars
+import json
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from langchain.agents.middleware import AgentMiddleware
@@ -22,14 +23,21 @@ from ptc_agent.agent.middleware.background.tools import (
     create_wait_tool,
 )
 
+if TYPE_CHECKING:
+    from ptc_agent.agent.middleware.background.counter import ToolCallCounterMiddleware
+
 # This ContextVar propagates task_id to subagent tool calls, used by
 # ToolCallCounterMiddleware to track which background task a tool call
 # belongs to.
-current_background_task_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_background_task_id", default=None)
+current_background_task_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_background_task_id", default=None
+)
 
 # This ContextVar propagates the unified agent identity (e.g., "research:uuid4")
 # to subagent tool calls, for internal tool tracking.
-current_background_agent_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_background_agent_id", default=None)
+current_background_agent_id: contextvars.ContextVar[str | None] = (
+    contextvars.ContextVar("current_background_agent_id", default=None)
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -89,6 +97,7 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
         *,
         enabled: bool = True,
         registry: BackgroundTaskRegistry | None = None,
+        counter_middleware: "ToolCallCounterMiddleware | None" = None,
     ) -> None:
         """Initialize the middleware.
 
@@ -96,11 +105,13 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
             timeout: Maximum time to wait for background tasks (seconds)
             enabled: Whether background execution is enabled
             registry: Optional shared registry for background tasks
+            counter_middleware: Optional counter middleware for clearing identity on resume
         """
         super().__init__()
         self.registry = registry or BackgroundTaskRegistry()
         self.timeout = timeout
         self.enabled = enabled
+        self.counter_middleware = counter_middleware
 
         # Create native tools for this middleware
         # These allow the main agent to wait for and check on background tasks
@@ -121,6 +132,35 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
         """
         return handler(request)
 
+    async def _queue_followup_to_redis(self, task_id: str, description: str) -> bool:
+        """Push a follow-up message to Redis for a running subagent.
+
+        Args:
+            task_id: The background task identifier
+            description: The follow-up message content
+
+        Returns:
+            True if message was queued successfully
+        """
+        try:
+            from src.utils.cache.redis_cache import get_cache_client
+
+            cache = get_cache_client()
+            if not cache.enabled or not cache.client:
+                return False
+
+            key = f"subagent:queued_messages:{task_id}"
+            payload = json.dumps(description)
+            await cache.client.rpush(key, payload)
+            # 1 hour TTL — if not consumed, it's stale
+            await cache.client.expire(key, 3600)
+            return True
+        except Exception as e:
+            logger.error(
+                "Failed to queue follow-up to Redis", task_id=task_id, error=str(e)
+            )
+            return False
+
     async def awrap_tool_call(
         self,
         request: ToolCallRequest,
@@ -128,12 +168,12 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
     ) -> ToolMessage | Command:
         """Intercept task tool calls and spawn in background.
 
-        For 'Task' tool calls, this:
-        1. Spawns the subagent execution as a background asyncio task
-        2. Returns an immediate pseudo-result
-        3. Stores the task in the registry for later result collection
+        Routing logic:
+        1. ``task_number`` present + task is running → queue follow-up via Redis
+        2. ``task_number`` present + task is completed → reset and resume in background
+        3. No ``task_number`` → new task (existing logic)
 
-        For all other tools, passes through to the handler normally.
+        For all non-Task tools, passes through to the handler normally.
         """
         # Get tool name from request
         tool_call = request.tool_call
@@ -149,7 +189,165 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
             raise RuntimeError("Tool call ID is required for background tasks")
         args = tool_call.get("args", {})
         description = args.get("description", "unknown task")
-        subagent_type = args.get("subagent_type", "general-purpose")
+        task_number = args.get("task_number")
+        subagent_type = args.get("subagent_type")
+
+        # --- Three-way routing based on task_number ---
+        if task_number is not None:
+            task = await self.registry.get_by_number(task_number)
+
+            if task is None:
+                return ToolMessage(
+                    content=f"Error: Task-{task_number} not found.",
+                    tool_call_id=tool_call_id,
+                    name="Task",
+                )
+
+            if task.cancelled:
+                return ToolMessage(
+                    content=f"Error: Task-{task_number} was cancelled and cannot be resumed.",
+                    tool_call_id=tool_call_id,
+                    name="Task",
+                )
+
+            # Validate subagent_type if explicitly provided
+            if subagent_type and subagent_type != task.subagent_type:
+                return ToolMessage(
+                    content=f"Error: Task-{task_number} is a '{task.subagent_type}' agent, not '{subagent_type}'.",
+                    tool_call_id=tool_call_id,
+                    name="Task",
+                )
+
+            if task.is_pending:
+                # --- FOLLOW-UP: Task is still running → queue via Redis ---
+                success = await self._queue_followup_to_redis(task.task_id, description)
+                if success:
+                    logger.info(
+                        "Queued follow-up for running task",
+                        task_number=task_number,
+                        display_id=task.display_id,
+                    )
+                    return ToolMessage(
+                        content=f"Follow-up sent to **{task.display_id}**. The subagent will receive your instructions before its next reasoning step.",
+                        tool_call_id=tool_call_id,
+                        name="Task",
+                    )
+                else:
+                    return ToolMessage(
+                        content=f"Error: Could not deliver follow-up to {task.display_id} — message queue not available.",
+                        tool_call_id=tool_call_id,
+                        name="Task",
+                    )
+
+            # --- RESUME: Task is completed → reset and respawn ---
+            logger.info(
+                "Resuming completed task in background",
+                task_number=task_number,
+                display_id=task.display_id,
+                subagent_thread_id=task.subagent_thread_id,
+            )
+
+            # Reset task state for the new run
+            task.completed = False
+            task.result = None
+            task.result_seen = False
+            task.error = None
+            task.captured_events = []
+
+            # Clear stale namespace mappings so new ones can be registered
+            self.registry.clear_namespaces_for_task(task.task_id)
+
+            # Allow re-emission of subagent_identity event
+            if self.counter_middleware:
+                self.counter_middleware.clear_identity(task.task_id)
+
+            # Set ContextVars for the resumed task
+            current_background_task_id.set(task.task_id)
+            current_background_agent_id.set(task.agent_id)
+
+            # Update args with inferred subagent_type for the handler
+            if subagent_type is None:
+                args = {**args, "subagent_type": task.subagent_type}
+                tool_call = {**tool_call, "args": args}
+                request = ToolCallRequest(
+                    tool_call=tool_call, state=request.state, config=request.config
+                )
+
+            # Spawn resumed task in background
+            async def execute_resume_in_background() -> dict[str, Any]:
+                async def run_handler() -> ToolMessage | Command:
+                    return await handler(request)
+
+                handler_task: asyncio.Task[ToolMessage | Command] = asyncio.create_task(
+                    run_handler()
+                )
+                task.handler_task = handler_task
+                try:
+                    result = await asyncio.shield(handler_task)
+                    logger.debug(
+                        "Resumed background subagent completed",
+                        display_id=task.display_id,
+                        result_type=type(result).__name__,
+                    )
+                    return {"success": True, "result": result}
+                except asyncio.CancelledError:
+                    logger.info(
+                        "Resumed subagent cancellation requested; continuing",
+                        display_id=task.display_id,
+                    )
+                    try:
+                        result = await handler_task
+                        return {"success": True, "result": result}
+                    except Exception as e:
+                        logger.error(
+                            "Resumed subagent failed after cancellation",
+                            display_id=task.display_id,
+                            error=str(e),
+                        )
+                        return {
+                            "success": False,
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                        }
+                except Exception as e:
+                    logger.error(
+                        "Resumed background subagent failed",
+                        display_id=task.display_id,
+                        error=str(e),
+                    )
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                    }
+
+            asyncio_task = asyncio.create_task(
+                execute_resume_in_background(),
+                name=f"background_subagent_resume_{task.display_id}",
+            )
+            task.asyncio_task = asyncio_task
+
+            short_description = _truncate_description(description, max_sentences=2)
+            pseudo_result = (
+                f"Resumed **{task.display_id}** in background with new instructions.\n"
+                f"- Type: {task.subagent_type}\n"
+                f"- New task: {short_description}\n"
+                f"- Status: Running (resumed with full previous context)\n\n"
+                f"You can:\n"
+                f"- Continue with other work\n"
+                f"- Use `TaskOutput(task_number={task_number})` to get progress or result\n"
+                f"- Use `Wait(task_number={task_number})` to block until complete"
+            )
+
+            return ToolMessage(
+                content=pseudo_result,
+                tool_call_id=tool_call_id,
+                name="Task",
+            )
+
+        # --- NEW TASK: No task_number → existing logic ---
+        if subagent_type is None:
+            subagent_type = "general-purpose"
 
         # Register the task first to get the task number
         task = await self.registry.register(
@@ -175,14 +373,13 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
         # Define the background execution coroutine
         async def execute_in_background() -> dict[str, Any]:
             """Execute the subagent in the background."""
-            # Context already has task_id from parent
-            #
-            # Important: the main agent run may be interrupted/cancelled. Background subagent
-            # execution must continue independently, so we shield the handler coroutine.
+
             async def run_handler() -> ToolMessage | Command:
                 return await handler(request)
 
-            handler_task: asyncio.Task[ToolMessage | Command] = asyncio.create_task(run_handler())
+            handler_task: asyncio.Task[ToolMessage | Command] = asyncio.create_task(
+                run_handler()
+            )
             task.handler_task = handler_task
             try:
                 result = await asyncio.shield(handler_task)
@@ -194,8 +391,6 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
                 )
                 return {"success": True, "result": result}
             except asyncio.CancelledError:
-                # If this background wrapper is cancelled, keep the underlying handler running
-                # and await it to completion so the registry can still observe a result.
                 logger.info(
                     "Background subagent cancellation requested; continuing",
                     tool_call_id=tool_call_id,
@@ -211,7 +406,11 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
                         display_id=task.display_id,
                         error=str(e),
                     )
-                    return {"success": False, "error": str(e), "error_type": type(e).__name__}
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                    }
             except Exception as e:
                 logger.error(
                     "Background subagent failed",
@@ -219,7 +418,11 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
                     display_id=task.display_id,
                     error=str(e),
                 )
-                return {"success": False, "error": str(e), "error_type": type(e).__name__}
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                }
 
         # Spawn background task
         asyncio_task = asyncio.create_task(
@@ -254,7 +457,9 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
         """Sync after_agent - no-op for sync execution."""
         return None
 
-    async def aafter_agent(self, state: AgentState, runtime: Any) -> dict[str, Any] | None:
+    async def aafter_agent(
+        self, state: AgentState, runtime: Any
+    ) -> dict[str, Any] | None:
         """No-op hook after agent ends.
 
         The waiting room logic has been moved to the orchestrator.

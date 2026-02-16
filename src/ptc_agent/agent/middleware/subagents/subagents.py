@@ -1,19 +1,30 @@
 """Middleware for providing subagents to an agent via a `Task` tool."""
 
+import uuid as uuid_mod
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Any, NotRequired, TypedDict, cast
 
+import structlog
 from langchain.agents import create_agent
 from langchain.agents.middleware import HumanInTheLoopMiddleware, InterruptOnConfig
-from langchain.agents.middleware.types import AgentMiddleware, ModelRequest, ModelResponse
+from langchain.agents.middleware.types import (
+    AgentMiddleware,
+    ModelRequest,
+    ModelResponse,
+)
 from langchain.tools import BaseTool, ToolRuntime
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.runnables import Runnable
 from langchain_core.tools import StructuredTool
+from langgraph.config import get_config
 from langgraph.types import Command
 
+from ptc_agent.agent.middleware.background.middleware import current_background_task_id
+from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
 from ptc_agent.agent.middleware.subagents._utils import append_to_system_message
+
+logger = structlog.get_logger(__name__)
 
 
 class SubAgent(TypedDict):
@@ -112,17 +123,32 @@ DEFAULT_SUBAGENT_PROMPT = "In order to complete the objective that the user asks
 #    and no clear meaning for returning them from a subagent to the main agent.
 _EXCLUDED_STATE_KEYS = {"messages", "todos", "structured_response"}
 
-TASK_TOOL_DESCRIPTION = """Launch an ephemeral subagent to handle complex, multi-step independent tasks with isolated context windows.
+TASK_TOOL_DESCRIPTION = """Launch a subagent to handle complex, multi-step independent tasks with isolated context windows. Supports follow-up to running tasks and resuming completed tasks.
 
 Available agent types and the tools they have access to:
 {available_agents}
 
-When using the Task tool, you must specify a subagent_type parameter to select which agent type to use.
+When using the Task tool, you must specify a subagent_type parameter to select which agent type to use (except when resuming, where it's inferred).
+
+## Parameters:
+- `description` (required): Detailed task instructions for the subagent. For follow-up/resume, provide the new instructions.
+- `subagent_type` (required for new tasks, optional for resume): The type of subagent to use.
+- `task_number` (optional): Existing task number to follow up on or resume. Omit for new tasks.
+
+## Usage modes:
+### New task (no task_number):
+Launch a fresh subagent. Requires `subagent_type`.
+
+### Follow-up to running task (task_number + task is running):
+Send additional instructions to a running subagent. The subagent picks up the message before its next reasoning step.
+
+### Resume completed task (task_number + task is completed):
+Resume a completed subagent with full conversation history preserved. The subagent sees all previous context plus your new instructions.
 
 ## Usage notes:
 1. Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
 2. When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.
-3. Each agent invocation is stateless. You will not be able to send additional messages to the agent, nor will the agent be able to communicate with you outside of its final report. Therefore, your prompt should contain a highly detailed task description for the agent to perform autonomously and you should specify exactly what information the agent should return back to you in its final and only message to you.
+3. For new tasks, the prompt should contain a highly detailed task description. For follow-up/resume, provide only the new instructions — the subagent retains its previous context.
 4. The agent's outputs should generally be trusted
 5. Clearly tell the agent whether you expect it to create content, perform analysis, or just do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent
 6. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.
@@ -224,20 +250,25 @@ assistant: "I'm going to use the Task tool to launch with the greeting-responder
 
 TASK_SYSTEM_PROMPT = """## `Task` (subagent spawner)
 
-You have access to a `Task` tool to launch short-lived subagents that handle isolated tasks. These agents are ephemeral — they live only for the duration of the task and return a single result.
+You have access to a `Task` tool to launch subagents that handle isolated tasks. Subagents support three modes: **new**, **follow-up** (to running), and **resume** (completed).
 
 When to use the Task tool:
 - When a task is complex and multi-step, and can be fully delegated in isolation
 - When a task is independent of other tasks and can run in parallel
 - When a task requires focused reasoning or heavy token/context usage that would bloat the orchestrator thread
 - When sandboxing improves reliability (e.g. code execution, structured searches, data formatting)
-- When you only care about the output of the subagent, and not the intermediate steps (ex. performing a lot of research and then returned a synthesized report, performing a series of computations or lookups to achieve a concise, relevant answer.)
+- When you only care about the output of the subagent, and not the intermediate steps
+
+### Follow-up & Resume:
+- **Follow-up** (`task_number=N` while Task-N is running): Sends additional instructions to the running subagent. It picks them up before its next reasoning step.
+- **Resume** (`task_number=N` after Task-N completed): Re-invokes the subagent with its full conversation history preserved. Use when you need iterative refinement based on previous results.
 
 Subagent lifecycle:
 1. **Spawn** → Provide clear role, instructions, and expected output
-2. **Run** → The subagent completes the task autonomously
+2. **Run** → The subagent completes the task autonomously (can receive follow-ups)
 3. **Return** → The subagent provides a single structured result
-4. **Reconcile** → Incorporate or synthesize the result into the main thread
+4. **Resume** (optional) → Send additional instructions with full context preserved
+5. **Reconcile** → Incorporate or synthesize the result into the main thread
 
 When NOT to use the Task tool:
 - If you need to see the intermediate reasoning or steps after the subagent has completed (the Task tool hides them)
@@ -262,6 +293,7 @@ def _get_subagents(
     default_interrupt_on: dict[str, bool | InterruptOnConfig] | None,
     subagents: list[SubAgent | CompiledSubAgent],
     general_purpose_agent: bool,
+    checkpointer: Any | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Create subagent instances from specifications.
 
@@ -289,16 +321,21 @@ def _get_subagents(
     if general_purpose_agent:
         general_purpose_middleware = [*default_subagent_middleware]
         if default_interrupt_on:
-            general_purpose_middleware.append(HumanInTheLoopMiddleware(interrupt_on=default_interrupt_on))
+            general_purpose_middleware.append(
+                HumanInTheLoopMiddleware(interrupt_on=default_interrupt_on)
+            )
         general_purpose_subagent = create_agent(
             default_model,
             system_prompt=DEFAULT_SUBAGENT_PROMPT,
             tools=default_tools,
             middleware=general_purpose_middleware,
             name="general-purpose",
+            checkpointer=checkpointer,
         )
         agents["general-purpose"] = general_purpose_subagent
-        subagent_descriptions.append(f"- general-purpose: {DEFAULT_GENERAL_PURPOSE_DESCRIPTION}")
+        subagent_descriptions.append(
+            f"- general-purpose: {DEFAULT_GENERAL_PURPOSE_DESCRIPTION}"
+        )
 
     # Process custom subagents
     for agent_ in subagents:
@@ -311,7 +348,11 @@ def _get_subagents(
 
         subagent_model = agent_.get("model", default_model)
 
-        _middleware = [*default_subagent_middleware, *agent_["middleware"]] if "middleware" in agent_ else [*default_subagent_middleware]
+        _middleware = (
+            [*default_subagent_middleware, *agent_["middleware"]]
+            if "middleware" in agent_
+            else [*default_subagent_middleware]
+        )
 
         interrupt_on = agent_.get("interrupt_on", default_interrupt_on)
         if interrupt_on:
@@ -323,6 +364,7 @@ def _get_subagents(
             tools=_tools,
             middleware=_middleware,
             name=agent_["name"],
+            checkpointer=checkpointer,
         )
     return agents, subagent_descriptions
 
@@ -336,6 +378,8 @@ def _create_task_tool(
     subagents: list[SubAgent | CompiledSubAgent],
     general_purpose_agent: bool,
     task_description: str | None = None,
+    registry: BackgroundTaskRegistry | None = None,
+    checkpointer: Any | None = None,
 ) -> BaseTool:
     """Create a Task tool for invoking subagents.
 
@@ -360,6 +404,7 @@ def _create_task_tool(
         default_interrupt_on=default_interrupt_on,
         subagents=subagents,
         general_purpose_agent=general_purpose_agent,
+        checkpointer=checkpointer,
     )
     subagent_description_str = "\n".join(subagent_descriptions)
 
@@ -373,9 +418,13 @@ def _create_task_tool(
             )
             raise ValueError(error_msg)
 
-        state_update = {k: v for k, v in result.items() if k not in _EXCLUDED_STATE_KEYS}
+        state_update = {
+            k: v for k, v in result.items() if k not in _EXCLUDED_STATE_KEYS
+        }
         # Strip trailing whitespace to prevent API errors with Anthropic
-        message_text = result["messages"][-1].text.rstrip() if result["messages"][-1].text else ""
+        message_text = (
+            result["messages"][-1].text.rstrip() if result["messages"][-1].text else ""
+        )
         return Command(
             update={
                 **state_update,
@@ -383,34 +432,111 @@ def _create_task_tool(
             }
         )
 
-    def _validate_and_prepare_state(subagent_type: str, description: str, runtime: ToolRuntime) -> tuple[Runnable, dict]:
+    def _validate_and_prepare_state(
+        subagent_type: str, description: str, runtime: ToolRuntime
+    ) -> tuple[Runnable, dict]:
         """Prepare state for invocation."""
         subagent = subagent_graphs[subagent_type]
         # Create a new state dict to avoid mutating the original
-        subagent_state = {k: v for k, v in runtime.state.items() if k not in _EXCLUDED_STATE_KEYS}
+        subagent_state = {
+            k: v for k, v in runtime.state.items() if k not in _EXCLUDED_STATE_KEYS
+        }
         subagent_state["messages"] = [HumanMessage(content=description)]
         return subagent, subagent_state
 
+    def _store_thread_id(subagent_thread_id: str) -> None:
+        """Store the subagent thread_id on the BackgroundTask via ContextVar + registry."""
+        if registry is None:
+            return
+        bg_task_id = current_background_task_id.get()
+        if bg_task_id:
+            bg_task = registry.get_by_id(bg_task_id)
+            if bg_task:
+                bg_task.subagent_thread_id = subagent_thread_id
+                logger.debug(
+                    "Stored subagent_thread_id on background task",
+                    bg_task_id=bg_task_id,
+                    subagent_thread_id=subagent_thread_id,
+                )
+
+    def _get_resume_info() -> tuple[str | None, str | None]:
+        """Check if this invocation is a resume (has existing thread_id).
+
+        Returns:
+            Tuple of (subagent_thread_id, subagent_type) or (None, None)
+        """
+        if registry is None:
+            return None, None
+        bg_task_id = current_background_task_id.get()
+        if not bg_task_id:
+            return None, None
+        bg_task = registry.get_by_id(bg_task_id)
+        if bg_task and bg_task.subagent_thread_id:
+            return bg_task.subagent_thread_id, bg_task.subagent_type
+        return None, None
+
     # Use custom description if provided, otherwise use default template
     if task_description is None:
-        task_description = TASK_TOOL_DESCRIPTION.format(available_agents=subagent_description_str)
+        task_description = TASK_TOOL_DESCRIPTION.format(
+            available_agents=subagent_description_str
+        )
     elif "{available_agents}" in task_description:
         # If custom description has placeholder, format with agent descriptions
-        task_description = task_description.format(available_agents=subagent_description_str)
+        task_description = task_description.format(
+            available_agents=subagent_description_str
+        )
 
     def task(
         description: Annotated[
             str,
-            "A detailed description of the task for the subagent to perform autonomously. Include all necessary context and specify the expected output format.",  # noqa: E501
+            "A detailed description of the task for the subagent to perform autonomously. For follow-up/resume, provide the new instructions.",  # noqa: E501
         ],
-        subagent_type: Annotated[str, "The type of subagent to use. Must be one of the available agent types listed in the tool description."],
-        runtime: ToolRuntime,
+        subagent_type: Annotated[
+            str | None,
+            "The type of subagent to use. Required for new tasks. Optional when resuming (inferred from original task).",
+        ] = None,  # noqa: E501
+        task_number: Annotated[
+            int | None,
+            "Task number of an existing task to follow up on (running) or resume (completed). Omit for new tasks.",
+        ] = None,  # noqa: E501
+        runtime: ToolRuntime = None,  # type: ignore[assignment]
     ) -> str | Command:
-        if subagent_type not in subagent_graphs:
-            allowed_types = ", ".join([f"`{k}`" for k in subagent_graphs])
-            return f"We cannot invoke subagent {subagent_type} because it does not exist, the only allowed types are {allowed_types}"
-        subagent, subagent_state = _validate_and_prepare_state(subagent_type, description, runtime)
-        result = subagent.invoke(subagent_state)
+        # Resolve subagent_type for new tasks
+        effective_type = subagent_type
+        if task_number is None:
+            if effective_type is None:
+                return "Error: subagent_type is required for new tasks."
+            if effective_type not in subagent_graphs:
+                allowed_types = ", ".join([f"`{k}`" for k in subagent_graphs])
+                return f"We cannot invoke subagent {effective_type} because it does not exist, the only allowed types are {allowed_types}"
+        else:
+            # For resume/follow-up, type is inferred; validate if explicitly provided
+            resume_thread_id, resume_type = _get_resume_info()
+            effective_type = effective_type or resume_type or "general-purpose"
+            if effective_type not in subagent_graphs:
+                allowed_types = ", ".join([f"`{k}`" for k in subagent_graphs])
+                return f"We cannot invoke subagent {effective_type} because it does not exist, the only allowed types are {allowed_types}"
+
+        subagent, subagent_state = _validate_and_prepare_state(
+            effective_type, description, runtime
+        )
+
+        # For new tasks: generate thread_id if checkpointer is available
+        # Merge into parent config to preserve streaming callbacks/namespace
+        if checkpointer:
+            thread_id = f"subagent-{uuid_mod.uuid4()}"
+            parent_config = get_config()
+            parent_configurable = parent_config.get("configurable", {})
+            config = {
+                **parent_config,
+                "configurable": {**parent_configurable, "thread_id": thread_id},
+            }
+        else:
+            thread_id = None
+            config = {}
+        result = subagent.invoke(subagent_state, config)
+        if checkpointer and thread_id:
+            _store_thread_id(thread_id)
         if not runtime.tool_call_id:
             value_error_msg = "Tool call ID is required for subagent invocation"
             raise ValueError(value_error_msg)
@@ -419,16 +545,84 @@ def _create_task_tool(
     async def atask(
         description: Annotated[
             str,
-            "A detailed description of the task for the subagent to perform autonomously. Include all necessary context and specify the expected output format.",  # noqa: E501
+            "A detailed description of the task for the subagent to perform autonomously. For follow-up/resume, provide the new instructions.",  # noqa: E501
         ],
-        subagent_type: Annotated[str, "The type of subagent to use. Must be one of the available agent types listed in the tool description."],
-        runtime: ToolRuntime,
+        subagent_type: Annotated[
+            str | None,
+            "The type of subagent to use. Required for new tasks. Optional when resuming (inferred from original task).",
+        ] = None,  # noqa: E501
+        task_number: Annotated[
+            int | None,
+            "Task number of an existing task to follow up on (running) or resume (completed). Omit for new tasks.",
+        ] = None,  # noqa: E501
+        runtime: ToolRuntime = None,  # type: ignore[assignment]
     ) -> str | Command:
-        if subagent_type not in subagent_graphs:
-            allowed_types = ", ".join([f"`{k}`" for k in subagent_graphs])
-            return f"We cannot invoke subagent {subagent_type} because it does not exist, the only allowed types are {allowed_types}"
-        subagent, subagent_state = _validate_and_prepare_state(subagent_type, description, runtime)
-        result = await subagent.ainvoke(subagent_state)
+        # Resolve subagent_type for new tasks
+        effective_type = subagent_type
+
+        # Check if this is a resume (BackgroundSubagentMiddleware set up the ContextVar)
+        resume_thread_id, resume_type = _get_resume_info()
+        is_resume = resume_thread_id is not None
+
+        if task_number is None and not is_resume:
+            if effective_type is None:
+                return "Error: subagent_type is required for new tasks."
+            if effective_type not in subagent_graphs:
+                allowed_types = ", ".join([f"`{k}`" for k in subagent_graphs])
+                return f"We cannot invoke subagent {effective_type} because it does not exist, the only allowed types are {allowed_types}"
+        else:
+            # For resume/follow-up, type is inferred; validate if explicitly provided
+            effective_type = effective_type or resume_type or "general-purpose"
+            if effective_type not in subagent_graphs:
+                allowed_types = ", ".join([f"`{k}`" for k in subagent_graphs])
+                return f"We cannot invoke subagent {effective_type} because it does not exist, the only allowed types are {allowed_types}"
+
+        subagent = subagent_graphs[effective_type]
+
+        # Get parent config to preserve streaming callbacks/namespace
+        parent_config = get_config()
+        parent_configurable = parent_config.get("configurable", {})
+
+        if is_resume and checkpointer:
+            # Resume: invoke with existing thread_id → LangGraph loads checkpoint
+            resume_state = {
+                k: v for k, v in runtime.state.items() if k not in _EXCLUDED_STATE_KEYS
+            }
+            resume_state["messages"] = [HumanMessage(content=description)]
+            config = {
+                **parent_config,
+                "configurable": {
+                    **parent_configurable,
+                    "thread_id": resume_thread_id,
+                },
+            }
+            logger.info(
+                "Resuming subagent from checkpoint",
+                thread_id=resume_thread_id,
+                subagent_type=effective_type,
+            )
+            result = await subagent.ainvoke(resume_state, config)
+        else:
+            # New task: generate fresh thread_id
+            _subagent, subagent_state = _validate_and_prepare_state(
+                effective_type, description, runtime
+            )
+            if checkpointer:
+                thread_id = f"subagent-{uuid_mod.uuid4()}"
+                config = {
+                    **parent_config,
+                    "configurable": {
+                        **parent_configurable,
+                        "thread_id": thread_id,
+                    },
+                }
+            else:
+                thread_id = None
+                config = {}
+            result = await subagent.ainvoke(subagent_state, config)
+            if checkpointer and thread_id:
+                _store_thread_id(thread_id)
+
         if not runtime.tool_call_id:
             value_error_msg = "Tool call ID is required for subagent invocation"
             raise ValueError(value_error_msg)
@@ -520,6 +714,8 @@ class SubAgentMiddleware(AgentMiddleware):
         system_prompt: str | None = TASK_SYSTEM_PROMPT,
         general_purpose_agent: bool = True,
         task_description: str | None = None,
+        registry: BackgroundTaskRegistry | None = None,
+        checkpointer: Any | None = None,
     ) -> None:
         """Initialize the `SubAgentMiddleware`."""
         super().__init__()
@@ -532,6 +728,8 @@ class SubAgentMiddleware(AgentMiddleware):
             subagents=subagents or [],
             general_purpose_agent=general_purpose_agent,
             task_description=task_description,
+            registry=registry,
+            checkpointer=checkpointer,
         )
         self.tools = [task_tool]
 
@@ -542,7 +740,9 @@ class SubAgentMiddleware(AgentMiddleware):
     ) -> ModelResponse:
         """Update the system message to include instructions on using subagents."""
         if self.system_prompt is not None:
-            new_system_message = append_to_system_message(request.system_message, self.system_prompt)
+            new_system_message = append_to_system_message(
+                request.system_message, self.system_prompt
+            )
             return handler(request.override(system_message=new_system_message))
         return handler(request)
 
@@ -553,6 +753,8 @@ class SubAgentMiddleware(AgentMiddleware):
     ) -> ModelResponse:
         """(async) Update the system message to include instructions on using subagents."""
         if self.system_prompt is not None:
-            new_system_message = append_to_system_message(request.system_message, self.system_prompt)
+            new_system_message = append_to_system_message(
+                request.system_message, self.system_prompt
+            )
             return await handler(request.override(system_message=new_system_message))
         return await handler(request)

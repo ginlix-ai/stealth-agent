@@ -4,13 +4,18 @@ This module provides a thread-safe registry for managing background tasks
 spawned by the BackgroundSubagentMiddleware.
 """
 
+from __future__ import annotations
+
 import asyncio
 import time
 import uuid as uuid_mod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
+
+if TYPE_CHECKING:
+    from ptc_agent.agent.middleware.background.utils import MessageChecker
 
 logger = structlog.get_logger(__name__)
 
@@ -73,6 +78,14 @@ class BackgroundTask:
     Each event: {"event": "message_chunk"|"tool_calls"|"tool_call_result", "data": {...}, "ts": float}
     """
 
+    subagent_thread_id: str | None = None
+    """LangGraph thread_id used for this subagent invocation.
+    Enables resume: re-invoke with same thread_id → LangGraph loads state from PostgreSQL checkpoint.
+    """
+
+    cancelled: bool = False
+    """Whether the task was explicitly cancelled (distinct from completed with error)."""
+
     @property
     def display_id(self) -> str:
         """Return Task-N format for display."""
@@ -104,7 +117,9 @@ class BackgroundTaskRegistry:
         """Initialize the registry."""
         self._tasks: dict[str, BackgroundTask] = {}
         self._task_by_number: dict[int, str] = {}  # task_number -> task_id mapping
-        self._ns_uuid_to_task_id: dict[str, str] = {}  # LangGraph namespace UUID -> task_id
+        self._ns_uuid_to_task_id: dict[
+            str, str
+        ] = {}  # LangGraph namespace UUID -> task_id
         self._next_task_number: int = 1
         self._lock = asyncio.Lock()
         self._results: dict[str, Any] = {}
@@ -235,6 +250,27 @@ class BackgroundTaskRegistry:
                 return self._tasks.get(task_id)
         return None
 
+    def clear_namespaces_for_task(self, task_id: str) -> None:
+        """Remove stale namespace UUID→task_id mappings for a task.
+
+        Called before resuming a completed task so that new namespace UUIDs
+        from the resumed invocation can be registered fresh.
+
+        Args:
+            task_id: The task identifier to clear mappings for
+        """
+        stale_keys = [
+            ns for ns, tid in self._ns_uuid_to_task_id.items() if tid == task_id
+        ]
+        for key in stale_keys:
+            del self._ns_uuid_to_task_id[key]
+        if stale_keys:
+            logger.debug(
+                "Cleared stale namespace mappings for task",
+                task_id=task_id,
+                cleared_count=len(stale_keys),
+            )
+
     async def append_captured_event(self, task_id: str, event: dict[str, Any]) -> None:
         """Append a captured SSE event to a background task.
 
@@ -262,7 +298,9 @@ class BackgroundTaskRegistry:
         async with self._lock:
             task = self._tasks.get(task_id)
             if task:
-                task.tool_call_counts[tool_name] = task.tool_call_counts.get(tool_name, 0) + 1
+                task.tool_call_counts[tool_name] = (
+                    task.tool_call_counts.get(tool_name, 0) + 1
+                )
                 task.total_tool_calls += 1
                 task.current_tool = tool_name
                 task.last_update_time = time.time()
@@ -274,12 +312,23 @@ class BackgroundTaskRegistry:
                     total_calls=task.total_tool_calls,
                 )
 
-    async def wait_for_specific(self, task_number: int, timeout: float = 60.0) -> dict[str, Any]:
+    async def wait_for_specific(
+        self,
+        task_number: int,
+        timeout: float = 60.0,
+        *,
+        message_checker: MessageChecker | None = None,
+        poll_interval: float = 2.0,
+    ) -> dict[str, Any]:
         """Wait for a specific task to complete by its number.
 
         Args:
             task_number: The task number (1, 2, 3...)
             timeout: Maximum time to wait in seconds
+            message_checker: Optional async callable that returns True when a
+                user message is queued (used to interrupt the wait early).
+            poll_interval: Seconds between message-checker polls (ignored when
+                *message_checker* is None — falls back to a single wait).
 
         Returns:
             Dict with task result or error
@@ -296,7 +345,10 @@ class BackgroundTaskRegistry:
             return task.result or {"success": True, "result": None}
 
         if task.asyncio_task is None:
-            return {"success": False, "error": f"Task-{task_number} has no asyncio task"}
+            return {
+                "success": False,
+                "error": f"Task-{task_number} has no asyncio task",
+            }
 
         logger.info(
             "Waiting for specific task",
@@ -305,13 +357,50 @@ class BackgroundTaskRegistry:
             timeout=timeout,
         )
 
-        # asyncio.wait() returns (done, pending) when timeout expires, never raises TimeoutError
-        _done, _pending = await asyncio.wait(
-            [task.asyncio_task],
-            timeout=timeout,
-            return_when=asyncio.ALL_COMPLETED,
-        )
+        # --- polling loop (or single wait when no checker) ---------------
+        start = time.monotonic()
 
+        if message_checker is None:
+            # Original single-wait behaviour
+            await asyncio.wait(
+                [task.asyncio_task],
+                timeout=timeout,
+                return_when=asyncio.ALL_COMPLETED,
+            )
+        else:
+            while True:
+                remaining = timeout - (time.monotonic() - start)
+                if remaining <= 0:
+                    break
+
+                await asyncio.wait(
+                    [task.asyncio_task],
+                    timeout=min(poll_interval, remaining),
+                    return_when=asyncio.ALL_COMPLETED,
+                )
+
+                if task.asyncio_task.done():
+                    break
+
+                # Check for queued user messages
+                try:
+                    if await message_checker():
+                        logger.info(
+                            "Wait interrupted by queued user message",
+                            task_number=task_number,
+                            display_id=task.display_id,
+                            elapsed=f"{time.monotonic() - start:.1f}s",
+                        )
+                        return {
+                            "success": False,
+                            "status": "interrupted",
+                            "reason": "user_message_queued",
+                        }
+                except Exception:
+                    # Redis glitch — continue waiting normally
+                    pass
+
+        # --- collect result ----------------------------------------------
         async with self._lock:
             if task.asyncio_task.done():
                 task.completed = True
@@ -337,14 +426,25 @@ class BackgroundTaskRegistry:
                     "status": "timeout",
                 }
 
-    async def wait_for_all(self, timeout: float = 60.0) -> dict[str, Any]:
+    async def wait_for_all(
+        self,
+        timeout: float = 60.0,
+        *,
+        message_checker: MessageChecker | None = None,
+        poll_interval: float = 2.0,
+    ) -> dict[str, Any]:
         """Wait for all background tasks to complete.
 
         Args:
             timeout: Maximum time to wait in seconds
+            message_checker: Optional async callable that returns True when a
+                user message is queued (used to interrupt the wait early).
+            poll_interval: Seconds between message-checker polls (ignored when
+                *message_checker* is None — falls back to a single wait).
 
         Returns:
-            Dict mapping task_id to result (success dict or error dict)
+            Dict mapping task_id to result (success dict or error dict).
+            When interrupted, still-running tasks get ``status="interrupted"``.
         """
         async with self._lock:
             tasks_to_wait = {
@@ -363,13 +463,42 @@ class BackgroundTaskRegistry:
             timeout=timeout,
         )
 
-        # Wait for all tasks with timeout
-        # asyncio.wait() returns (done, pending) when timeout expires, never raises TimeoutError
-        _done, _pending = await asyncio.wait(
-            tasks_to_wait.values(),
-            timeout=timeout,
-            return_when=asyncio.ALL_COMPLETED,
-        )
+        interrupted = False
+        start = time.monotonic()
+
+        if message_checker is None:
+            await asyncio.wait(
+                tasks_to_wait.values(),
+                timeout=timeout,
+                return_when=asyncio.ALL_COMPLETED,
+            )
+        else:
+            remaining_tasks = set(tasks_to_wait.values())
+            while remaining_tasks:
+                remaining = timeout - (time.monotonic() - start)
+                if remaining <= 0:
+                    break
+
+                done, remaining_tasks = await asyncio.wait(
+                    remaining_tasks,
+                    timeout=min(poll_interval, remaining),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                if not remaining_tasks:
+                    break  # all done
+
+                try:
+                    if await message_checker():
+                        logger.info(
+                            "wait_for_all interrupted by queued user message",
+                            elapsed=f"{time.monotonic() - start:.1f}s",
+                            pending=len(remaining_tasks),
+                        )
+                        interrupted = True
+                        break
+                except Exception:
+                    pass
 
         # Collect results
         results = {}
@@ -388,7 +517,9 @@ class BackgroundTaskRegistry:
                         logger.info(
                             "Background task completed",
                             task_id=task_id,
-                            success=result.get("success", False) if isinstance(result, dict) else True,
+                            success=result.get("success", False)
+                            if isinstance(result, dict)
+                            else True,
                         )
                     except Exception as e:
                         task.error = str(e)
@@ -398,6 +529,12 @@ class BackgroundTaskRegistry:
                             task_id=task_id,
                             error=str(e),
                         )
+                elif interrupted:
+                    results[task_id] = {
+                        "success": False,
+                        "status": "interrupted",
+                        "reason": "user_message_queued",
+                    }
                 else:
                     # Task didn't complete within timeout
                     results[task_id] = {
@@ -485,8 +622,13 @@ class BackgroundTaskRegistry:
                     task.handler_task.cancel()
                 task.asyncio_task.cancel()
                 task.completed = True
+                task.cancelled = True
                 task.error = "Cancelled"
-                task.result = {"success": False, "error": "Cancelled", "status": "cancelled"}
+                task.result = {
+                    "success": False,
+                    "error": "Cancelled",
+                    "status": "cancelled",
+                }
                 logger.info("Cancelled background task", task_id=task_id, force=force)
                 return True
 
@@ -511,8 +653,13 @@ class BackgroundTaskRegistry:
                         task.handler_task.cancel()
                     task.asyncio_task.cancel()
                     task.completed = True
+                    task.cancelled = True
                     task.error = "Cancelled"
-                    task.result = {"success": False, "error": "Cancelled", "status": "cancelled"}
+                    task.result = {
+                        "success": False,
+                        "error": "Cancelled",
+                        "status": "cancelled",
+                    }
                     cancelled += 1
 
         if cancelled > 0:
