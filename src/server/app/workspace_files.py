@@ -232,6 +232,10 @@ async def list_workspace_files(
         False,
         description="If True, wait for sandbox to be ready. If False, return empty list if not ready.",
     ),
+    auto_start: bool = Query(
+        False,
+        description="If True, auto-start a stopped workspace instead of returning DB-cached files.",
+    ),
 ) -> dict[str, Any]:
     """List files in a workspace's sandbox, or from DB if stopped."""
 
@@ -241,8 +245,8 @@ async def list_workspace_files(
     if _is_flash_workspace(workspace):
         return {"files": [], "sandbox_ready": False, "flash_workspace": True}
 
-    # DB fallback for stopped workspaces
-    if workspace.get("status") in ("stopped", "stopping"):
+    # DB fallback for stopped workspaces (unless auto_start requested)
+    if not auto_start and workspace.get("status") in ("stopped", "stopping"):
         file_tree = await FilePersistenceService.get_file_tree(workspace_id)
         # Filter by path prefix if specified
         normalized_path = _normalize_requested_path(path)
@@ -268,6 +272,18 @@ async def list_workspace_files(
     # This allows CLI autocomplete to populate later without blocking startup
     if not wait_for_sandbox and not sandbox.is_ready():
         return {"files": [], "sandbox_ready": False}
+
+    # Pre-check sandbox health before file listing.
+    # aglob_files swallows all exceptions and returns [], which turns a broken
+    # sandbox into "200 with no files". This check surfaces the real error.
+    try:
+        await sandbox.ensure_sandbox_ready()
+    except Exception as e:
+        logger.warning(f"Sandbox health check failed for workspace {workspace_id}: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Sandbox is not reachable: {e}",
+        )
 
     # aglob_files returns absolute sandbox paths.
     # Allow explicit listing of hidden internal paths (e.g. /view _internal/...).
