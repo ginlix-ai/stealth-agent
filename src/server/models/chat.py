@@ -302,6 +302,12 @@ class GeneratePodcastRequest(BaseModel):
     content: str = Field(..., description="The content of the podcast")
 
 
+class SubagentMessageRequest(BaseModel):
+    """Request model for sending a message to a running subagent."""
+
+    content: str = Field(..., description="The instruction/message to send to the subagent")
+
+
 class WorkflowResumeRequest(BaseModel):
     """
     Request to resume workflow execution from a checkpoint.

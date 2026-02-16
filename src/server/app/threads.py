@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from src.server.utils.api import CurrentUserId
-from src.server.models.chat import ChatRequest
+from src.server.models.chat import ChatRequest, SubagentMessageRequest
 from src.server.models.conversation import (
     WorkspaceThreadListItem,
     WorkspaceThreadsListResponse,
@@ -446,4 +446,22 @@ async def get_thread_subagents(thread_id: str):
             "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
         },
+    )
+
+
+@router.post("/{thread_id}/subagents/{task_number}/messages")
+async def send_subagent_message(
+    thread_id: str,
+    task_number: int,
+    request: SubagentMessageRequest,
+    x_user_id: CurrentUserId,
+):
+    """Send a message/instruction to a running background subagent."""
+    from src.server.handlers.chat_handler import queue_message_for_subagent
+
+    return await queue_message_for_subagent(
+        thread_id=thread_id,
+        task_number=task_number,
+        content=request.content,
+        user_id=x_user_id,
     )

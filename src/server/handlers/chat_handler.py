@@ -111,6 +111,88 @@ async def queue_message_for_thread(
         return None
 
 
+async def queue_message_for_subagent(
+    thread_id: str,
+    task_number: int,
+    content: str,
+    user_id: str,
+) -> dict:
+    """Queue a user message for injection into a running subagent via Redis.
+
+    The SubagentMessageQueueMiddleware will pick these up before the subagent's next LLM call.
+
+    Args:
+        thread_id: The thread with an active workflow
+        task_number: The subagent task number (1, 2, 3...)
+        content: The message text to send
+        user_id: User identifier
+
+    Returns:
+        Dict with success status and queue position
+    """
+    from src.utils.cache.redis_cache import get_cache_client
+
+    # 1. Look up the registry for this thread
+    registry_store = BackgroundRegistryStore.get_instance()
+    registry = await registry_store.get_registry(thread_id)
+    if registry is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No active workflow for thread {thread_id}",
+        )
+
+    # 2. Look up the task by number
+    task = await registry.get_by_number(task_number)
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Task-{task_number} not found in thread {thread_id}",
+        )
+
+    # 3. Reject if already completed or cancelled
+    if task.completed or task.cancelled:
+        status = "cancelled" if task.cancelled else "completed"
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task-{task_number} has already {status}",
+        )
+
+    # 4. Queue to Redis (same pattern as _queue_followup_to_redis)
+    cache = get_cache_client()
+    if not cache.enabled or not cache.client:
+        raise HTTPException(
+            status_code=503,
+            detail="Message queuing unavailable (Redis not connected)",
+        )
+
+    try:
+        key = f"subagent:queued_messages:{task.task_id}"
+        payload = json.dumps(content)
+        pipe = cache.client.pipeline()
+        pipe.rpush(key, payload)
+        pipe.llen(key)
+        pipe.expire(key, 3600)  # 1h TTL
+        results = await pipe.execute()
+        position = results[1]
+
+        logger.info(
+            f"[SUBAGENT_MSG] Queued message for subagent: "
+            f"thread_id={thread_id} task={task.display_id} position={position}"
+        )
+        return {
+            "success": True,
+            "task_id": task.task_id,
+            "display_id": task.display_id,
+            "queue_position": position,
+        }
+    except Exception as e:
+        logger.error(f"[SUBAGENT_MSG] Failed to queue message: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to queue message: {e}",
+        )
+
+
 async def resolve_byok_llm_client(user_id: str, model_name: str, byok_active: bool):
     """
     If BYOK is active, look up the user's key for the model's provider
