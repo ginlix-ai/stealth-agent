@@ -29,9 +29,27 @@ function AgentSidebar({ agents, activeAgentId, onSelectAgent, onRemoveAgent }) {
     >
       {agents.map((agent) => {
         const isSelected = activeAgentId === agent.id;
-        const isActive = agent.status === 'active' && agent.isActive;
-        const isCompleted = agent.status === 'completed';
         const isMainAgent = agent.id === 'main' || agent.isMainAgent;
+
+        // Derive status from messages for subagents (same logic as SubagentStatusIndicator)
+        const messages = agent.messages || [];
+        const lastAssistant = !isMainAgent
+          ? [...messages].reverse().find(m => m.role === 'assistant')
+          : null;
+        const isMessageStreaming = lastAssistant?.isStreaming === true;
+        const hasInProgressTool = lastAssistant?.toolCallProcesses
+          ? Object.values(lastAssistant.toolCallProcesses).some(p => p.isInProgress)
+          : false;
+        const effectiveStatus = isMainAgent
+          ? agent.status
+          : messages.length === 0
+            ? 'initializing'
+            : isMessageStreaming || hasInProgressTool
+              ? 'active'
+              : (lastAssistant && lastAssistant.isStreaming === false) ? 'completed' : agent.status;
+
+        const isActive = effectiveStatus === 'active';
+        const isCompleted = effectiveStatus === 'completed';
         const agentIcon = isMainAgent ? iconKing : (isCompleted ? iconRobo : iconRoboSing);
 
         return (

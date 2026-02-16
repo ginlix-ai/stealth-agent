@@ -30,6 +30,7 @@ import {
   handleSubagentStatus,
   isSubagentEvent,
   handleSubagentMessageChunk,
+  handleSubagentToolCallChunks,
   handleSubagentToolCalls,
   handleSubagentToolCallResult,
   handleSubagentFollowupInjected,
@@ -1626,6 +1627,14 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               contentType,
               content: event.content,
               finishReason: event.finish_reason,
+              refs,
+              updateSubagentCard,
+            });
+          } else if (eventType === 'tool_call_chunks') {
+            handleSubagentToolCallChunks({
+              taskId,
+              assistantMessageId: subagentAssistantMessageId,
+              chunks: event.tool_call_chunks,
               refs,
               updateSubagentCard,
             });

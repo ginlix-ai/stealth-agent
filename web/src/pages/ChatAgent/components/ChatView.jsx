@@ -416,6 +416,30 @@ function ChatView({ workspaceId, threadId, onBack }) {
     ? agents.find(a => a.id === activeAgentId) || null
     : null;
 
+  // Callback: user sent an instruction to the active subagent via the status bar.
+  // Immediately insert a pending user message (breathing animation) into the card.
+  const handleSubagentInstruction = useCallback((content) => {
+    if (!activeAgent) return;
+    const agentId = activeAgent.id;
+    const cardId = `subagent-${agentId}`;
+    const card = floatingCards[cardId];
+    const existingMessages = card?.subagentData?.messages || [];
+
+    const pendingMessage = {
+      id: `pending-instruction-${Date.now()}`,
+      role: 'user',
+      content,
+      contentSegments: [{ type: 'text', content, order: 0 }],
+      reasoningProcesses: {},
+      toolCallProcesses: {},
+      isPending: true,
+    };
+
+    updateSubagentCard(agentId, {
+      messages: [...existingMessages, pendingMessage],
+    });
+  }, [activeAgent, floatingCards, updateSubagentCard]);
+
   // Show sidebar when new subagent spawns (don't auto-switch activeAgentId)
   const prevSubagentCountRef = useRef(0);
   useEffect(() => {
@@ -927,7 +951,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
                     />
                   </>
                 ) : activeAgent ? (
-                  <SubagentStatusBar agent={activeAgent} />
+                  <SubagentStatusBar agent={activeAgent} threadId={threadId} onInstructionSent={handleSubagentInstruction} />
                 ) : null}
               </div>
             </div>

@@ -975,6 +975,72 @@ export function handleSubagentMessageChunk({
 }
 
 /**
+ * Handles subagent tool_call_chunks events during streaming.
+ * Updates pendingToolCallChunks on the subagent assistant message to show
+ * a "preparing" indicator while the LLM streams tool arguments.
+ * @param {Object} params - Handler parameters
+ * @param {string} params.taskId - Task ID
+ * @param {string} params.assistantMessageId - ID of the assistant message
+ * @param {Array} params.chunks - Array of tool call chunk objects
+ * @param {Object} params.refs - Refs object with subagent state refs
+ * @param {Function} params.updateSubagentCard - Callback to update subagent card
+ * @returns {boolean} True if event was handled
+ */
+export function handleSubagentToolCallChunks({ taskId, assistantMessageId, chunks, refs, updateSubagentCard }) {
+  if (!taskId || !assistantMessageId || !chunks || !Array.isArray(chunks) || !updateSubagentCard) {
+    return false;
+  }
+
+  const subagentStateRefs = refs.subagentStateRefs || {};
+  if (!subagentStateRefs[taskId]) {
+    subagentStateRefs[taskId] = {
+      contentOrderCounterRef: { current: 0 },
+      currentReasoningIdRef: { current: null },
+      currentToolCallIdRef: { current: null },
+      messages: [],
+    };
+  }
+
+  const taskRefs = subagentStateRefs[taskId];
+  const updatedMessages = [...taskRefs.messages];
+
+  let messageIndex = updatedMessages.findIndex(m => m.id === assistantMessageId);
+  if (messageIndex === -1) {
+    updatedMessages.push({
+      id: assistantMessageId,
+      role: 'assistant',
+      contentSegments: [],
+      reasoningProcesses: {},
+      toolCallProcesses: {},
+      pendingToolCallChunks: {},
+      isStreaming: true,
+    });
+    messageIndex = updatedMessages.length - 1;
+  }
+
+  const msg = { ...updatedMessages[messageIndex] };
+  const pending = { ...(msg.pendingToolCallChunks || {}) };
+
+  chunks.forEach((chunk) => {
+    const key = `${chunk.index ?? 0}`;
+    const existing = pending[key] || { toolName: null, chunkCount: 0, argsLength: 0, firstSeenAt: Date.now() };
+    pending[key] = {
+      toolName: chunk.name || existing.toolName,
+      chunkCount: existing.chunkCount + 1,
+      argsLength: existing.argsLength + (chunk.args?.length || 0),
+      firstSeenAt: existing.firstSeenAt,
+    };
+  });
+
+  msg.pendingToolCallChunks = pending;
+  updatedMessages[messageIndex] = msg;
+  taskRefs.messages = updatedMessages;
+
+  updateSubagentCard(taskId, { messages: taskRefs.messages });
+  return true;
+}
+
+/**
  * Handles subagent tool_calls events during streaming
  * @param {Object} params - Handler parameters
  * @param {string} params.taskId - Task ID
@@ -1072,6 +1138,8 @@ export function handleSubagentToolCalls({ taskId, assistantMessageId, toolCalls,
 
       msg.contentSegments = contentSegments;
       msg.toolCallProcesses = toolCallProcesses;
+      // Clear pending chunks now that the final tool_calls event has arrived
+      msg.pendingToolCallChunks = {};
       taskRefs.messages = updatedMessages;
     }
   });
@@ -1080,8 +1148,8 @@ export function handleSubagentToolCalls({ taskId, assistantMessageId, toolCalls,
   // This ensures the status shows which tool is currently running
   const firstToolCall = toolCalls.length > 0 ? toolCalls[0] : null;
   const currentToolName = firstToolCall?.name || '';
-  
-  updateSubagentCard(taskId, { 
+
+  updateSubagentCard(taskId, {
     messages: taskRefs.messages,
     currentTool: currentToolName, // Update current tool to show what's running
   });
@@ -1397,15 +1465,23 @@ export function handleSubagentFollowupInjected({ taskId, content, refs, updateSu
     updatedMessages[oldMsgIdx] = msg;
   }
 
-  // 2. Insert user follow-up message
-  updatedMessages.push({
-    id: `followup-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-    role: 'user',
-    content,
-    contentSegments: [{ type: 'text', content, order: 0 }],
-    reasoningProcesses: {},
-    toolCallProcesses: {},
-  });
+  // 2. Insert user follow-up message (or confirm a pending one from the frontend)
+  const pendingIdx = updatedMessages.findIndex(
+    m => m.role === 'user' && m.isPending && m.content === content
+  );
+  if (pendingIdx !== -1) {
+    // Confirm the optimistic pending message — remove isPending flag
+    updatedMessages[pendingIdx] = { ...updatedMessages[pendingIdx], isPending: false };
+  } else {
+    updatedMessages.push({
+      id: `followup-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      role: 'user',
+      content,
+      contentSegments: [{ type: 'text', content, order: 0 }],
+      reasoningProcesses: {},
+      toolCallProcesses: {},
+    });
+  }
 
   // 3. Create new assistant message placeholder (subsequent events attach here)
   const newAssistantId = `subagent-${taskId}-assistant-${Date.now()}`;
