@@ -17,14 +17,35 @@ import './AgentSidebar.css';
 function SubagentStatusBar({ agent }) {
   if (!agent) return null;
 
-  const isActive = agent.status === 'active' && agent.isActive;
-  const isCompleted = agent.status === 'completed';
+  const messages = agent.messages || [];
+
+  // Derive streaming state from messages (self-sufficient, no subagent_status dependency)
+  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+  const isMessageStreaming = lastAssistant?.isStreaming === true;
+
+  // Derive current tool from message state
+  const derivedCurrentTool = (() => {
+    if (agent.currentTool) return agent.currentTool;
+    if (!lastAssistant?.toolCallProcesses) return '';
+    const inProgress = Object.values(lastAssistant.toolCallProcesses).find(p => p.isInProgress);
+    return inProgress?.toolName || '';
+  })();
+
+  // Effective status: prefer message-derived state, fall back to card status
+  const effectiveStatus = messages.length === 0
+    ? 'initializing'
+    : isMessageStreaming || derivedCurrentTool
+      ? 'active'
+      : (lastAssistant && lastAssistant.isStreaming === false) ? 'completed' : agent.status;
+
+  const isActive = effectiveStatus === 'active';
+  const isCompleted = effectiveStatus === 'completed';
 
   const getStatusIcon = () => {
-    if (agent.currentTool) {
+    if (derivedCurrentTool) {
       return <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />;
     }
-    if (agent.status === 'active' && agent.messages?.length > 0) {
+    if (isActive) {
       return <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />;
     }
     if (isCompleted) {
@@ -34,8 +55,8 @@ function SubagentStatusBar({ agent }) {
   };
 
   const getStatusText = () => {
-    if (agent.currentTool) {
-      return `Running: ${agent.currentTool}`;
+    if (derivedCurrentTool) {
+      return `Running: ${derivedCurrentTool}`;
     }
     if (isCompleted) {
       if (agent.toolCalls > 0) {
@@ -43,11 +64,8 @@ function SubagentStatusBar({ agent }) {
       }
       return 'Completed';
     }
-    if (agent.status === 'active') {
-      if (agent.messages?.length > 0) {
-        return 'Running';
-      }
-      return 'Initializing';
+    if (isActive) {
+      return 'Running';
     }
     return 'Initializing';
   };

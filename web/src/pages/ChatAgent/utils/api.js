@@ -250,9 +250,9 @@ export async function softInterruptWorkflow(threadId) {
  * @param {string} workspaceId
  * @param {string} dirPath - e.g. "results"
  */
-export async function listWorkspaceFiles(workspaceId, dirPath = 'results') {
+export async function listWorkspaceFiles(workspaceId, dirPath = 'results', { autoStart = false } = {}) {
   const { data } = await api.get(`/api/v1/workspaces/${workspaceId}/files`, {
-    params: { path: dirPath, include_system: false },
+    params: { path: dirPath, include_system: false, auto_start: autoStart },
   });
   return data; // { workspace_id, path, files: [...] }
 }

@@ -380,7 +380,9 @@ export function handleHistoryToolCalls({ assistantMessageId, toolCalls, pairStat
 
           // If this tool is the Task tool (subagent spawner), also create a subagent_task segment
           // Backend uses PascalCase "Task"; accept both for compatibility
-          if ((toolCall.name === 'task' || toolCall.name === 'Task') && toolCallId) {
+          // Skip for follow-up/resume calls (task_number present) — these target existing subagents
+          const isNewSpawn = !toolCall.args?.task_number;
+          if ((toolCall.name === 'task' || toolCall.name === 'Task') && toolCallId && isNewSpawn) {
             const subagentId = toolCallId;
             // Only add the segment once per subagentId
             const hasExistingSubagentSegment = contentSegments.some(

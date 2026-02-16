@@ -25,27 +25,46 @@ import '../../Dashboard/Dashboard.css';
 /**
  * SubagentStatusIndicator — inline status line for subagent view.
  */
-function SubagentStatusIndicator({ status, currentTool, toolCalls = 0, messagesCount = 0 }) {
+function SubagentStatusIndicator({ status, currentTool, toolCalls = 0, messages = [] }) {
+  // Derive streaming state from messages (self-sufficient, no subagent_status dependency)
+  const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+  const isMessageStreaming = lastAssistant?.isStreaming === true;
+
+  // Derive current tool from message state
+  const derivedCurrentTool = (() => {
+    if (currentTool) return currentTool;
+    if (!lastAssistant?.toolCallProcesses) return '';
+    const inProgress = Object.values(lastAssistant.toolCallProcesses).find(p => p.isInProgress);
+    return inProgress?.toolName || '';
+  })();
+
+  // Effective status: prefer message-derived state, fall back to card status
+  const effectiveStatus = messages.length === 0
+    ? 'initializing'
+    : isMessageStreaming || derivedCurrentTool
+      ? 'active'
+      : (lastAssistant && lastAssistant.isStreaming === false) ? 'completed' : status;
+
   const getIcon = () => {
-    if (currentTool) {
+    if (derivedCurrentTool) {
       return <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />;
     }
-    if (status === 'active' && messagesCount > 0) {
+    if (effectiveStatus === 'active') {
       return <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />;
     }
-    if (status === 'completed') {
+    if (effectiveStatus === 'completed') {
       return <CheckCircle2 className="h-3.5 w-3.5" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />;
     }
     return <Circle className="h-3.5 w-3.5" style={{ color: 'rgba(255, 255, 255, 0.3)' }} />;
   };
 
   const getText = () => {
-    if (currentTool) return `Running: ${currentTool}`;
-    if (status === 'completed') {
+    if (derivedCurrentTool) return `Running: ${derivedCurrentTool}`;
+    if (effectiveStatus === 'completed') {
       return toolCalls > 0 ? `Completed (${toolCalls} tool calls)` : 'Completed';
     }
-    if (status === 'active') {
-      return messagesCount > 0 ? 'Running' : 'Initializing';
+    if (effectiveStatus === 'active') {
+      return 'Running';
     }
     return 'Initializing';
   };
@@ -835,7 +854,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
                         status={activeAgent.status}
                         currentTool={activeAgent.currentTool}
                         toolCalls={activeAgent.toolCalls}
-                        messagesCount={activeAgent.messages?.length}
+                        messages={activeAgent.messages || []}
                       />
                       {/* Messages — reuse MessageList */}
                       {activeAgent.messages?.length > 0 && (

@@ -170,6 +170,37 @@ export function useFloatingCards(initialCards = {}) {
         if (cardId.startsWith('subagent-') && updated[cardId]?.subagentData) {
           const card = updated[cardId];
           if (card.subagentData.isActive !== false) {
+            // Finalize all assistant messages: stop streaming, complete in-progress items
+            const msgs = card.subagentData.messages;
+            let finalizedMsgs = msgs;
+            if (msgs?.length > 0) {
+              finalizedMsgs = msgs.map(msg => {
+                if (msg.role !== 'assistant') return msg;
+                const m = { ...msg, isStreaming: false };
+                // Complete in-progress tool calls
+                if (m.toolCallProcesses) {
+                  const procs = { ...m.toolCallProcesses };
+                  for (const [id, proc] of Object.entries(procs)) {
+                    if (proc.isInProgress) {
+                      procs[id] = { ...proc, isInProgress: false, isComplete: true };
+                    }
+                  }
+                  m.toolCallProcesses = procs;
+                }
+                // Complete active reasoning
+                if (m.reasoningProcesses) {
+                  const rps = { ...m.reasoningProcesses };
+                  for (const [id, rp] of Object.entries(rps)) {
+                    if (rp.isReasoning) {
+                      rps[id] = { ...rp, isReasoning: false, reasoningComplete: true };
+                    }
+                  }
+                  m.reasoningProcesses = rps;
+                }
+                return m;
+              });
+            }
+
             updated[cardId] = {
               ...card,
               subagentData: {
@@ -177,6 +208,7 @@ export function useFloatingCards(initialCards = {}) {
                 isActive: false,
                 status: 'completed',
                 currentTool: '',
+                messages: finalizedMsgs,
               },
             };
             hasChanges = true;

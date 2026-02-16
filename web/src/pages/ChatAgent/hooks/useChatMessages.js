@@ -32,6 +32,7 @@ import {
   handleSubagentMessageChunk,
   handleSubagentToolCalls,
   handleSubagentToolCallResult,
+  handleSubagentFollowupInjected,
 } from './utils/streamEventHandlers';
 import {
   handleHistoryUserMessage,
@@ -587,8 +588,9 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           }
 
           // Extract task tool call IDs and map to agent_ids (from subagent_status) by order
+          // Skip follow-up/resume calls (task_number present) — they target existing subagents
           if (event.tool_calls) {
-            const taskToolCalls = event.tool_calls.filter((tc) => (tc.name === 'task' || tc.name === 'Task') && tc.id);
+            const taskToolCalls = event.tool_calls.filter((tc) => (tc.name === 'task' || tc.name === 'Task') && tc.id && !tc.args?.task_number);
             const agentIds = historyPendingAgentIdsRef.current;
             const toolCallIds = taskToolCalls.map((tc) => tc.id).filter(Boolean);
             if (agentIds.length > 0 && toolCallIds.length > 0) {
@@ -880,9 +882,11 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               const event = subagentHistory.events[i];
               const eventType = event.event;
               const contentType = event.content_type;
-              // Use a consistent message ID for all events from the same subagent
-              // In history, subagent events might not have consistent IDs, so we use taskId-based ID
-              const assistantMessageId = event.id || `subagent-${taskId}-msg`;
+              // Use a stable message ID per task so all events go into one message,
+              // matching main agent behavior for proper ActivityBlock grouping.
+              // Read from taskRefs (rotated by handleSubagentFollowupInjected on chain break).
+              const historyTaskRefs = tempRefs.subagentStateRefs?.[taskId];
+              const assistantMessageId = historyTaskRefs?.currentAssistantMessageId || `subagent-${taskId}-assistant`;
               
               console.log('[History] Processing subagent event', i + 1, 'of', subagentHistory.events.length, ':', {
                 taskId,
@@ -928,6 +932,13 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                   updateSubagentCard: historyUpdateSubagentCard,
                 });
                 console.log('[History] handleSubagentToolCallResult result:', result);
+              } else if (eventType === 'subagent_followup_injected') {
+                handleSubagentFollowupInjected({
+                  taskId,
+                  content: event.content,
+                  refs: tempRefs,
+                  updateSubagentCard: historyUpdateSubagentCard,
+                });
               } else {
                 console.warn('[History] Unhandled subagent event type:', eventType);
               }
@@ -1598,7 +1609,14 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             }
           }
 
-          const subagentAssistantMessageId = event.id || `subagent-${Date.now()}`;
+          // Use a stable message ID per task so all events from the same subagent
+          // go into one message (same pattern as main agent). Using event.id would
+          // create a separate message per model call since LangGraph assigns a new
+          // AIMessage ID each invocation, breaking ActivityBlock grouping.
+          // The ID is stored in taskRefs and rotated by handleSubagentFollowupInjected
+          // when a follow-up breaks the message chain (mirrors queued_message_injected).
+          const taskRefsForId = refs.subagentStateRefs?.[taskId];
+          const subagentAssistantMessageId = taskRefsForId?.currentAssistantMessageId || `subagent-${taskId}-assistant`;
 
           if (eventType === 'message_chunk') {
             const contentType = event.content_type || 'text';
@@ -1653,6 +1671,13 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 agent: event.agent,
               });
             }
+          } else if (eventType === 'subagent_followup_injected') {
+            handleSubagentFollowupInjected({
+              taskId,
+              content: event.content,
+              refs,
+              updateSubagentCard,
+            });
           }
         }
         return; // Don't process subagent events in main chat view
@@ -1755,9 +1780,10 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         return;
       } else if (eventType === 'tool_calls') {
         // Track 'task' tool calls for mapping to task IDs
+        // Skip follow-up/resume calls (task_number present) — they target existing subagents
         if (event.tool_calls && Array.isArray(event.tool_calls)) {
           event.tool_calls.forEach((toolCall) => {
-            if ((toolCall.name === 'task' || toolCall.name === 'Task') && toolCall.id) {
+            if ((toolCall.name === 'task' || toolCall.name === 'Task') && toolCall.id && !toolCall.args?.task_number) {
               pendingTaskToolCallsRef.current.push({
                 toolCallId: toolCall.id,
                 timestamp: Date.now(),

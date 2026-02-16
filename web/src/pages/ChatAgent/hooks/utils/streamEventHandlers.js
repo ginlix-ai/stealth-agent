@@ -280,8 +280,10 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
 
           // If this tool is the Task tool (subagent spawner), also create a subagent_task segment
           // Mirrors historyEventHandlers.js logic for consistency
+          // Skip for follow-up/resume calls (task_number present) — these target existing subagents
           const subagentTasks = { ...(msg.subagentTasks || {}) };
-          if ((toolCall.name === 'task' || toolCall.name === 'Task') && toolCallId) {
+          const isNewSpawn = !toolCall.args?.task_number;
+          if ((toolCall.name === 'task' || toolCall.name === 'Task') && toolCallId && isNewSpawn) {
             const subagentId = toolCallId;
             const hasExistingSubagentSegment = contentSegments.some(
               (s) => s.type === 'subagent_task' && s.subagentId === subagentId
@@ -525,11 +527,10 @@ export function handleSubagentStatus({ subagentStatus, updateSubagentCard, displ
 
   const displayToAgentMap = displayIdToAgentIdMap || new Map();
 
-  // --- Preferred format: active_tasks (array of objects) ---
-  const activeTasks = subagentStatus.active_tasks;
-  if (Array.isArray(activeTasks) && activeTasks.length > 0) {
-    // completed_tasks in preferred format: array of display_id strings ("Task-1", "Task-2")
-    const completedTasks = Array.isArray(subagentStatus.completed_tasks) ? subagentStatus.completed_tasks : [];
+  // --- Preferred format: active_tasks / completed_tasks arrays ---
+  const activeTasks = Array.isArray(subagentStatus.active_tasks) ? subagentStatus.active_tasks : [];
+  const completedTasks = Array.isArray(subagentStatus.completed_tasks) ? subagentStatus.completed_tasks : [];
+  if (activeTasks.length > 0 || completedTasks.length > 0) {
     const completedAgentIds = new Set();
     const completedTaskMap = new Map(); // agent_id -> task object if available
 
@@ -761,6 +762,22 @@ export function handleSubagentMessageChunk({
   const taskRefs = subagentStateRefs[taskId];
   const { contentOrderCounterRef, currentReasoningIdRef } = taskRefs;
 
+  // Handle finishReason with no content — model call complete
+  if (finishReason && !content && contentType !== 'reasoning_signal') {
+    if (finishReason === 'tool_calls') {
+      return false; // More work coming, let tool_calls handler process
+    }
+    // finish_reason: "stop" — subagent's model call is done
+    const updatedMessages = [...taskRefs.messages];
+    const msgIdx = updatedMessages.findIndex(m => m.id === assistantMessageId);
+    if (msgIdx !== -1) {
+      updatedMessages[msgIdx] = { ...updatedMessages[msgIdx], isStreaming: false };
+      taskRefs.messages = updatedMessages;
+      updateSubagentCard(taskId, { messages: updatedMessages });
+    }
+    return true;
+  }
+
   // Handle reasoning_signal
   if (contentType === 'reasoning_signal') {
     const signalContent = content || '';
@@ -782,6 +799,7 @@ export function handleSubagentMessageChunk({
           contentSegments: [],
           reasoningProcesses: {},
           toolCallProcesses: {},
+          isStreaming: true,
         });
         messageIndex = updatedMessages.length - 1;
       }
@@ -855,13 +873,14 @@ export function handleSubagentMessageChunk({
         contentSegments: [],
         reasoningProcesses: {},
         toolCallProcesses: {},
+        isStreaming: true,
       });
       messageIndex = updatedMessages.length - 1;
     }
-    
+
     const msg = updatedMessages[messageIndex];
     const reasoningProcesses = { ...(msg.reasoningProcesses || {}) };
-    
+
     // Create reasoning process if it doesn't exist (edge case: reasoning content arrives before start signal)
     if (!reasoningProcesses[reasoningId]) {
       // Need to add the reasoning segment to contentSegments as well
@@ -929,6 +948,7 @@ export function handleSubagentMessageChunk({
         reasoningProcesses: {},
         toolCallProcesses: {},
         content: '',
+        isStreaming: true,
       });
       messageIndex = updatedMessages.length - 1;
     }
@@ -944,6 +964,7 @@ export function handleSubagentMessageChunk({
     ];
     msg.content = (msg.content || '') + content;
     msg.contentType = 'text';
+    msg.isStreaming = true;
 
     taskRefs.messages = updatedMessages;
     updateSubagentCard(taskId, { messages: updatedMessages });
@@ -1003,6 +1024,7 @@ export function handleSubagentToolCalls({ taskId, assistantMessageId, toolCalls,
           contentSegments: [],
           reasoningProcesses: {},
           toolCallProcesses: {},
+          isStreaming: true,
         });
         messageIndex = updatedMessages.length - 1;
       }
@@ -1306,9 +1328,106 @@ export function handleSubagentToolCallResult({ taskId, assistantMessageId, toolC
   }
   
   // Update currentTool: clear if tool failed, otherwise use in-progress tool if any
-  updateSubagentCard(taskId, { 
+  updateSubagentCard(taskId, {
     messages: updatedMessages,
     currentTool: finalCurrentTool, // Explicitly pass empty string to clear when failed or no tools in progress
   });
+  return true;
+}
+
+/**
+ * Handles subagent_followup_injected events.
+ *
+ * Adds a user-role message to the subagent's per-task message array so the
+ * follow-up instruction from the orchestrator is visible in the subagent view.
+ */
+/**
+ * Handles subagent_followup_injected events — mirrors the main agent's
+ * queued_message_injected handler: finalizes the current assistant message,
+ * inserts a user message, creates a fresh assistant message, and resets
+ * content counters so subsequent events start a clean message chain.
+ */
+export function handleSubagentFollowupInjected({ taskId, content, refs, updateSubagentCard }) {
+  if (!taskId || !content || !updateSubagentCard) {
+    return false;
+  }
+
+  const subagentStateRefs = refs.subagentStateRefs || {};
+  if (!subagentStateRefs[taskId]) {
+    subagentStateRefs[taskId] = {
+      contentOrderCounterRef: { current: 0 },
+      currentReasoningIdRef: { current: null },
+      currentToolCallIdRef: { current: null },
+      messages: [],
+    };
+  }
+
+  const taskRefs = subagentStateRefs[taskId];
+  const updatedMessages = [...taskRefs.messages];
+  const oldAssistantId = taskRefs.currentAssistantMessageId || `subagent-${taskId}-assistant`;
+
+  // 1. Finalize the current assistant message (stop streaming, complete in-progress items)
+  const oldMsgIdx = updatedMessages.findIndex(m => m.id === oldAssistantId);
+  if (oldMsgIdx !== -1) {
+    const msg = { ...updatedMessages[oldMsgIdx] };
+
+    // Mark all in-progress tool calls as complete
+    if (msg.toolCallProcesses) {
+      const procs = { ...msg.toolCallProcesses };
+      for (const [id, proc] of Object.entries(procs)) {
+        if (proc.isInProgress) {
+          procs[id] = { ...proc, isInProgress: false, isComplete: true, _completedAt: 0 };
+        }
+      }
+      msg.toolCallProcesses = procs;
+    }
+
+    // Mark active reasoning as complete
+    if (msg.reasoningProcesses) {
+      const rps = { ...msg.reasoningProcesses };
+      for (const [id, rp] of Object.entries(rps)) {
+        if (rp.isReasoning) {
+          rps[id] = { ...rp, isReasoning: false, reasoningComplete: true, _completedAt: 0 };
+        }
+      }
+      msg.reasoningProcesses = rps;
+    }
+
+    msg.isStreaming = false;
+    updatedMessages[oldMsgIdx] = msg;
+  }
+
+  // 2. Insert user follow-up message
+  updatedMessages.push({
+    id: `followup-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+    role: 'user',
+    content,
+    contentSegments: [{ type: 'text', content, order: 0 }],
+    reasoningProcesses: {},
+    toolCallProcesses: {},
+  });
+
+  // 3. Create new assistant message placeholder (subsequent events attach here)
+  const newAssistantId = `subagent-${taskId}-assistant-${Date.now()}`;
+  updatedMessages.push({
+    id: newAssistantId,
+    role: 'assistant',
+    content: '',
+    contentSegments: [],
+    reasoningProcesses: {},
+    toolCallProcesses: {},
+    isStreaming: true,
+  });
+
+  // 4. Rotate the current assistant message ID so subsequent events use the new one
+  taskRefs.currentAssistantMessageId = newAssistantId;
+
+  // 5. Reset content counters (same as main agent's queued_message_injected handler)
+  taskRefs.contentOrderCounterRef.current = 0;
+  taskRefs.currentReasoningIdRef.current = null;
+  taskRefs.currentToolCallIdRef.current = null;
+
+  taskRefs.messages = updatedMessages;
+  updateSubagentCard(taskId, { messages: updatedMessages });
   return true;
 }

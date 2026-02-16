@@ -15,12 +15,12 @@ export function useWorkspaceFiles(workspaceId) {
   const [error, setError] = useState(null);
   const debounceTimerRef = useRef(null);
 
-  const fetchFiles = useCallback(async (retryCount = 0) => {
+  const fetchFiles = useCallback(async (retryCount = 0, { autoStart = false } = {}) => {
     if (!workspaceId) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await listWorkspaceFiles(workspaceId, '.');
+      const data = await listWorkspaceFiles(workspaceId, '.', { autoStart });
       setFiles(data.files || []);
     } catch (err) {
       const status = err?.response?.status;
@@ -54,7 +54,7 @@ export function useWorkspaceFiles(workspaceId) {
       clearTimeout(debounceTimerRef.current);
     }
     debounceTimerRef.current = setTimeout(() => {
-      fetchFiles();
+      fetchFiles(0, { autoStart: true });
       debounceTimerRef.current = null;
     }, 500);
   }, [fetchFiles]);
