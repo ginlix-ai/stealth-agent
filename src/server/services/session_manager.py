@@ -9,6 +9,8 @@ Manages ptc-agent session lifecycle for the server:
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
@@ -44,7 +46,6 @@ class SessionService:
     """
 
     _instance: Optional["SessionService"] = None
-    _lock = asyncio.Lock()
 
     def __init__(
         self,
@@ -66,6 +67,10 @@ class SessionService:
 
         # Session metadata tracking (separate from ptc-agent's SessionManager)
         self._metadata: dict[str, SessionMetadata] = {}
+
+        # Per-workspace locking (same pattern as WorkspaceManager)
+        self._lock_registry_mu = asyncio.Lock()  # protects _session_locks dict only
+        self._session_locks: dict[str, asyncio.Lock] = {}
 
         # Cleanup task
         self._cleanup_task: Optional[asyncio.Task] = None
@@ -106,6 +111,31 @@ class SessionService:
         """Reset singleton instance (for testing)."""
         cls._instance = None
 
+    async def _get_session_lock(self, workspace_id: str) -> asyncio.Lock:
+        """Get or create a per-workspace lock."""
+        async with self._lock_registry_mu:
+            if workspace_id not in self._session_locks:
+                self._session_locks[workspace_id] = asyncio.Lock()
+            return self._session_locks[workspace_id]
+
+    @asynccontextmanager
+    async def _acquire_session_lock(
+        self, workspace_id: str, timeout: float = 60.0
+    ) -> AsyncIterator[None]:
+        """Acquire per-workspace lock with timeout."""
+        lock = await self._get_session_lock(workspace_id)
+        try:
+            await asyncio.wait_for(lock.acquire(), timeout=timeout)
+        except asyncio.TimeoutError:
+            raise RuntimeError(
+                f"Timeout acquiring session lock for workspace {workspace_id} "
+                f"after {timeout}s"
+            )
+        try:
+            yield
+        finally:
+            lock.release()
+
     async def get_or_create_session(
         self,
         workspace_id: str,
@@ -123,7 +153,9 @@ class SessionService:
         Returns:
             Initialized Session instance
         """
-        async with self._lock:
+        needs_init = False
+
+        async with self._acquire_session_lock(workspace_id):
             # Get or create session via ptc-agent's SessionManager
             # (uses workspace_id as the session key)
             core_config = self.config.to_core_config()
@@ -139,68 +171,74 @@ class SessionService:
             metadata = self._metadata[workspace_id]
             metadata.touch()
 
-            # Initialize session if needed
-            if not session._initialized:
-                logger.info(
-                    f"Initializing session for {workspace_id}",
-                    extra={"sandbox_id": sandbox_id}
-                )
-                await session.initialize(sandbox_id=sandbox_id)
+            needs_init = not session._initialized
 
-                # Store sandbox_id for reconnection
-                if session.sandbox:
-                    metadata.sandbox_id = getattr(
-                        session.sandbox, 'sandbox_id', None
+        # Expensive operations run outside the lock so other workspaces
+        # are not blocked.
+        if needs_init:
+            logger.info(
+                f"Initializing session for {workspace_id}",
+                extra={"sandbox_id": sandbox_id}
+            )
+            await session.initialize(sandbox_id=sandbox_id)
+
+            # Store sandbox_id for reconnection
+            if session.sandbox:
+                async with self._acquire_session_lock(workspace_id):
+                    metadata = self._metadata.get(workspace_id)
+                    if metadata:
+                        metadata.sandbox_id = getattr(
+                            session.sandbox, 'sandbox_id', None
+                        )
+
+            # Sync skills to sandbox if enabled
+            if self.config.skills.enabled and session.sandbox:
+                skill_dirs = self.config.skills.local_skill_dirs_with_sandbox()
+                reusing_sandbox = sandbox_id is not None
+                try:
+                    did_upload = await session.sandbox.sync_skills(
+                        skill_dirs,
+                        reusing_sandbox=reusing_sandbox,
+                    )
+                    if did_upload:
+                        logger.info(f"Skills synced for workspace: {workspace_id}")
+                    else:
+                        logger.debug(f"Skills unchanged for workspace: {workspace_id}")
+                except Exception as e:
+                    # Skills are helpful but should not prevent session startup
+                    logger.warning(
+                        f"Skills sync failed for {workspace_id}: {e}",
+                        exc_info=True
                     )
 
-                # Sync skills to sandbox if enabled
-                if self.config.skills.enabled and session.sandbox:
-                    skill_dirs = self.config.skills.local_skill_dirs_with_sandbox()
-                    reusing_sandbox = sandbox_id is not None
-                    try:
-                        did_upload = await session.sandbox.sync_skills(
-                            skill_dirs,
-                            reusing_sandbox=reusing_sandbox,
-                        )
-                        if did_upload:
-                            logger.info(f"Skills synced for workspace: {workspace_id}")
-                        else:
-                            logger.debug(f"Skills unchanged for workspace: {workspace_id}")
-                    except Exception as e:
-                        # Skills are helpful but should not prevent session startup
-                        logger.warning(
-                            f"Skills sync failed for {workspace_id}: {e}",
-                            exc_info=True
-                        )
+            if session.sandbox and sandbox_id is not None:
+                try:
+                    await session.sandbox.sync_tools()
+                except Exception as e:
+                    logger.warning(
+                        f"Tool sync failed for session {workspace_id}: {e}",
+                        exc_info=True,
+                    )
 
-                if session.sandbox and sandbox_id is not None:
-                    try:
-                        await session.sandbox.sync_tools()
-                    except Exception as e:
-                        logger.warning(
-                            f"Tool sync failed for session {workspace_id}: {e}",
-                            exc_info=True,
-                        )
+            # Sync user data to sandbox if user_id provided
+            if user_id and session.sandbox:
+                try:
+                    from src.server.services.sync_user_data import (
+                        sync_user_data_to_sandbox,
+                    )
+                    logger.info(f"Syncing user data for workspace: {workspace_id}, user_id: {user_id}")
+                    result = await sync_user_data_to_sandbox(session.sandbox, user_id)
+                    logger.info(f"User data sync result for workspace {workspace_id}: {result}")
+                except Exception as e:
+                    # User data sync is helpful but should not prevent session startup
+                    logger.warning(
+                        f"User data sync failed for {workspace_id}: {e}",
+                        exc_info=True
+                    )
+            else:
+                logger.debug(f"Skipping user data sync: user_id={user_id}, sandbox={session.sandbox is not None}")
 
-                # Sync user data to sandbox if user_id provided
-                if user_id and session.sandbox:
-                    try:
-                        from src.server.services.sync_user_data import (
-                            sync_user_data_to_sandbox,
-                        )
-                        logger.info(f"Syncing user data for workspace: {workspace_id}, user_id: {user_id}")
-                        result = await sync_user_data_to_sandbox(session.sandbox, user_id)
-                        logger.info(f"User data sync result for workspace {workspace_id}: {result}")
-                    except Exception as e:
-                        # User data sync is helpful but should not prevent session startup
-                        logger.warning(
-                            f"User data sync failed for {workspace_id}: {e}",
-                            exc_info=True
-                        )
-                else:
-                    logger.debug(f"Skipping user data sync: user_id={user_id}, sandbox={session.sandbox is not None}")
-
-            return session
+        return session
 
     async def get_session(self, workspace_id: str) -> Optional[Session]:
         """
@@ -240,6 +278,10 @@ class SessionService:
         # Remove metadata
         if workspace_id in self._metadata:
             del self._metadata[workspace_id]
+
+        # Remove per-workspace lock
+        async with self._lock_registry_mu:
+            self._session_locks.pop(workspace_id, None)
 
         # Cleanup via ptc-agent's SessionManager
         await SessionManager.cleanup_session(workspace_id)
@@ -313,6 +355,7 @@ class SessionService:
         # Stop all sessions (preserve sandboxes for reconnect)
         await SessionManager.stop_all()
         self._metadata.clear()
+        self._session_locks.clear()
 
         logger.info("SessionService shutdown complete")
 

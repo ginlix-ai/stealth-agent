@@ -9,6 +9,8 @@ Manages workspace lifecycle with database persistence and sandbox integration:
 
 import asyncio
 import logging
+import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -39,7 +41,9 @@ class WorkspaceManager:
     """
 
     _instance: Optional["WorkspaceManager"] = None
-    _lock = asyncio.Lock()
+
+    # Sync cooldown: skip ensure_sandbox_ready + sync_tools if synced recently
+    _SYNC_COOLDOWN_SECONDS = 30
 
     def __init__(
         self,
@@ -68,6 +72,13 @@ class WorkspaceManager:
         # Track workspaces that used lazy init and still need skills/assets synced
         # Once sandbox is ready and sync completes, workspace is removed from this set
         self._pending_lazy_sync: set[str] = set()
+
+        # Per-workspace locks (replaces global _lock to avoid cross-workspace blocking)
+        self._lock_registry_mu = asyncio.Lock()  # protects _workspace_locks dict only
+        self._workspace_locks: Dict[str, asyncio.Lock] = {}
+
+        # Track last sync time per workspace for cooldown
+        self._last_sync_at: Dict[str, float] = {}
 
         # Cleanup task
         self._cleanup_task: Optional[asyncio.Task] = None
@@ -107,6 +118,40 @@ class WorkspaceManager:
     def reset_instance(cls) -> None:
         """Reset singleton instance (for testing)."""
         cls._instance = None
+
+    async def _get_workspace_lock(self, workspace_id: str) -> asyncio.Lock:
+        """Get or create a per-workspace lock."""
+        async with self._lock_registry_mu:
+            if workspace_id not in self._workspace_locks:
+                self._workspace_locks[workspace_id] = asyncio.Lock()
+            return self._workspace_locks[workspace_id]
+
+    @asynccontextmanager
+    async def _acquire_workspace_lock(self, workspace_id: str, timeout: float = 60.0):
+        """Acquire per-workspace lock with timeout."""
+        lock = await self._get_workspace_lock(workspace_id)
+        try:
+            await asyncio.wait_for(lock.acquire(), timeout=timeout)
+        except asyncio.TimeoutError:
+            raise RuntimeError(
+                f"Timeout acquiring lock for workspace {workspace_id} "
+                f"after {timeout}s"
+            )
+        try:
+            yield
+        finally:
+            lock.release()
+
+    def _sync_cooldown_ok(self, workspace_id: str) -> bool:
+        """Return True if sync was done recently enough to skip."""
+        last = self._last_sync_at.get(workspace_id)
+        if last is None:
+            return False
+        return (time.monotonic() - last) < self._SYNC_COOLDOWN_SECONDS
+
+    def _record_sync(self, workspace_id: str) -> None:
+        """Record that a sync was performed for this workspace."""
+        self._last_sync_at[workspace_id] = time.monotonic()
 
     async def _sync_user_data_if_needed(
         self,
@@ -204,6 +249,7 @@ class WorkspaceManager:
             sandbox_id=new_sandbox_id,
         )
         self._sessions[workspace_id] = session
+        self._record_sync(workspace_id)
         await update_workspace_activity(workspace_id)
         return session
 
@@ -265,18 +311,18 @@ class WorkspaceManager:
         Returns:
             Created workspace record
         """
-        async with self._lock:
-            # 1. Create DB record (status='creating')
-            workspace = await db_create_workspace(
-                user_id=user_id,
-                name=name,
-                description=description,
-                config=config,
-            )
-            workspace_id = str(workspace["workspace_id"])
+        # 1. Create DB record (no lock needed — DB generates unique ID)
+        workspace = await db_create_workspace(
+            user_id=user_id,
+            name=name,
+            description=description,
+            config=config,
+        )
+        workspace_id = str(workspace["workspace_id"])
 
-            logger.info(f"Creating workspace {workspace_id} for user {user_id}")
+        logger.info(f"Creating workspace {workspace_id} for user {user_id}")
 
+        async with self._acquire_workspace_lock(workspace_id):
             try:
                 # 2. Initialize sandbox via ptc-agent Session
                 core_config = self.config.to_core_config()
@@ -302,6 +348,8 @@ class WorkspaceManager:
                     status="running",
                     sandbox_id=sandbox_id,
                 )
+
+                self._record_sync(workspace_id)
 
                 logger.info(
                     f"Workspace {workspace_id} created with sandbox {sandbox_id}"
@@ -338,11 +386,18 @@ class WorkspaceManager:
             ValueError: If workspace not found
             RuntimeError: If workspace is in error/deleted state
         """
-        async with self._lock:
-            logger.info(
-                f"get_session_for_workspace called: workspace_id={workspace_id}, user_id={user_id}, "
-                f"in_cache={workspace_id in self._sessions}, already_synced={workspace_id in self._user_data_synced}"
-            )
+        logger.info(
+            f"get_session_for_workspace called: workspace_id={workspace_id}, user_id={user_id}, "
+            f"in_cache={workspace_id in self._sessions}, already_synced={workspace_id in self._user_data_synced}"
+        )
+
+        # ── Phase 1: Read/mutate session cache under per-workspace lock ──
+        session: Session | None = None
+        needs_sync = False
+        needs_deferred_sync = False
+        workspace_user_id = user_id
+
+        async with self._acquire_workspace_lock(workspace_id):
             # Get workspace from DB
             workspace = await db_get_workspace(workspace_id)
             if not workspace:
@@ -375,128 +430,135 @@ class WorkspaceManager:
 
                 if not session._initialized or not session.sandbox:
                     # Session exists but not usable, fall through to status-based handling
-                    pass
+                    session = None
                 elif not session.sandbox.is_ready():
                     # Sandbox still initializing (lazy init in progress)
-                    # Operations that need sandbox will wait via _wait_ready()
                     logger.info(
                         f"Sandbox still initializing for {workspace_id}, skipping sync"
                     )
                     await update_workspace_activity(workspace_id)
                     return session
                 else:
-                    # Sandbox ready - perform sync operations
-                    await session.sandbox.ensure_sandbox_ready()
+                    # Sandbox ready — check if sync is needed
+                    needs_deferred_sync = workspace_id in self._pending_lazy_sync
+                    needs_sync = not self._sync_cooldown_ok(workspace_id) or needs_deferred_sync
+                    if not needs_sync:
+                        # Cooldown active, skip expensive Daytona calls
+                        await update_workspace_activity(workspace_id)
+                        return session
 
-                    # Complete deferred sync for lazy-initialized workspaces
-                    if workspace_id in self._pending_lazy_sync:
-                        logger.info(
-                            f"Completing deferred sync for lazy-init workspace {workspace_id}"
-                        )
+            # No usable cached session — handle based on status
+            if session is None:
+                if status == "stopped":
+                    logger.info(f"Restarting stopped workspace {workspace_id}")
+                    return await self._restart_workspace(
+                        workspace, user_id=workspace_user_id, lazy_init=True
+                    )
+
+                elif status == "running":
+                    core_config = self.config.to_core_config()
+                    session = SessionManager.get_session(workspace_id, core_config)
+
+                    if not session._initialized:
+                        sandbox_id = workspace.get("sandbox_id")
+                        try:
+                            await session.initialize(sandbox_id=sandbox_id)
+                        except RuntimeError as e:
+                            if "Failed to find sandbox" in str(e) or "deleted" in str(e):
+                                logger.warning(
+                                    f"Sandbox {sandbox_id} gone for workspace "
+                                    f"{workspace_id}. Creating fresh sandbox."
+                                )
+                                return await self._recover_sandbox(
+                                    workspace_id, workspace_user_id, core_config
+                                )
+                            raise
+
                         await self._sync_sandbox_assets(
                             workspace_id,
                             workspace_user_id,
                             session.sandbox,
-                            reusing_sandbox=True,
+                            reusing_sandbox=sandbox_id is not None,
                         )
-                        await self._maybe_restore_files(workspace_id, session.sandbox)
-                        self._pending_lazy_sync.discard(workspace_id)
+                        if session.sandbox:
+                            await self._sync_tools(workspace_id, session.sandbox)
+                    else:
+                        needs_sync = True
 
-                    await self._sync_tools(workspace_id, session.sandbox)
-                    await self._sync_user_data_if_needed(
-                        workspace_id, workspace_user_id, session.sandbox
+                    self._sessions[workspace_id] = session
+
+                elif status == "creating":
+                    raise RuntimeError(
+                        f"Workspace {workspace_id} is still being created. "
+                        "Please wait and try again."
                     )
-                    await update_workspace_activity(workspace_id)
-                    return session
 
-            # Handle based on status
-            if status == "stopped":
-                # Restart stopped workspace with lazy init for faster response
-                logger.info(f"Restarting stopped workspace {workspace_id}")
-                return await self._restart_workspace(
-                    workspace, user_id=workspace_user_id, lazy_init=True
-                )
-
-            elif status == "running":
-                # Re-fetch session from SessionManager
-                core_config = self.config.to_core_config()
-                session = SessionManager.get_session(workspace_id, core_config)
-
-                if not session._initialized:
-                    # Session was dropped, reinitialize with existing sandbox
-                    sandbox_id = workspace.get("sandbox_id")
-                    try:
-                        await session.initialize(sandbox_id=sandbox_id)
-                    except RuntimeError as e:
-                        if "Failed to find sandbox" in str(e) or "deleted" in str(e):
-                            logger.warning(
-                                f"Sandbox {sandbox_id} gone for workspace "
-                                f"{workspace_id}. Creating fresh sandbox."
+                elif status == "stopping":
+                    logger.info(
+                        f"Workspace {workspace_id} is stopping, waiting for it to finish..."
+                    )
+                    for _ in range(20):  # Max ~10 seconds
+                        await asyncio.sleep(0.5)
+                        workspace = await db_get_workspace(workspace_id)
+                        status = workspace.get("status", "unknown")
+                        if status == "stopped":
+                            logger.info(
+                                f"Workspace {workspace_id} finished stopping, restarting"
                             )
-                            return await self._recover_sandbox(
-                                workspace_id, workspace_user_id, core_config
+                            return await self._restart_workspace(
+                                workspace,
+                                user_id=workspace_user_id,
+                                lazy_init=True,
                             )
-                        raise
+                    raise RuntimeError(
+                        f"Workspace {workspace_id} is still stopping after timeout. "
+                        "Please wait and try again."
+                    )
 
+                elif status == "flash":
+                    raise ValueError(
+                        f"Workspace {workspace_id} is a flash workspace (no sandbox). "
+                        "Use agent_mode='flash' instead, or create a new workspace for PTC mode."
+                    )
+
+                else:
+                    raise RuntimeError(f"Unknown workspace status: {status}")
+
+        # ── Phase 2: Expensive sync operations OUTSIDE the lock ──
+        # These are safe to call concurrently (idempotent or have their own internal guards).
+        # Wrapped in try/except because a concurrent stop_workspace could invalidate
+        # the session while we're syncing. The session is already cached and usable;
+        # sync is best-effort — next request will retry if it failed.
+        if needs_sync and session and session.sandbox:
+            try:
+                await session.sandbox.ensure_sandbox_ready()
+
+                if needs_deferred_sync:
+                    logger.info(
+                        f"Completing deferred sync for lazy-init workspace {workspace_id}"
+                    )
                     await self._sync_sandbox_assets(
                         workspace_id,
                         workspace_user_id,
                         session.sandbox,
-                        reusing_sandbox=sandbox_id is not None,
+                        reusing_sandbox=True,
                     )
-                    if session.sandbox:
-                        await self._sync_tools(workspace_id, session.sandbox)
-                else:
-                    if session.sandbox:
-                        await session.sandbox.ensure_sandbox_ready()
-                        await self._sync_tools(workspace_id, session.sandbox)
-                    await self._sync_user_data_if_needed(
-                        workspace_id, workspace_user_id, session.sandbox
-                    )
+                    await self._maybe_restore_files(workspace_id, session.sandbox)
+                    self._pending_lazy_sync.discard(workspace_id)
 
-                self._sessions[workspace_id] = session
-                await update_workspace_activity(workspace_id)
-                return session
-
-            elif status == "creating":
-                # Wait for creation to complete (shouldn't happen normally)
-                raise RuntimeError(
-                    f"Workspace {workspace_id} is still being created. "
-                    "Please wait and try again."
+                await self._sync_tools(workspace_id, session.sandbox)
+                await self._sync_user_data_if_needed(
+                    workspace_id, workspace_user_id, session.sandbox
+                )
+                self._record_sync(workspace_id)
+            except Exception as e:
+                logger.warning(
+                    f"Phase 2 sync failed for workspace {workspace_id} "
+                    f"(will retry next request): {e}"
                 )
 
-            elif status == "stopping":
-                # Wait for stop to complete, then restart
-                logger.info(
-                    f"Workspace {workspace_id} is stopping, waiting for it to finish..."
-                )
-                for _ in range(20):  # Max ~10 seconds
-                    await asyncio.sleep(0.5)
-                    workspace = await db_get_workspace(workspace_id)
-                    status = workspace.get("status", "unknown")
-                    if status == "stopped":
-                        logger.info(
-                            f"Workspace {workspace_id} finished stopping, restarting"
-                        )
-                        return await self._restart_workspace(
-                            workspace,
-                            user_id=workspace_user_id,
-                            lazy_init=True,
-                        )
-                raise RuntimeError(
-                    f"Workspace {workspace_id} is still stopping after timeout. "
-                    "Please wait and try again."
-                )
-
-            elif status == "flash":
-                # Flash workspaces have no sandbox - cannot be used for PTC mode
-                raise ValueError(
-                    f"Workspace {workspace_id} is a flash workspace (no sandbox). "
-                    "Use agent_mode='flash' instead, or create a new workspace for PTC mode."
-                )
-
-            else:
-                raise RuntimeError(f"Unknown workspace status: {status}")
+        await update_workspace_activity(workspace_id)
+        return session
 
     async def _restart_workspace(
         self,
@@ -570,6 +632,7 @@ class WorkspaceManager:
                 if session.sandbox:
                     await self._maybe_restore_files(workspace_id, session.sandbox)
                     await self._sync_tools(workspace_id, session.sandbox)
+                self._record_sync(workspace_id)
 
             # Update status to running
             await update_workspace_status(
@@ -602,7 +665,7 @@ class WorkspaceManager:
         Returns:
             Updated workspace record
         """
-        async with self._lock:
+        async with self._acquire_workspace_lock(workspace_id):
             workspace = await db_get_workspace(workspace_id)
             if not workspace:
                 raise ValueError(f"Workspace {workspace_id} not found")
@@ -635,6 +698,7 @@ class WorkspaceManager:
                 # Clear user data sync tracking (will re-sync on restart)
                 self._user_data_synced.discard(workspace_id)
                 self._pending_lazy_sync.discard(workspace_id)
+                self._last_sync_at.pop(workspace_id, None)
 
                 # NOTE: Don't call SessionManager.cleanup_session() here!
                 # That would delete the sandbox. The session stays in SessionManager's
@@ -671,7 +735,7 @@ class WorkspaceManager:
         Returns:
             True if deleted successfully
         """
-        async with self._lock:
+        async with self._acquire_workspace_lock(workspace_id):
             workspace = await db_get_workspace(workspace_id)
             if not workspace:
                 raise ValueError(f"Workspace {workspace_id} not found")
@@ -694,6 +758,7 @@ class WorkspaceManager:
                 # Clear user data sync tracking
                 self._user_data_synced.discard(workspace_id)
                 self._pending_lazy_sync.discard(workspace_id)
+                self._last_sync_at.pop(workspace_id, None)
 
                 # Also cleanup from SessionManager
                 try:
@@ -705,11 +770,16 @@ class WorkspaceManager:
                 await db_delete_workspace(workspace_id)
 
                 logger.info(f"Workspace {workspace_id} deleted successfully")
-                return True
 
             except Exception as e:
                 logger.error(f"Error deleting workspace {workspace_id}: {e}")
                 raise
+
+        # Clean up the per-workspace lock itself (after releasing it)
+        async with self._lock_registry_mu:
+            self._workspace_locks.pop(workspace_id, None)
+
+        return True
 
     async def cleanup_idle_workspaces(self) -> int:
         """
@@ -799,6 +869,8 @@ class WorkspaceManager:
         self._sessions.clear()
         self._user_data_synced.clear()
         self._pending_lazy_sync.clear()
+        self._last_sync_at.clear()
+        self._workspace_locks.clear()
 
         logger.info("WorkspaceManager shutdown complete")
 

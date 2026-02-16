@@ -128,12 +128,15 @@ class UsageLimiter:
 
     @staticmethod
     async def flush_plan_cache(user_id: str) -> None:
-        """Delete the cached plan for a user (call after plan upgrade)."""
+        """Delete the cached membership and burst counter for a user (call after plan upgrade)."""
         try:
             from src.utils.cache.redis_cache import get_cache_client
             cache = get_cache_client()
             if cache.client:
-                await cache.client.delete(f"user:plan:{user_id}")
+                await cache.client.delete(
+                    f"user:membership:{user_id}",
+                    f"usage:burst:{user_id}",
+                )
         except Exception as e:
             logger.debug(f"[usage_limiter] Failed to flush plan cache: {e}")
 
