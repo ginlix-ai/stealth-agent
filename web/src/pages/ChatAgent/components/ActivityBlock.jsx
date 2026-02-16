@@ -218,51 +218,68 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
             transition={SPRING_SNAPPY}
             style={{ overflow: 'hidden' }}
           >
-            {/* Active reasoning */}
+            {/* Live items in chronological order */}
             <AnimatePresence initial={false}>
-              {liveItems
-                .filter(item => item.type === 'reasoning')
-                .map(item => (
-                  <motion.div
-                    key={`live-r-${item.id}`}
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: item._liveState === 'completing' ? 0.6 : 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0, paddingTop: 0, paddingBottom: 0 }}
-                    transition={SPRING}
-                    className="px-3 overflow-hidden"
-                    style={{ paddingTop: '8px', paddingBottom: '8px' }}
-                  >
-                    <div
-                      className="flex items-center gap-2 mb-1"
-                      style={{ fontSize: '13px', color: 'var(--Labels-Secondary)' }}
+              {liveItems.map(item => {
+                if (item.type === 'reasoning') {
+                  return (
+                    <motion.div
+                      key={`live-r-${item.id}`}
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: item._liveState === 'completing' ? 0.6 : 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0, paddingTop: 0, paddingBottom: 0 }}
+                      transition={SPRING}
+                      className="px-3 overflow-hidden"
+                      style={{ paddingTop: '8px', paddingBottom: '8px' }}
                     >
-                      <Brain className="h-4 w-4 flex-shrink-0" />
-                      {item._liveState === 'active' ? (
-                        <TextShimmer
-                          as="span"
-                          className="font-medium truncate text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:#ffffff]"
-                          duration={1.5}
-                        >
-                          {item.reasoningTitle
-                            ? `Reasoning: ${item.reasoningTitle}`
-                            : 'Reasoning...'}
-                        </TextShimmer>
-                      ) : (
-                        <span className="font-medium truncate">Reasoning complete</span>
-                      )}
-                    </div>
+                      <div
+                        className="flex items-center gap-2 mb-1"
+                        style={{ fontSize: '13px', color: 'var(--Labels-Secondary)' }}
+                      >
+                        <Brain className="h-4 w-4 flex-shrink-0" />
+                        {item._liveState === 'active' ? (
+                          <TextShimmer
+                            as="span"
+                            className="font-medium truncate text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:#ffffff]"
+                            duration={1.5}
+                          >
+                            {item.reasoningTitle
+                              ? `Reasoning: ${item.reasoningTitle}`
+                              : 'Reasoning...'}
+                          </TextShimmer>
+                        ) : (
+                          <span className="font-medium truncate">Reasoning complete</span>
+                        )}
+                      </div>
 
-                    {item.content && (
-                      <AnimatedReasoningContent
-                        content={item.content}
-                        isStreaming={item._liveState === 'active'}
-                      />
-                    )}
-                  </motion.div>
-                ))}
+                      {item.content && (
+                        <AnimatedReasoningContent
+                          content={item.content}
+                          isStreaming={item._liveState === 'active'}
+                        />
+                      )}
+                    </motion.div>
+                  );
+                }
+                if (item.type === 'tool_call') {
+                  return (
+                    <motion.div
+                      key={`live-t-${item.id || item.toolCallId}`}
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={SPRING_SNAPPY}
+                      style={{ overflow: 'hidden' }}
+                    >
+                      <ToolCallLiveRow tc={item} liveState={item._liveState} />
+                    </motion.div>
+                  );
+                }
+                return null;
+              })}
             </AnimatePresence>
 
-            {/* Preparing tool call (chunk streaming in progress) */}
+            {/* Preparing tool call — always at the bottom */}
             <AnimatePresence initial={false}>
               {hasPreparingTools && (
                 <motion.div
@@ -276,24 +293,6 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
                   <PreparingToolCallRow tc={preparingToolCall} />
                 </motion.div>
               )}
-            </AnimatePresence>
-
-            {/* Active/completing tool calls */}
-            <AnimatePresence initial={false}>
-              {liveItems
-                .filter(item => item.type === 'tool_call')
-                .map(item => (
-                  <motion.div
-                    key={`live-t-${item.id || item.toolCallId}`}
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={SPRING_SNAPPY}
-                    style={{ overflow: 'hidden' }}
-                  >
-                    <ToolCallLiveRow tc={item} liveState={item._liveState} />
-                  </motion.div>
-                ))}
             </AnimatePresence>
           </motion.div>
         )}

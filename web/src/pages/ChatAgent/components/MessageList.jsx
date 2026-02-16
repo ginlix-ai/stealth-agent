@@ -20,6 +20,7 @@ import SubagentTaskMessageContent from './SubagentTaskMessageContent';
 import TextMessageContent from './TextMessageContent';
 import ToolCallMessageContent from './ToolCallMessageContent';
 import TodoListMessageContent from './TodoListMessageContent';
+import { TextShimmer } from '@/components/ui/text-shimmer';
 
 /**
  * Returns true if a line is markdown-structural (headings, lists, blockquotes,
@@ -197,6 +198,7 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, 
   const avatarUrl = user?.avatar_url;
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
+  const isPendingDelivery = isUser && (message.isPending || message.queued);
 
   const hasAttachments = isUser && message.attachments && message.attachments.length > 0;
 
@@ -226,6 +228,17 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, 
             color: '#FFFFFF',
           }}
         >
+          {/* Pending delivery: user message queued but not yet confirmed by backend */}
+          {isPendingDelivery ? (
+            <TextShimmer
+              as="span"
+              className="text-sm [--base-color:rgba(255,255,255,0.9)] [--base-gradient-color:#ffffff]"
+              duration={1.5}
+            >
+              {message.content || ''}
+            </TextShimmer>
+          ) : (
+          <>
           {/* Render content segments in chronological order */}
           {message.contentSegments && message.contentSegments.length > 0 ? (
             <MessageContentSegments
@@ -262,6 +275,8 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, 
                 hasError={message.error}
               />
             )
+          )}
+          </>
           )}
 
           {/* Streaming indicator — hidden when dot-loader is already showing for pending chunks */}
@@ -319,6 +334,8 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, 
  */
 const MIN_LIVE_EXPOSURE_MS = 5000; // minimum time an item stays in the live zone
 const MAX_IN_PROGRESS_MS = 15000; // max time a tool call can stay in-progress in live view before archiving
+/** Tools that should stay in the live zone for their entire duration (no MAX_IN_PROGRESS_MS cap) */
+const ALWAYS_LIVE_TOOLS = new Set(['Wait']);
 
 function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, todoListProcesses, subagentTasks, planApprovals = {}, userQuestions = {}, pendingToolCallChunks = {}, isStreaming, hasError, isAssistant = false, compactToolCalls = false, isSubagentView = false, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion, textOnly = false }) {
   // Force re-render timer for recently-completed tool calls that need minimum exposure
@@ -489,7 +506,9 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
         // Artifact tools skip exposure hold once they have a result
         const isArtifactReady = INLINE_ARTIFACT_TOOLS.has(proc.toolName) && proc.toolCallResult?.artifact;
 
-        if (proc.isInProgress && isStreaming && age < MAX_IN_PROGRESS_MS) {
+        const isAlwaysLive = ALWAYS_LIVE_TOOLS.has(proc.toolName);
+
+        if (proc.isInProgress && isStreaming && (isAlwaysLive || age < MAX_IN_PROGRESS_MS)) {
           // In-progress — live zone as 'active'
           pendingItems.push({
             type: 'tool_call',
@@ -498,9 +517,11 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
             ...proc,
             _liveState: 'active',
           });
-          const expiry = createdAt + MAX_IN_PROGRESS_MS;
-          if (nextExpiryRef.current === null || expiry < nextExpiryRef.current) {
-            nextExpiryRef.current = expiry;
+          if (!isAlwaysLive) {
+            const expiry = createdAt + MAX_IN_PROGRESS_MS;
+            if (nextExpiryRef.current === null || expiry < nextExpiryRef.current) {
+              nextExpiryRef.current = expiry;
+            }
           }
         } else if (isArtifactReady) {
           // Artifact tool with result — render as standalone compact_artifact
