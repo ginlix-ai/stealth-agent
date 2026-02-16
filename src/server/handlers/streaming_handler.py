@@ -586,6 +586,19 @@ class WorkflowStreamHandler:
                             })
                             continue
 
+                        # Handle subagent follow-up injection signal
+                        if event_type == "subagent_followup_injected":
+                            extracted_agent_name = self._extract_agent_name(agent_from_stream, {})
+                            yield self._format_sse_event("subagent_followup_injected", {
+                                "thread_id": self.thread_id,
+                                "agent": extracted_agent_name,
+                                "task_id": event_data.get("task_id"),
+                                "content": event_data.get("content", ""),
+                                "count": event_data.get("count", 0),
+                                "timestamp": event_data.get("timestamp"),
+                            })
+                            continue
+
                         # Check if this is an artifact event from middleware
                         # Generic handler: any event with artifact_type is emitted as artifact SSE
                         artifact_type = event_data.get("artifact_type")
@@ -893,6 +906,10 @@ class WorkflowStreamHandler:
             pending = [t for t in tasks if t.is_pending]
             completed = [t for t in tasks if t.completed]
 
+            # Clear stale entries for resumed tasks (pending again after completion)
+            for task in pending:
+                self._sent_result_task_ids.discard(task.task_id)
+
             active_tasks = [
                 {
                     "id": task.display_id,
@@ -976,6 +993,10 @@ class WorkflowStreamHandler:
 
             cursor = self._old_subagent_cursors.get(task_id, 0)
             events = task.captured_events  # live reference
+            # Reset cursor if captured_events was cleared (e.g., on resume)
+            if cursor > 0 and len(events) < cursor:
+                cursor = 0
+                self._old_subagent_cursors[task_id] = 0
             if len(events) <= cursor:
                 continue
 
