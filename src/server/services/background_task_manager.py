@@ -37,9 +37,10 @@ Usage:
 """
 
 import asyncio
+import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, AsyncIterator, Callable, Coroutine
 from enum import Enum
 from dataclasses import dataclass, field
@@ -73,6 +74,7 @@ class TaskStatus(str, Enum):
 
     QUEUED = "queued"
     RUNNING = "running"
+    TAILING = "tailing"  # Graph done, streaming subagent events
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -101,6 +103,9 @@ class TaskInfo:
     # Soft interrupt control (pause main agent, keep subagents running)
     soft_interrupt_event: asyncio.Event = field(default_factory=asyncio.Event)
     soft_interrupted: bool = False
+
+    # Tail phase control (signal tail loop to exit when user sends new message)
+    tail_stop_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     # Subagent tracking
     active_subagents: set = field(default_factory=set)  # Currently running subagent names
@@ -233,7 +238,7 @@ class BackgroundTaskManager:
             running_tasks = [
                 (thread_id, info)
                 for thread_id, info in self.tasks.items()
-                if info.status in [TaskStatus.RUNNING, TaskStatus.QUEUED]
+                if info.status in [TaskStatus.RUNNING, TaskStatus.QUEUED, TaskStatus.TAILING]
             ]
 
         if not running_tasks:
@@ -325,8 +330,8 @@ class BackgroundTaskManager:
                             f"{thread_id} (age: {now - info.completed_at})"
                         )
 
-                # Remove abandoned running tasks
-                elif info.status == TaskStatus.RUNNING:
+                # Remove abandoned running/tailing tasks
+                elif info.status in (TaskStatus.RUNNING, TaskStatus.TAILING):
                     if info.active_connections == 0 and info.last_access_at < abandoned_threshold:
                         to_remove.append(thread_id)
                         logger.warning(
@@ -375,7 +380,7 @@ class BackgroundTaskManager:
             # Check if already exists
             if thread_id in self.tasks:
                 existing = self.tasks[thread_id]
-                if existing.status in [TaskStatus.QUEUED, TaskStatus.RUNNING]:
+                if existing.status in [TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.TAILING]:
                     raise RuntimeError(
                         f"Workflow {thread_id} already running with status {existing.status}"
                     )
@@ -502,6 +507,9 @@ class BackgroundTaskManager:
             # ALWAYS use shield - cancellation handled cooperatively inside task
             await asyncio.shield(inner_task)
 
+            # Tail subagent events if any are still pending
+            await self._tail_subagent_events(thread_id)
+
             # Mark as completed
             await self._mark_completed(thread_id)
 
@@ -562,6 +570,148 @@ class BackgroundTaskManager:
             logger.warning(
                 f"[BackgroundTaskManager] Failed to flush checkpoint for {thread_id}: {e}"
             )
+
+    async def _tail_subagent_events(self, thread_id: str) -> None:
+        """Stream subagent events after main graph completes.
+
+        Keeps the SSE connection open by continuing to broadcast events
+        from captured_events on each BackgroundTask to live_queues.
+        Exits when all subagents complete, cancel/tail_stop is signaled, or timeout.
+        """
+        from src.server.services.background_registry_store import BackgroundRegistryStore
+
+        bg_store = BackgroundRegistryStore.get_instance()
+        registry = await bg_store.get_registry(thread_id)
+        if not registry or not registry.has_pending_tasks():
+            return
+
+        # Get event references for cooperative exit
+        async with self.task_lock:
+            task_info = self.tasks.get(thread_id)
+            if not task_info:
+                return
+            task_info.status = TaskStatus.TAILING
+            cancel_event = task_info.cancel_event
+            tail_stop_event = task_info.tail_stop_event
+            # Get last event sequence ID from streaming handler for continuity
+            handler = task_info.metadata.get("handler")
+            event_seq = handler.event_sequence if handler else 10000
+
+        logger.info(
+            f"[BackgroundTaskManager] Entering tail phase for {thread_id}, "
+            f"pending_subagents={registry.pending_count}"
+        )
+
+        # Emit subagents_pending event
+        event_seq += 1
+        pending = [t for t in registry._tasks.values() if t.is_pending]
+        pending_event = self._format_tail_sse(event_seq, "subagents_pending", {
+            "thread_id": thread_id,
+            "active_tasks": [
+                {
+                    "id": t.display_id,
+                    "agent_id": f"task:{t.task_id}",
+                    "description": (t.description or "")[:100],
+                    "type": t.subagent_type,
+                }
+                for t in pending
+            ],
+        })
+        await self._buffer_event_redis(thread_id, pending_event)
+
+        # Cursor-based drain
+        cursors: dict[str, int] = {}
+        last_status_snapshot = None
+        timeout = 600  # 10 minute max tail
+        start = time.time()
+
+        while time.time() - start < timeout:
+            # Check exit conditions
+            if cancel_event and cancel_event.is_set():
+                break
+            if tail_stop_event.is_set():
+                logger.info(f"[BackgroundTaskManager] Tail stopped by signal for {thread_id}")
+                break
+
+            # Check if all subagents done
+            if not registry.has_pending_tasks():
+                # Final drain of any remaining captured_events
+                for task in registry._tasks.values():
+                    cursor = cursors.get(task.tool_call_id, 0)
+                    events = task.captured_events
+                    if len(events) > cursor:
+                        for ev in events[cursor:]:
+                            event_seq += 1
+                            sse = self._format_tail_sse(
+                                event_seq, ev["event"],
+                                {"thread_id": thread_id, **ev["data"]},
+                            )
+                            await self._buffer_event_redis(thread_id, sse)
+                        cursors[task.tool_call_id] = len(events)
+                break
+
+            # 1. Drain captured_events from all tasks
+            for task in registry._tasks.values():
+                cursor = cursors.get(task.tool_call_id, 0)
+                events = task.captured_events
+                if cursor > 0 and len(events) < cursor:
+                    cursor = 0  # reset if cleared
+                if len(events) > cursor:
+                    for ev in events[cursor:]:
+                        event_seq += 1
+                        sse = self._format_tail_sse(
+                            event_seq, ev["event"],
+                            {"thread_id": thread_id, **ev["data"]},
+                        )
+                        await self._buffer_event_redis(thread_id, sse)
+                    cursors[task.tool_call_id] = len(events)
+
+            # 2. Emit subagent_status if changed
+            tasks = list(registry._tasks.values())
+            pending_t = [t for t in tasks if t.is_pending]
+            completed_t = [t for t in tasks if t.completed]
+            status_payload = {
+                "active_tasks": [
+                    {
+                        "id": t.display_id,
+                        "agent_id": f"task:{t.task_id}",
+                        "description": t.description or "",
+                        "type": t.subagent_type,
+                        "tool_calls": t.total_tool_calls,
+                        "current_tool": t.current_tool,
+                    }
+                    for t in sorted(pending_t, key=lambda t: t.display_id)
+                ],
+                "completed_tasks": [
+                    {"id": t.display_id, "agent_id": f"task:{t.task_id}"}
+                    for t in sorted(completed_t, key=lambda t: t.display_id)
+                ],
+            }
+            if status_payload != last_status_snapshot:
+                last_status_snapshot = status_payload
+                event_seq += 1
+                sse = self._format_tail_sse(event_seq, "subagent_status", {
+                    "thread_id": thread_id,
+                    **status_payload,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                await self._buffer_event_redis(thread_id, sse)
+
+            # 3. Keepalive
+            event_seq += 1
+            keepalive = self._format_tail_sse(event_seq, "keepalive", {
+                "thread_id": thread_id, "status": "tailing",
+            })
+            await self._buffer_event_redis(thread_id, keepalive)
+
+            await asyncio.sleep(1.0)
+
+        logger.info(f"[BackgroundTaskManager] Tail phase ended for {thread_id}")
+
+    @staticmethod
+    def _format_tail_sse(seq: int, event_type: str, data: dict) -> str:
+        """Format a raw SSE string for the tail phase."""
+        return f"id: {seq}\nevent: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
     async def _buffer_event(self, thread_id: str, event: Any):
         """
@@ -1109,7 +1259,7 @@ class BackgroundTaskManager:
 
         try:
             all_tasks = await bg_registry.get_all_tasks()
-            subagent_agent_ids = {t.agent_id for t in all_tasks if t.agent_id}
+            subagent_agent_ids = {f"task:{t.task_id}" for t in all_tasks}
 
             logger.info(
                 f"[SubagentCollector] Starting incremental collection for "
@@ -1640,7 +1790,7 @@ class BackgroundTaskManager:
                 )
                 return False
 
-            if task_info.status not in [TaskStatus.QUEUED, TaskStatus.RUNNING]:
+            if task_info.status not in [TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.TAILING]:
                 logger.info(
                     f"[BackgroundTaskManager] Cannot cancel {thread_id}: "
                     f"status={task_info.status}"
@@ -1683,7 +1833,7 @@ class BackgroundTaskManager:
                     "completed_subagents": [],
                 }
 
-            if task_info.status not in [TaskStatus.QUEUED, TaskStatus.RUNNING]:
+            if task_info.status not in [TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.TAILING]:
                 logger.info(
                     f"[BackgroundTaskManager] Cannot soft interrupt {thread_id}: "
                     f"status={task_info.status}"
@@ -1771,11 +1921,18 @@ class BackgroundTaskManager:
             if not task_info:
                 return True  # No workflow to wait for
 
-            # Include SOFT_INTERRUPTED - the task may still be wrapping up
-            if task_info.status not in [TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.SOFT_INTERRUPTED]:
+            # Include SOFT_INTERRUPTED and TAILING - the task may still be wrapping up
+            if task_info.status not in [
+                TaskStatus.QUEUED, TaskStatus.RUNNING,
+                TaskStatus.SOFT_INTERRUPTED, TaskStatus.TAILING,
+            ]:
                 return True  # Already fully completed
 
-            if not task_info.soft_interrupted and task_info.status != TaskStatus.SOFT_INTERRUPTED:
+            # For tailing workflows, signal the tail to stop immediately
+            if task_info.status == TaskStatus.TAILING:
+                task_info.tail_stop_event.set()
+                timeout = min(timeout, 5.0)  # Tail should exit fast
+            elif not task_info.soft_interrupted and task_info.status != TaskStatus.SOFT_INTERRUPTED:
                 # Workflow is running but wasn't soft-interrupted
                 # This is an unexpected state - user might be trying to send
                 # concurrent messages. We'll wait briefly but not block too long.
@@ -1795,17 +1952,19 @@ class BackgroundTaskManager:
             # Wait for the task to complete with timeout
             await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
 
-            # Clean up the soft-interrupted task so start_workflow can proceed
+            # Clean up the finished task so start_workflow can proceed
             async with self.task_lock:
                 task_info = self.tasks.get(thread_id)
-                if task_info and task_info.status == TaskStatus.SOFT_INTERRUPTED:
+                if task_info and task_info.status in (
+                    TaskStatus.SOFT_INTERRUPTED, TaskStatus.COMPLETED,
+                ):
                     logger.info(
-                        f"[BackgroundTaskManager] Cleaning up soft-interrupted task {thread_id}"
+                        f"[BackgroundTaskManager] Cleaning up {task_info.status.value} task {thread_id}"
                     )
                     del self.tasks[thread_id]
 
             logger.info(
-                f"[BackgroundTaskManager] Soft-interrupted workflow {thread_id} "
+                f"[BackgroundTaskManager] Previous workflow {thread_id} "
                 f"completed, ready for new request"
             )
             return True

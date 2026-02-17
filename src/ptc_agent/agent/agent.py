@@ -400,6 +400,7 @@ class PTCAgent:
             enabled=True,
             registry=_bg_registry,
             counter_middleware=counter_middleware,
+            checkpointer=checkpointer,
         )
         main_only_middleware.append(background_middleware)
         # Add background management tools (wait, task_progress)

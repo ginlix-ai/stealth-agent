@@ -162,7 +162,12 @@ async def lifespan(app: FastAPI):
         # Initialize PTC Agent checkpointer for state persistence
         from src.server.utils.checkpointer import get_checkpointer, open_checkpointer_pool
         checkpointer = get_checkpointer(
-            memory_type=os.getenv("MEMORY_DB_TYPE", "postgres")
+            memory_type=os.getenv("MEMORY_DB_TYPE", "postgres"),
+            db_host=os.getenv("DB_HOST", "localhost"),
+            db_port=os.getenv("DB_PORT", "5432"),
+            db_name=os.getenv("DB_NAME", "postgres"),
+            db_user=os.getenv("DB_USER", "postgres"),
+            db_password=os.getenv("DB_PASSWORD", "postgres"),
         )
         await open_checkpointer_pool(checkpointer)
         # Validate checkpointer pool is ready with a health check
