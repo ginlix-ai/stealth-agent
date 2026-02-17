@@ -4,10 +4,10 @@ Subagent Message Queue Middleware.
 Checks Redis for follow-up messages queued by the orchestrator for running
 subagents. Injected into subagent middleware stacks so that the main agent
 can send additional instructions to a running subagent via
-``Task(task_number=N, description="...")``.
+``Task(task_id="...", description="...")``.
 
 Modeled on the main ``MessageQueueMiddleware`` but uses a per-task Redis key
-(``subagent:queued_messages:{task_id}``) instead of the per-thread key.
+(``subagent:queued_messages:{tool_call_id}``) instead of the per-thread key.
 """
 
 import json
@@ -21,7 +21,7 @@ from langgraph.runtime import Runtime
 
 from langchain.agents.middleware.types import AgentMiddleware, AgentState
 
-from ptc_agent.agent.middleware.background.middleware import current_background_task_id
+from ptc_agent.agent.middleware.background.middleware import current_background_tool_call_id
 from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 class SubagentMessageQueueMiddleware(AgentMiddleware):
     """Checks Redis for follow-up messages queued for a running subagent.
 
-    When the main agent calls ``Task(task_number=N, description="...")`` on a
+    When the main agent calls ``Task(task_id="...", description="...")`` on a
     running subagent, the ``BackgroundSubagentMiddleware`` pushes the message
     to Redis.  This middleware picks it up before the subagent's next LLM call
     and injects it as a ``HumanMessage``.
@@ -48,8 +48,8 @@ class SubagentMessageQueueMiddleware(AgentMiddleware):
     ) -> dict[str, Any] | None:
         """Check Redis for queued follow-up messages and inject before model call."""
         try:
-            task_id = current_background_task_id.get()
-            if not task_id:
+            tool_call_id = current_background_tool_call_id.get()
+            if not tool_call_id:
                 return None
 
             from src.utils.cache.redis_cache import get_cache_client
@@ -58,7 +58,7 @@ class SubagentMessageQueueMiddleware(AgentMiddleware):
             if not cache.enabled or not cache.client:
                 return None
 
-            key = f"subagent:queued_messages:{task_id}"
+            key = f"subagent:queued_messages:{tool_call_id}"
 
             # Atomically read all queued messages and delete the key
             pipe = cache.client.pipeline()
@@ -97,14 +97,14 @@ class SubagentMessageQueueMiddleware(AgentMiddleware):
 
             logger.info(
                 f"[SubagentMessageQueue] Injecting {len(queued)} follow-up message(s) "
-                f"for task_id={task_id}"
+                f"for tool_call_id={tool_call_id}"
             )
 
             # Emit SSE custom event so frontend can render the follow-up
             # in the subagent view as a user message
             event_data = {
                 "type": "subagent_followup_injected",
-                "task_id": task_id,
+                "tool_call_id": tool_call_id,
                 "content": content,
                 "count": len(queued),
                 "timestamp": time.time(),
@@ -119,15 +119,15 @@ class SubagentMessageQueueMiddleware(AgentMiddleware):
             # subagent conversation from stored events
             if self.registry:
                 try:
-                    task = self.registry._tasks.get(task_id)
-                    agent_id = task.agent_id if task else f"subagent:{task_id}"
+                    task = self.registry._tasks.get(tool_call_id)
+                    agent_id = f"task:{task.task_id}" if task else f"subagent:{tool_call_id}"
                     await self.registry.append_captured_event(
-                        task_id,
+                        tool_call_id,
                         {
                             "event": "subagent_followup_injected",
                             "data": {
                                 "agent": agent_id,
-                                "task_id": task_id,
+                                "tool_call_id": tool_call_id,
                                 "content": content,
                                 "count": len(queued),
                                 "timestamp": event_data["timestamp"],

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Loader2, ArrowRight } from 'lucide-react';
+import { Check, Loader2, ArrowRight, RotateCw } from 'lucide-react';
 import iconRobo from '../../../assets/img/icon-robo.png';
 import iconRoboSing from '../../../assets/img/icon-robo-sing.png';
 import './AgentSidebar.css';
@@ -24,7 +24,7 @@ const CARD_BORDER = 'rgba(255,255,255,0.06)';
  * SubagentTaskMessageContent Component
  *
  * Renders a compact, clickable card in the main chat view to indicate that
- * a background subagent task was launched (via the `task` tool).
+ * a background subagent task was launched or resumed (via the `task` tool).
  * Uses the same visual style as inline artifact cards (company overview, etc.).
  */
 function SubagentTaskMessageContent({
@@ -32,6 +32,8 @@ function SubagentTaskMessageContent({
   description,
   type = 'general-purpose',
   status = 'unknown',
+  resumed = false,
+  resumeTargetId,
   onOpen,
   onDetailOpen,
   toolCallProcess,
@@ -47,7 +49,8 @@ function SubagentTaskMessageContent({
 
   const handleCardClick = () => {
     if (onOpen) {
-      onOpen({ subagentId, description, type, status });
+      // For resume cards, open the original subagent's tab if possible
+      onOpen({ subagentId: resumeTargetId || subagentId, description, type, status });
     }
   };
 
@@ -71,7 +74,7 @@ function SubagentTaskMessageContent({
       onClick={handleCardClick}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
-      title={isRunning ? 'Click to view running subagent' : 'Click to view subagent details'}
+      title={resumed ? 'Click to view resumed subagent' : isRunning ? 'Click to view running subagent' : 'Click to view subagent details'}
     >
       {/* Top row: icon + summary text */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -109,10 +112,11 @@ function SubagentTaskMessageContent({
         <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
           {type}
         </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: isRunning ? '#6155F5' : isCompleted ? '#6155F5' : 'rgba(255,255,255,0.4)' }}>
-          {isRunning && <Loader2 style={{ width: 12, height: 12, animation: 'spin 1s linear infinite' }} />}
-          {isCompleted && <Check style={{ width: 12, height: 12 }} />}
-          {isRunning ? 'Running' : isCompleted ? 'Completed' : status}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: resumed ? '#E8A838' : isRunning ? '#6155F5' : isCompleted ? '#6155F5' : 'rgba(255,255,255,0.4)' }}>
+          {resumed && <RotateCw style={{ width: 12, height: 12 }} />}
+          {!resumed && isRunning && <Loader2 style={{ width: 12, height: 12, animation: 'spin 1s linear infinite' }} />}
+          {!resumed && isCompleted && <Check style={{ width: 12, height: 12 }} />}
+          {resumed ? 'Resumed' : isRunning ? 'Running' : isCompleted ? 'Completed' : status}
         </span>
       </div>
     </div>

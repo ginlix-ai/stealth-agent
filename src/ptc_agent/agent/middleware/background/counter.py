@@ -18,7 +18,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
-from ptc_agent.agent.middleware.background.middleware import current_background_task_id
+from ptc_agent.agent.middleware.background.middleware import current_background_tool_call_id
 from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
 
 logger = structlog.get_logger(__name__)
@@ -36,7 +36,7 @@ class ToolCallCounterMiddleware(AgentMiddleware):
     LangGraph namespace tuple attached, which lets it register the mapping
     from opaque ``tools:<uuid>`` namespace to our stable ``agent_id``.
 
-    The middleware uses a contextvar (current_background_task_id) to identify
+    The middleware uses a contextvar (current_background_tool_call_id) to identify
     which background task it belongs to. Contextvars properly propagate across
     await boundaries, ensuring tool calls are tracked even when subagents
     execute in different execution contexts.
@@ -62,8 +62,8 @@ class ToolCallCounterMiddleware(AgentMiddleware):
             set()
         )  # task_ids that already emitted identity event
 
-    def clear_identity(self, task_id: str) -> None:
-        """Remove a task_id from the emitted identity set.
+    def clear_identity(self, tool_call_id: str) -> None:
+        """Remove a tool_call_id from the emitted identity set.
 
         Called when resuming a completed subagent so that the
         ``subagent_identity`` event is re-emitted on the resumed
@@ -71,9 +71,9 @@ class ToolCallCounterMiddleware(AgentMiddleware):
         to register new namespace UUID mappings.
 
         Args:
-            task_id: The task identifier to clear
+            tool_call_id: The tool_call_id to clear
         """
-        self._emitted_identity.discard(task_id)
+        self._emitted_identity.discard(tool_call_id)
 
     async def awrap_model_call(
         self,
@@ -86,35 +86,35 @@ class ToolCallCounterMiddleware(AgentMiddleware):
         handler can register the namespace mapping before any message_chunk
         or tool_call_chunks events arrive.
 
-        The custom event carries ``task_id``; the streaming infrastructure
+        The custom event carries ``tool_call_id``; the streaming infrastructure
         automatically attaches the correct ``namespace_tuple`` so the handler
         knows which LangGraph namespace UUID maps to which background task.
         """
-        task_id = current_background_task_id.get()
+        tool_call_id = current_background_tool_call_id.get()
 
-        if task_id and self.registry and task_id not in self._emitted_identity:
+        if tool_call_id and self.registry and tool_call_id not in self._emitted_identity:
             try:
                 from langgraph.config import get_stream_writer
 
                 writer = get_stream_writer()
-                writer({"type": "subagent_identity", "task_id": task_id})
-                self._emitted_identity.add(task_id)
+                writer({"type": "subagent_identity", "tool_call_id": tool_call_id})
+                self._emitted_identity.add(tool_call_id)
                 logger.debug(
                     "Emitted subagent_identity event",
-                    task_id=task_id,
+                    tool_call_id=tool_call_id,
                 )
             except Exception as e:
                 logger.debug(
                     "Failed to emit subagent_identity event",
-                    task_id=task_id,
+                    tool_call_id=tool_call_id,
                     error=str(e),
                 )
 
         response = await handler(request)
 
         # Capture events for post-interrupt persistence
-        task_id = current_background_task_id.get()
-        if task_id and self.registry:
+        tool_call_id = current_background_tool_call_id.get()
+        if tool_call_id and self.registry:
             try:
                 ai_msg = response.result[0] if response.result else None
                 if ai_msg:
@@ -122,13 +122,13 @@ class ToolCallCounterMiddleware(AgentMiddleware):
 
                     formatted = format_llm_content(ai_msg.content)
                     tool_calls = getattr(ai_msg, "tool_calls", None) or []
-                    agent_id = self._get_agent_id(task_id)
-                    msg_id = getattr(ai_msg, "id", f"msg-{task_id}")
+                    agent_id = self._get_agent_id(tool_call_id)
+                    msg_id = getattr(ai_msg, "id", f"msg-{tool_call_id}")
 
                     # Emit reasoning chunk if present
                     if formatted.get("reasoning"):
                         await self.registry.append_captured_event(
-                            task_id,
+                            tool_call_id,
                             {
                                 "event": "message_chunk",
                                 "data": {
@@ -146,7 +146,7 @@ class ToolCallCounterMiddleware(AgentMiddleware):
                     # Emit text chunk if present
                     if formatted.get("text"):
                         await self.registry.append_captured_event(
-                            task_id,
+                            tool_call_id,
                             {
                                 "event": "message_chunk",
                                 "data": {
@@ -165,7 +165,7 @@ class ToolCallCounterMiddleware(AgentMiddleware):
 
                     if tool_calls:
                         await self.registry.append_captured_event(
-                            task_id,
+                            tool_call_id,
                             {
                                 "event": "tool_calls",
                                 "data": {
@@ -191,10 +191,10 @@ class ToolCallCounterMiddleware(AgentMiddleware):
 
         return response
 
-    def _get_agent_id(self, task_id: str) -> str:
-        """Resolve agent_id from registry task."""
-        task = self.registry._tasks.get(task_id)
-        return task.agent_id if task else f"subagent:{task_id}"
+    def _get_agent_id(self, tool_call_id: str) -> str:
+        """Resolve agent identifier in task:{task_id} format."""
+        task = self.registry._tasks.get(tool_call_id)
+        return f"task:{task.task_id}" if task else f"subagent:{tool_call_id}"
 
     def wrap_tool_call(
         self,
@@ -221,16 +221,16 @@ class ToolCallCounterMiddleware(AgentMiddleware):
         tool_call = request.tool_call
         tool_name = tool_call.get("name", "unknown")
 
-        # Get task_id from contextvar (set by BackgroundSubagentMiddleware)
+        # Get tool_call_id from contextvar (set by BackgroundSubagentMiddleware)
         # Contextvars properly propagate across await boundaries
-        task_id = current_background_task_id.get()
+        tool_call_id = current_background_tool_call_id.get()
 
         # Report metric to registry before execution
-        if task_id and self.registry:
-            await self.registry.update_metrics(task_id, tool_name)
+        if tool_call_id and self.registry:
+            await self.registry.update_metrics(tool_call_id, tool_name)
             logger.debug(
                 "Counted tool call for background task",
-                task_id=task_id,
+                tool_call_id=tool_call_id,
                 tool_name=tool_name,
             )
 
@@ -238,10 +238,10 @@ class ToolCallCounterMiddleware(AgentMiddleware):
         result = await handler(request)
 
         # Capture tool_call_result for post-interrupt persistence
-        task_id = current_background_task_id.get()
-        if task_id and self.registry:
+        tool_call_id = current_background_tool_call_id.get()
+        if tool_call_id and self.registry:
             try:
-                agent_id = self._get_agent_id(task_id)
+                agent_id = self._get_agent_id(tool_call_id)
                 if isinstance(result, ToolMessage):
                     content = (
                         result.content
@@ -249,7 +249,7 @@ class ToolCallCounterMiddleware(AgentMiddleware):
                         else str(result.content)
                     )
                     await self.registry.append_captured_event(
-                        task_id,
+                        tool_call_id,
                         {
                             "event": "tool_call_result",
                             "data": {
@@ -273,7 +273,7 @@ class ToolCallCounterMiddleware(AgentMiddleware):
                                 else str(msg.content)
                             )
                             await self.registry.append_captured_event(
-                                task_id,
+                                tool_call_id,
                                 {
                                     "event": "tool_call_result",
                                     "data": {

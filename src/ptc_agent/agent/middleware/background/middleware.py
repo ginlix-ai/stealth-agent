@@ -7,6 +7,7 @@ allowing the main agent to continue working without blocking.
 import asyncio
 import contextvars
 import json
+import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -17,7 +18,10 @@ from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
-from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
+from ptc_agent.agent.middleware.background.registry import (
+    BackgroundTask,
+    BackgroundTaskRegistry,
+)
 from ptc_agent.agent.middleware.background.tools import (
     create_task_output_tool,
     create_wait_tool,
@@ -26,11 +30,11 @@ from ptc_agent.agent.middleware.background.tools import (
 if TYPE_CHECKING:
     from ptc_agent.agent.middleware.background.counter import ToolCallCounterMiddleware
 
-# This ContextVar propagates task_id to subagent tool calls, used by
+# This ContextVar propagates tool_call_id to subagent tool calls, used by
 # ToolCallCounterMiddleware to track which background task a tool call
 # belongs to.
-current_background_task_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "current_background_task_id", default=None
+current_background_tool_call_id: contextvars.ContextVar[str | None] = (
+    contextvars.ContextVar("current_background_tool_call_id", default=None)
 )
 
 # This ContextVar propagates the unified agent identity (e.g., "research:uuid4")
@@ -98,6 +102,7 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
         enabled: bool = True,
         registry: BackgroundTaskRegistry | None = None,
         counter_middleware: "ToolCallCounterMiddleware | None" = None,
+        checkpointer: Any | None = None,
     ) -> None:
         """Initialize the middleware.
 
@@ -106,12 +111,14 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
             enabled: Whether background execution is enabled
             registry: Optional shared registry for background tasks
             counter_middleware: Optional counter middleware for clearing identity on resume
+            checkpointer: Optional LangGraph checkpointer for hydrating tasks from stored state
         """
         super().__init__()
         self.registry = registry or BackgroundTaskRegistry()
         self.timeout = timeout
         self.enabled = enabled
         self.counter_middleware = counter_middleware
+        self.checkpointer = checkpointer
 
         # Create native tools for this middleware
         # These allow the main agent to wait for and check on background tasks
@@ -161,6 +168,63 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
             )
             return False
 
+    async def _hydrate_from_checkpoint(
+        self, task_id: str, parent_thread_id: str
+    ) -> BackgroundTask | None:
+        """Try to reconstruct a BackgroundTask from stored checkpoint metadata.
+
+        When the in-memory registry loses a task (e.g., server restart), this method
+        queries the checkpointer for a checkpoint written under the task_id's
+        checkpoint_ns, and rebuilds a minimal BackgroundTask for resume.
+
+        Args:
+            task_id: The 6-char short task ID (used as checkpoint_ns)
+            parent_thread_id: The parent conversation's thread_id
+
+        Returns:
+            A reconstructed BackgroundTask inserted into the registry, or None
+        """
+
+        if not self.checkpointer or not parent_thread_id:
+            return None
+        try:
+            config = {
+                "configurable": {
+                    "thread_id": parent_thread_id,
+                    "checkpoint_ns": f"task:{task_id}",
+                }
+            }
+            checkpoint_tuple = await self.checkpointer.aget_tuple(config)
+            if not checkpoint_tuple:
+                return None
+
+            metadata = checkpoint_tuple.metadata or {}
+            subagent_type = metadata.get("subagent_type", "general-purpose")
+
+            # Reconstruct BackgroundTask and insert into registry
+            task = BackgroundTask(
+                tool_call_id=f"hydrated-{task_id}",
+                task_id=task_id,
+                description=metadata.get("description", "Restored subagent"),
+                subagent_type=subagent_type,
+                completed=True,
+                result_seen=True,
+            )
+            async with self.registry._lock:
+                self.registry._tasks[task.tool_call_id] = task
+                self.registry._task_id_to_tool_call_id[task_id] = task.tool_call_id
+
+            logger.info(
+                "Hydrated task from checkpoint",
+                task_id=task_id,
+                parent_thread_id=parent_thread_id,
+                subagent_type=subagent_type,
+            )
+            return task
+        except Exception:
+            logger.exception("Failed to hydrate from checkpoint", task_id=task_id)
+            return None
+
     async def awrap_tool_call(
         self,
         request: ToolCallRequest,
@@ -169,9 +233,9 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
         """Intercept task tool calls and spawn in background.
 
         Routing logic:
-        1. ``task_number`` present + task is running → queue follow-up via Redis
-        2. ``task_number`` present + task is completed → reset and resume in background
-        3. No ``task_number`` → new task (existing logic)
+        1. ``task_id`` present + task is running → queue follow-up via Redis
+        2. ``task_id`` present + task is completed → reset and resume in background
+        3. No ``task_id`` → new task (existing logic)
 
         For all non-Task tools, passes through to the handler normally.
         """
@@ -189,23 +253,36 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
             raise RuntimeError("Tool call ID is required for background tasks")
         args = tool_call.get("args", {})
         description = args.get("description", "unknown task")
-        task_number = args.get("task_number")
+        target_task_id = args.get("task_id")
         subagent_type = args.get("subagent_type")
 
-        # --- Three-way routing based on task_number ---
-        if task_number is not None:
-            task = await self.registry.get_by_number(task_number)
+        # Extract parent_thread_id for hydration fallback
+        parent_thread_id = (
+            (request.runtime.config.get("configurable") or {}).get("thread_id", "")
+            if request.runtime
+            else ""
+        )
+
+        # --- Three-way routing based on task_id ---
+        if target_task_id is not None:
+            task = await self.registry.get_by_task_id(target_task_id)
+
+            # Hydration fallback: reconstruct from checkpoint if registry lost the task
+            if task is None:
+                task = await self._hydrate_from_checkpoint(
+                    target_task_id, parent_thread_id
+                )
 
             if task is None:
                 return ToolMessage(
-                    content=f"Error: Task-{task_number} not found.",
+                    content=f"Error: Task-{target_task_id} not found.",
                     tool_call_id=tool_call_id,
                     name="Task",
                 )
 
             if task.cancelled:
                 return ToolMessage(
-                    content=f"Error: Task-{task_number} was cancelled and cannot be resumed.",
+                    content=f"Error: Task-{target_task_id} was cancelled and cannot be resumed.",
                     tool_call_id=tool_call_id,
                     name="Task",
                 )
@@ -213,18 +290,20 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
             # Validate subagent_type if explicitly provided
             if subagent_type and subagent_type != task.subagent_type:
                 return ToolMessage(
-                    content=f"Error: Task-{task_number} is a '{task.subagent_type}' agent, not '{subagent_type}'.",
+                    content=f"Error: Task-{target_task_id} is a '{task.subagent_type}' agent, not '{subagent_type}'.",
                     tool_call_id=tool_call_id,
                     name="Task",
                 )
 
             if task.is_pending:
                 # --- FOLLOW-UP: Task is still running → queue via Redis ---
-                success = await self._queue_followup_to_redis(task.task_id, description)
+                success = await self._queue_followup_to_redis(
+                    task.tool_call_id, description
+                )
                 if success:
                     logger.info(
                         "Queued follow-up for running task",
-                        task_number=task_number,
+                        task_id=target_task_id,
                         display_id=task.display_id,
                     )
                     return ToolMessage(
@@ -242,9 +321,9 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
             # --- RESUME: Task is completed → reset and respawn ---
             logger.info(
                 "Resuming completed task in background",
-                task_number=task_number,
+                task_id=target_task_id,
                 display_id=task.display_id,
-                subagent_thread_id=task.subagent_thread_id,
+                checkpoint_ns=task.task_id,
             )
 
             # Reset task state for the new run
@@ -254,24 +333,45 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
             task.error = None
             task.captured_events = []
 
+            # Emit the resume instruction as a custom event so the streaming
+            # handler can persist it in sse_events (for history replay) and
+            # forward it to the frontend live.
+            if description:
+                try:
+                    from langgraph.config import get_stream_writer
+
+                    writer = get_stream_writer()
+                    writer(
+                        {
+                            "type": "subagent_followup_injected",
+                            "agent": f"task:{task.task_id}",
+                            "tool_call_id": task.tool_call_id,
+                            "content": description,
+                            "count": 1,
+                            "timestamp": time.time(),
+                        }
+                    )
+                except Exception:
+                    logger.debug(
+                        "Could not emit subagent_followup_injected via stream writer"
+                    )
+
             # Clear stale namespace mappings so new ones can be registered
-            self.registry.clear_namespaces_for_task(task.task_id)
+            self.registry.clear_namespaces_for_task(task.tool_call_id)
 
             # Allow re-emission of subagent_identity event
             if self.counter_middleware:
-                self.counter_middleware.clear_identity(task.task_id)
+                self.counter_middleware.clear_identity(task.tool_call_id)
 
             # Set ContextVars for the resumed task
-            current_background_task_id.set(task.task_id)
+            current_background_tool_call_id.set(task.tool_call_id)
             current_background_agent_id.set(task.agent_id)
 
             # Update args with inferred subagent_type for the handler
             if subagent_type is None:
                 args = {**args, "subagent_type": task.subagent_type}
                 tool_call = {**tool_call, "args": args}
-                request = ToolCallRequest(
-                    tool_call=tool_call, state=request.state, config=request.config
-                )
+                request = request.override(tool_call=tool_call)
 
             # Spawn resumed task in background
             async def execute_resume_in_background() -> dict[str, Any]:
@@ -335,8 +435,8 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
                 f"- Status: Running (resumed with full previous context)\n\n"
                 f"You can:\n"
                 f"- Continue with other work\n"
-                f"- Use `TaskOutput(task_number={task_number})` to get progress or result\n"
-                f"- Use `Wait(task_number={task_number})` to block until complete"
+                f'- Use `TaskOutput(task_id="{task.task_id}")` to get progress or result\n'
+                f'- Use `Wait(task_id="{task.task_id}")` to block until complete'
             )
 
             return ToolMessage(
@@ -345,29 +445,27 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
                 name="Task",
             )
 
-        # --- NEW TASK: No task_number → existing logic ---
+        # --- NEW TASK: No task_id → existing logic ---
         if subagent_type is None:
             subagent_type = "general-purpose"
 
-        # Register the task first to get the task number
+        # Register the task first to get the task_id
         task = await self.registry.register(
-            task_id=tool_call_id,
+            tool_call_id=tool_call_id,
             description=description,
             subagent_type=subagent_type,
             asyncio_task=None,  # Will be set after task creation
         )
-        task_number = task.task_number
-
         logger.info(
             "Intercepting task tool call for background execution",
             tool_call_id=tool_call_id,
-            task_number=task_number,
+            task_id=task.task_id,
             display_id=task.display_id,
             subagent_type=subagent_type,
             description=description[:100],
         )
 
-        current_background_task_id.set(tool_call_id)
+        current_background_tool_call_id.set(tool_call_id)
         current_background_agent_id.set(task.agent_id)
 
         # Define the background execution coroutine
@@ -442,8 +540,8 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
             f"- Status: Running in background\n\n"
             f"You can:\n"
             f"- Continue with other work\n"
-            f"- Use `TaskOutput(task_number={task_number})` to get progress or result\n"
-            f"- Use `Wait(task_number={task_number})` to block until complete\n"
+            f'- Use `TaskOutput(task_id="{task.task_id}")` to get progress or result\n'
+            f'- Use `Wait(task_id="{task.task_id}")` to block until complete\n'
             f"- Use `Wait()` to wait for all background tasks"
         )
 

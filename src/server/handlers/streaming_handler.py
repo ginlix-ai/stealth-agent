@@ -322,12 +322,12 @@ class WorkflowStreamHandler:
         self._current_namespace: tuple = ()
 
         # Track which completed task results have already been sent (avoid re-sending)
-        self._sent_result_task_ids: set[str] = set()
+        self._sent_result_tool_call_ids: set[str] = set()
 
         # Cursor tracking for old subagent event emission (task_id → index)
         self._old_subagent_cursors: dict[str, int] = {}
         # Snapshot of task IDs from previous workflow (set at stream start)
-        self._old_task_ids: set[str] = set()
+        self._old_tool_call_ids: set[str] = set()
 
     async def _keepalive_loop(self, keepalive_queue: asyncio.Queue):
         """
@@ -426,7 +426,7 @@ class WorkflowStreamHandler:
             # OLD response where the subagent was created.
             if self._background_registry:
                 old_tasks = list(self._background_registry._tasks.values())
-                self._old_task_ids = {t.task_id for t in old_tasks}
+                self._old_tool_call_ids = {t.tool_call_id for t in old_tasks}
 
                 if any(t.captured_events for t in old_tasks):
                     # Emit subagent_status first so frontend has context
@@ -534,13 +534,13 @@ class WorkflowStreamHandler:
                         # The namespace_tuple from the streaming infrastructure tells us
                         # which LangGraph UUID corresponds to which background task.
                         if event_type == "subagent_identity":
-                            task_id = event_data.get("task_id")
-                            if task_id and self._background_registry and agent_from_stream:
+                            tool_call_id = event_data.get("tool_call_id")
+                            if tool_call_id and self._background_registry and agent_from_stream:
                                 ns_str = "|".join(str(ns) for ns in agent_from_stream)
-                                self._background_registry.register_namespace(ns_str, task_id)
+                                self._background_registry.register_namespace(ns_str, tool_call_id)
                                 logger.debug(
                                     f"[SUBAGENT_IDENTITY] Registered namespace mapping: "
-                                    f"{ns_str} -> task_id={task_id}"
+                                    f"{ns_str} -> tool_call_id={tool_call_id}"
                                 )
                             continue
 
@@ -588,11 +588,13 @@ class WorkflowStreamHandler:
 
                         # Handle subagent follow-up injection signal
                         if event_type == "subagent_followup_injected":
-                            extracted_agent_name = self._extract_agent_name(agent_from_stream, {})
+                            # Use explicit agent field if provided (e.g. from resume path),
+                            # otherwise extract from graph namespace (live follow-up path).
+                            agent_name = event_data.get("agent") or self._extract_agent_name(agent_from_stream, {})
                             yield self._format_sse_event("subagent_followup_injected", {
                                 "thread_id": self.thread_id,
-                                "agent": extracted_agent_name,
-                                "task_id": event_data.get("task_id"),
+                                "agent": agent_name,
+                                "tool_call_id": event_data.get("tool_call_id"),
                                 "content": event_data.get("content", ""),
                                 "count": event_data.get("count", 0),
                                 "timestamp": event_data.get("timestamp"),
@@ -761,6 +763,34 @@ class WorkflowStreamHandler:
                     f"[Credit SSE] Failed to emit credit_usage event for thread_id={self.thread_id}: {e}"
                 )
 
+            # Emit subagents_pending if any background subagents are still running
+            # This goes through the normal stream (before consume_workflow finishes),
+            # ensuring the frontend receives it while the connection is still active.
+            # The tail loop in _run_workflow_shielded then takes over.
+            try:
+                if self._background_registry and self._background_registry.has_pending_tasks():
+                    pending = [t for t in self._background_registry._tasks.values() if t.is_pending]
+                    yield self._format_sse_event("subagents_pending", {
+                        "thread_id": self.thread_id,
+                        "active_tasks": [
+                            {
+                                "id": t.display_id,
+                                "agent_id": f"task:{t.task_id}",
+                                "description": (t.description or "")[:100],
+                                "type": t.subagent_type,
+                            }
+                            for t in pending
+                        ],
+                    })
+                    logger.info(
+                        f"[SubagentsPending] Emitted subagents_pending with "
+                        f"{len(pending)} pending tasks for thread_id={self.thread_id}"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"[SubagentsPending] Failed to emit subagents_pending for thread_id={self.thread_id}: {e}"
+                )
+
         except asyncio.CancelledError:
             logger.info(f"SSE streaming ended for thread_id={self.thread_id} (client connection lost)")
             # Don't yield error event - this is expected behavior
@@ -840,11 +870,11 @@ class WorkflowStreamHandler:
         if namespace_tuple:
             raw_name = str(namespace_tuple[-1])
 
-            # Try to resolve to unified subagent identity via registry
+            # Try to resolve to task:{task_id} format via registry
             if self._background_registry:
                 task = self._background_registry.get_task_by_namespace(raw_name)
-                if task and task.agent_id:
-                    return task.agent_id
+                if task:
+                    return f"task:{task.task_id}"
 
             return raw_name
 
@@ -908,12 +938,12 @@ class WorkflowStreamHandler:
 
             # Clear stale entries for resumed tasks (pending again after completion)
             for task in pending:
-                self._sent_result_task_ids.discard(task.task_id)
+                self._sent_result_tool_call_ids.discard(task.tool_call_id)
 
             active_tasks = [
                 {
                     "id": task.display_id,
-                    "agent_id": task.agent_id,
+                    "agent_id": f"task:{task.task_id}",
                     "description": task.description or "",
                     "type": task.subagent_type,
                     "tool_calls": task.total_tool_calls,
@@ -925,14 +955,14 @@ class WorkflowStreamHandler:
             for task in sorted(completed, key=lambda t: t.display_id):
                 entry: dict[str, Any] = {
                     "id": task.display_id,
-                    "agent_id": task.agent_id,
+                    "agent_id": f"task:{task.task_id}",
                 }
                 # Include result text only the first time a task appears completed
-                if task.task_id not in self._sent_result_task_ids and task.result:
+                if task.tool_call_id not in self._sent_result_tool_call_ids and task.result:
                     from ptc_agent.agent.middleware.background.tools import extract_result_content
                     _success, content = extract_result_content(task.result)
                     entry["result"] = content
-                    self._sent_result_task_ids.add(task.task_id)
+                    self._sent_result_tool_call_ids.add(task.tool_call_id)
                 completed_tasks.append(entry)
 
             payload = {
@@ -983,11 +1013,11 @@ class WorkflowStreamHandler:
         Events are formatted with accumulate=False so they are NOT included in
         the new response's persistence — the collector owns persistence for these.
         """
-        if not self._background_registry or not self._old_task_ids:
+        if not self._background_registry or not self._old_tool_call_ids:
             return
 
-        for task_id in self._old_task_ids:
-            task = self._background_registry.get_by_id(task_id)
+        for task_id in self._old_tool_call_ids:
+            task = self._background_registry.get_by_tool_call_id(task_id)
             if task is None:
                 continue
 

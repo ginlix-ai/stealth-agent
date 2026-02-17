@@ -5,20 +5,17 @@
 
 /**
  * Helper to check if an event is from a subagent.
- * Backend convention (aligned with isSubagentEvent in streamEventHandlers):
- * - Main agent: agent.startsWith("model:")
- * - Tool node: agent === "tools"
- * - Subagent: agent contains ":" but does NOT start with "model:" and is NOT "tools"
- * Subagent agent_id format: "{subagent_type}:{uuid4}" (e.g., "research:550e8400-...")
+ * Backend convention: agent field uses "task:{task_id}" format (e.g., "task:pkyRHQ").
+ * This aligns with LangGraph namespace convention (tools:uuid, model:uuid, task:id).
  * @param {Object} event - The history event
  * @returns {boolean} True if event is from subagent
  */
 export function isSubagentHistoryEvent(event) {
   const agent = event?.agent;
-  if (!agent || typeof agent !== 'string' || !agent.includes(':')) {
+  if (!agent || typeof agent !== 'string') {
     return false;
   }
-  return !agent.startsWith('model:') && agent !== 'tools';
+  return agent.startsWith('task:');
 }
 
 /**
@@ -380,9 +377,9 @@ export function handleHistoryToolCalls({ assistantMessageId, toolCalls, pairStat
 
           // If this tool is the Task tool (subagent spawner), also create a subagent_task segment
           // Backend uses PascalCase "Task"; accept both for compatibility
-          // Skip for follow-up/resume calls (task_number present) — these target existing subagents
-          const isNewSpawn = !toolCall.args?.task_number;
-          if ((toolCall.name === 'task' || toolCall.name === 'Task') && toolCallId && isNewSpawn) {
+          const isTaskTool = toolCall.name === 'task' || toolCall.name === 'Task';
+          const isNewSpawn = !toolCall.args?.task_id;
+          if (isTaskTool && toolCallId && isNewSpawn) {
             const subagentId = toolCallId;
             // Only add the segment once per subagentId
             const hasExistingSubagentSegment = contentSegments.some(
@@ -404,6 +401,25 @@ export function handleHistoryToolCalls({ assistantMessageId, toolCalls, pairStat
               description: toolCall.args?.description || '',
               type: toolCall.args?.subagent_type || 'general-purpose',
               status: 'running',
+            };
+          } else if (isTaskTool && toolCallId && !isNewSpawn) {
+            // Resume/follow-up call — show a new card with "resumed" indicator
+            // Normalize to "task:xxx" format to match floating card keys
+            const rawTargetId = toolCall.args?.task_id || '';
+            const resumeTargetId = rawTargetId.startsWith('task:') ? rawTargetId : `task:${rawTargetId}`;
+            contentSegments.push({
+              type: 'subagent_task',
+              subagentId: toolCallId,
+              resumeTargetId,
+              order: currentOrder,
+            });
+            subagentTasks[toolCallId] = {
+              subagentId: toolCallId,
+              resumeTargetId,
+              description: toolCall.args?.description || '',
+              type: toolCall.args?.subagent_type || 'general-purpose',
+              status: 'running',
+              resumed: true,
             };
           }
 

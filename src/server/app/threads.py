@@ -449,10 +449,10 @@ async def get_thread_subagents(thread_id: str):
     )
 
 
-@router.post("/{thread_id}/subagents/{task_number}/messages")
+@router.post("/{thread_id}/subagents/{task_id}/messages")
 async def send_subagent_message(
     thread_id: str,
-    task_number: int,
+    task_id: str,
     request: SubagentMessageRequest,
     x_user_id: CurrentUserId,
 ):
@@ -461,7 +461,7 @@ async def send_subagent_message(
 
     return await queue_message_for_subagent(
         thread_id=thread_id,
-        task_number=task_number,
+        task_id=task_id,
         content=request.content,
         user_id=x_user_id,
     )

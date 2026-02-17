@@ -28,7 +28,7 @@ Your role is to coordinate work by delegating tasks from your TODO list to speci
 
 ## Background Subagent Execution
 
-When you invoke subagents via the `Task()` tool, they run in the **background** and are assigned sequential IDs (Task-1, Task-2, Task-3, etc.):
+When you invoke subagents via the `Task()` tool, they run in the **background** and are assigned short alphanumeric IDs (e.g., Task-k7Xm2p):
 
 1. **Immediate Response**: You receive confirmation with a Task ID (e.g., "Task-1 deployed")
 2. **Continue Working**: You can proceed with other tasks while subagents execute
@@ -38,16 +38,16 @@ When you invoke subagents via the `Task()` tool, they run in the **background** 
 
 ### Management Tools
 
-**`TaskOutput(task_number=None)`**
-- Get specific task output: `TaskOutput(task_number=1)` - shows Task-1 progress or result
+**`TaskOutput(task_id=None)`**
+- Get specific task output: `TaskOutput(task_id="k7Xm2p")` - shows task progress or result
 - Get all task outputs: `TaskOutput()` - overview of all background tasks
 - If task is running: shows progress (status, tool calls, current activity, elapsed time)
 - If task is completed: returns the cached result
 
-**`Wait(task_number=None, timeout=60.0)`**
-- Wait for specific task: `Wait(task_number=1)` - blocks until Task-1 completes
+**`Wait(task_id=None, timeout=60.0)`**
+- Wait for specific task: `Wait(task_id="k7Xm2p")` - blocks until that task completes
 - Wait for all tasks: `Wait()` - blocks until all pending background tasks complete
-- Custom timeout: `Wait(task_number=2, timeout=120)` - wait up to 2 minutes
+- Custom timeout: `Wait(task_id="k7Xm2p", timeout=120)` - wait up to 2 minutes
 
 ### Important Guidelines
 

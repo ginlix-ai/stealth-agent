@@ -237,15 +237,15 @@ export async function reconnectToWorkflowStream(threadId, lastEventId = null, on
 /**
  * Send a message/instruction to a running background subagent.
  * @param {string} threadId - The thread ID
- * @param {number} taskNumber - The subagent task number (1, 2, 3...)
+ * @param {string} taskId - The subagent task ID (e.g., 'k7Xm2p')
  * @param {string} content - The instruction to send
- * @returns {Promise<Object>} { success, task_id, display_id, queue_position }
+ * @returns {Promise<Object>} { success, tool_call_id, display_id, queue_position }
  */
-export async function sendSubagentMessage(threadId, taskNumber, content) {
+export async function sendSubagentMessage(threadId, taskId, content) {
   if (!threadId) throw new Error('Thread ID is required');
-  if (!taskNumber) throw new Error('Task number is required');
+  if (!taskId) throw new Error('Task ID is required');
   const { data } = await api.post(
-    `/api/v1/threads/${threadId}/subagents/${taskNumber}/messages`,
+    `/api/v1/threads/${threadId}/subagents/${taskId}/messages`,
     { content }
   );
   return data;

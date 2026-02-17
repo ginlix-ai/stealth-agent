@@ -1,6 +1,5 @@
 """Middleware for providing subagents to an agent via a `Task` tool."""
 
-import uuid as uuid_mod
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Any, NotRequired, TypedDict, cast
 
@@ -20,7 +19,9 @@ from langchain_core.tools import StructuredTool
 from langgraph.config import get_config
 from langgraph.types import Command
 
-from ptc_agent.agent.middleware.background.middleware import current_background_task_id
+from ptc_agent.agent.middleware.background.middleware import (
+    current_background_tool_call_id,
+)
 from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
 from ptc_agent.agent.middleware.subagents._utils import append_to_system_message
 
@@ -133,16 +134,16 @@ When using the Task tool, you must specify a subagent_type parameter to select w
 ## Parameters:
 - `description` (required): Detailed task instructions for the subagent. For follow-up/resume, provide the new instructions.
 - `subagent_type` (required for new tasks, optional for resume): The type of subagent to use.
-- `task_number` (optional): Existing task number to follow up on or resume. Omit for new tasks.
+- `task_id` (optional): Existing task ID to follow up on or resume. Omit for new tasks.
 
 ## Usage modes:
-### New task (no task_number):
+### New task (no task_id):
 Launch a fresh subagent. Requires `subagent_type`.
 
-### Follow-up to running task (task_number + task is running):
+### Follow-up to running task (task_id + task is running):
 Send additional instructions to a running subagent. The subagent picks up the message before its next reasoning step.
 
-### Resume completed task (task_number + task is completed):
+### Resume completed task (task_id + task is completed):
 Resume a completed subagent with full conversation history preserved. The subagent sees all previous context plus your new instructions.
 
 ## Usage notes:
@@ -260,8 +261,8 @@ When to use the Task tool:
 - When you only care about the output of the subagent, and not the intermediate steps
 
 ### Follow-up & Resume:
-- **Follow-up** (`task_number=N` while Task-N is running): Sends additional instructions to the running subagent. It picks them up before its next reasoning step.
-- **Resume** (`task_number=N` after Task-N completed): Re-invokes the subagent with its full conversation history preserved. Use when you need iterative refinement based on previous results.
+- **Follow-up** (`task_id="..."` while the task is running): Sends additional instructions to the running subagent. It picks them up before its next reasoning step.
+- **Resume** (`task_id="..."` after the task completed): Re-invokes the subagent with its full conversation history preserved. Use when you need iterative refinement based on previous results.
 
 Subagent lifecycle:
 1. **Spawn** → Provide clear role, instructions, and expected output
@@ -444,35 +445,22 @@ def _create_task_tool(
         subagent_state["messages"] = [HumanMessage(content=description)]
         return subagent, subagent_state
 
-    def _store_thread_id(subagent_thread_id: str) -> None:
-        """Store the subagent thread_id on the BackgroundTask via ContextVar + registry."""
-        if registry is None:
-            return
-        bg_task_id = current_background_task_id.get()
-        if bg_task_id:
-            bg_task = registry.get_by_id(bg_task_id)
-            if bg_task:
-                bg_task.subagent_thread_id = subagent_thread_id
-                logger.debug(
-                    "Stored subagent_thread_id on background task",
-                    bg_task_id=bg_task_id,
-                    subagent_thread_id=subagent_thread_id,
-                )
-
     def _get_resume_info() -> tuple[str | None, str | None]:
-        """Check if this invocation is a resume (has existing thread_id).
+        """Check if this invocation is a resume (BackgroundSubagentMiddleware set ContextVars).
 
         Returns:
-            Tuple of (subagent_thread_id, subagent_type) or (None, None)
+            Tuple of (checkpoint_ns, subagent_type) or (None, None).
+            checkpoint_ns is "task:{task_id}" matching LangGraph namespace convention.
         """
         if registry is None:
             return None, None
-        bg_task_id = current_background_task_id.get()
+        bg_task_id = current_background_tool_call_id.get()
         if not bg_task_id:
             return None, None
-        bg_task = registry.get_by_id(bg_task_id)
-        if bg_task and bg_task.subagent_thread_id:
-            return bg_task.subagent_thread_id, bg_task.subagent_type
+        bg_task = registry.get_by_tool_call_id(bg_task_id)
+        if bg_task and bg_task.completed is False:
+            # Task was reset for resume by BackgroundSubagentMiddleware
+            return f"task:{bg_task.task_id}", bg_task.subagent_type
         return None, None
 
     # Use custom description if provided, otherwise use default template
@@ -495,15 +483,15 @@ def _create_task_tool(
             str | None,
             "The type of subagent to use. Required for new tasks. Optional when resuming (inferred from original task).",
         ] = None,  # noqa: E501
-        task_number: Annotated[
-            int | None,
-            "Task number of an existing task to follow up on (running) or resume (completed). Omit for new tasks.",
+        task_id: Annotated[
+            str | None,
+            "Task ID of an existing task to follow up on (running) or resume (completed). Omit for new tasks.",
         ] = None,  # noqa: E501
         runtime: ToolRuntime = None,  # type: ignore[assignment]
     ) -> str | Command:
         # Resolve subagent_type for new tasks
         effective_type = subagent_type
-        if task_number is None:
+        if task_id is None:
             if effective_type is None:
                 return "Error: subagent_type is required for new tasks."
             if effective_type not in subagent_graphs:
@@ -511,7 +499,7 @@ def _create_task_tool(
                 return f"We cannot invoke subagent {effective_type} because it does not exist, the only allowed types are {allowed_types}"
         else:
             # For resume/follow-up, type is inferred; validate if explicitly provided
-            resume_thread_id, resume_type = _get_resume_info()
+            _resume_task_id, resume_type = _get_resume_info()
             effective_type = effective_type or resume_type or "general-purpose"
             if effective_type not in subagent_graphs:
                 allowed_types = ", ".join([f"`{k}`" for k in subagent_graphs])
@@ -521,22 +509,34 @@ def _create_task_tool(
             effective_type, description, runtime
         )
 
-        # For new tasks: generate thread_id if checkpointer is available
+        # Build config: use parent's thread_id + checkpoint_ns for isolation
         # Merge into parent config to preserve streaming callbacks/namespace
         if checkpointer:
-            thread_id = f"subagent-{uuid_mod.uuid4()}"
             parent_config = get_config()
             parent_configurable = parent_config.get("configurable", {})
+            # Get task_id from BackgroundTask via ContextVar
+            bg_tool_call_id = current_background_tool_call_id.get()
+            bg_task = (
+                registry.get_by_tool_call_id(bg_tool_call_id)
+                if bg_tool_call_id and registry
+                else None
+            )
+            checkpoint_ns = f"task:{bg_task.task_id}" if bg_task else ""
             config = {
                 **parent_config,
-                "configurable": {**parent_configurable, "thread_id": thread_id},
+                "configurable": {
+                    **parent_configurable,
+                    "thread_id": parent_configurable.get("thread_id", ""),
+                    "checkpoint_ns": checkpoint_ns,
+                },
+                "metadata": {
+                    "subagent_type": effective_type,
+                    "description": description[:200],
+                },
             }
         else:
-            thread_id = None
             config = {}
         result = subagent.invoke(subagent_state, config)
-        if checkpointer and thread_id:
-            _store_thread_id(thread_id)
         if not runtime.tool_call_id:
             value_error_msg = "Tool call ID is required for subagent invocation"
             raise ValueError(value_error_msg)
@@ -551,9 +551,9 @@ def _create_task_tool(
             str | None,
             "The type of subagent to use. Required for new tasks. Optional when resuming (inferred from original task).",
         ] = None,  # noqa: E501
-        task_number: Annotated[
-            int | None,
-            "Task number of an existing task to follow up on (running) or resume (completed). Omit for new tasks.",
+        task_id: Annotated[
+            str | None,
+            "Task ID of an existing task to follow up on (running) or resume (completed). Omit for new tasks.",
         ] = None,  # noqa: E501
         runtime: ToolRuntime = None,  # type: ignore[assignment]
     ) -> str | Command:
@@ -561,10 +561,10 @@ def _create_task_tool(
         effective_type = subagent_type
 
         # Check if this is a resume (BackgroundSubagentMiddleware set up the ContextVar)
-        resume_thread_id, resume_type = _get_resume_info()
-        is_resume = resume_thread_id is not None
+        resume_task_id, resume_type = _get_resume_info()
+        is_resume = resume_task_id is not None
 
-        if task_number is None and not is_resume:
+        if task_id is None and not is_resume:
             if effective_type is None:
                 return "Error: subagent_type is required for new tasks."
             if effective_type not in subagent_graphs:
@@ -584,7 +584,7 @@ def _create_task_tool(
         parent_configurable = parent_config.get("configurable", {})
 
         if is_resume and checkpointer:
-            # Resume: invoke with existing thread_id → LangGraph loads checkpoint
+            # Resume: invoke with parent's thread_id + checkpoint_ns → LangGraph loads checkpoint
             resume_state = {
                 k: v for k, v in runtime.state.items() if k not in _EXCLUDED_STATE_KEYS
             }
@@ -593,35 +593,50 @@ def _create_task_tool(
                 **parent_config,
                 "configurable": {
                     **parent_configurable,
-                    "thread_id": resume_thread_id,
+                    "thread_id": parent_configurable.get("thread_id", ""),
+                    "checkpoint_ns": resume_task_id,
+                },
+                "metadata": {
+                    "subagent_type": effective_type,
+                    "description": description[:200],
                 },
             }
             logger.info(
                 "Resuming subagent from checkpoint",
-                thread_id=resume_thread_id,
+                checkpoint_ns=resume_task_id,
+                parent_thread_id=parent_configurable.get("thread_id", ""),
                 subagent_type=effective_type,
             )
             result = await subagent.ainvoke(resume_state, config)
         else:
-            # New task: generate fresh thread_id
+            # New task: use parent's thread_id + checkpoint_ns for isolation
             _subagent, subagent_state = _validate_and_prepare_state(
                 effective_type, description, runtime
             )
             if checkpointer:
-                thread_id = f"subagent-{uuid_mod.uuid4()}"
+                # Get task_id from BackgroundTask via ContextVar
+                bg_tool_call_id = current_background_tool_call_id.get()
+                bg_task = (
+                    registry.get_by_tool_call_id(bg_tool_call_id)
+                    if bg_tool_call_id and registry
+                    else None
+                )
+                checkpoint_ns = f"task:{bg_task.task_id}" if bg_task else ""
                 config = {
                     **parent_config,
                     "configurable": {
                         **parent_configurable,
-                        "thread_id": thread_id,
+                        "thread_id": parent_configurable.get("thread_id", ""),
+                        "checkpoint_ns": checkpoint_ns,
+                    },
+                    "metadata": {
+                        "subagent_type": effective_type,
+                        "description": description[:200],
                     },
                 }
             else:
-                thread_id = None
                 config = {}
             result = await subagent.ainvoke(subagent_state, config)
-            if checkpointer and thread_id:
-                _store_thread_id(thread_id)
 
         if not runtime.tool_call_id:
             value_error_msg = "Tool call ID is required for subagent invocation"

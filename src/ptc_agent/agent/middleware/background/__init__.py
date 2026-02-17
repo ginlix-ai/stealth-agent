@@ -8,7 +8,7 @@ from ptc_agent.agent.middleware.background.counter import ToolCallCounterMiddlew
 from ptc_agent.agent.middleware.background.middleware import (
     BackgroundSubagentMiddleware,
     current_background_agent_id,
-    current_background_task_id,
+    current_background_tool_call_id,
 )
 from ptc_agent.agent.middleware.background.orchestrator import (
     BackgroundSubagentOrchestrator,
@@ -35,5 +35,5 @@ __all__ = [
     "create_task_output_tool",
     "create_wait_tool",
     "current_background_agent_id",
-    "current_background_task_id",
+    "current_background_tool_call_id",
 ]

@@ -338,22 +338,22 @@ class BackgroundSubagentOrchestrator:
         if not tasks:
             return ""
 
-        # Sort by task number for consistent ordering
-        sorted_tasks = sorted(tasks, key=lambda t: t.task_number)
+        # Sort by task_id for consistent ordering
+        sorted_tasks = sorted(tasks, key=lambda t: t.task_id)
 
         # Build notification message
         if len(sorted_tasks) == 1:
             task = sorted_tasks[0]
             return (
                 f"Your background subagent task has completed: **{task.display_id}**.\n\n"
-                f"Call `TaskOutput(task_number={task.task_number})` to see the result."
+                f"Call `TaskOutput(task_id=\"{task.task_id}\")` to see the result."
             )
 
         task_list = ", ".join(f"**{t.display_id}**" for t in sorted_tasks)
         return (
             f"Your background subagent tasks have completed: {task_list}.\n\n"
             f"Call `TaskOutput()` to see all results, or "
-            f"`TaskOutput(task_number=N)` for a specific task."
+            f"`TaskOutput(task_id=\"...\")` for a specific task."
         )
 
     def get_pending_tasks_status(self) -> dict[str, Any]:

@@ -7,6 +7,7 @@ spawned by the BackgroundSubagentMiddleware.
 from __future__ import annotations
 
 import asyncio
+import secrets
 import time
 import uuid as uuid_mod
 from dataclasses import dataclass, field
@@ -24,11 +25,11 @@ logger = structlog.get_logger(__name__)
 class BackgroundTask:
     """Represents a background subagent task."""
 
-    task_id: str
-    """Unique identifier for the task (typically the tool_call_id)."""
+    tool_call_id: str
+    """The LangGraph tool_call_id that triggered this task."""
 
-    task_number: int
-    """Sequential task number (1, 2, 3...) for easy reference."""
+    task_id: str
+    """6-char alphanumeric identifier (e.g., 'k7Xm2p')."""
 
     description: str
     """Short description/label of the task."""
@@ -78,18 +79,13 @@ class BackgroundTask:
     Each event: {"event": "message_chunk"|"tool_calls"|"tool_call_result", "data": {...}, "ts": float}
     """
 
-    subagent_thread_id: str | None = None
-    """LangGraph thread_id used for this subagent invocation.
-    Enables resume: re-invoke with same thread_id → LangGraph loads state from PostgreSQL checkpoint.
-    """
-
     cancelled: bool = False
     """Whether the task was explicitly cancelled (distinct from completed with error)."""
 
     @property
     def display_id(self) -> str:
-        """Return Task-N format for display."""
-        return f"Task-{self.task_number}"
+        """Return Task-<id> format for display."""
+        return f"Task-{self.task_id}"
 
     @property
     def is_pending(self) -> bool:
@@ -116,17 +112,16 @@ class BackgroundTaskRegistry:
     def __init__(self) -> None:
         """Initialize the registry."""
         self._tasks: dict[str, BackgroundTask] = {}
-        self._task_by_number: dict[int, str] = {}  # task_number -> task_id mapping
-        self._ns_uuid_to_task_id: dict[
+        self._task_id_to_tool_call_id: dict[str, str] = {}  # task_id -> tool_call_id
+        self._ns_uuid_to_tool_call_id: dict[
             str, str
-        ] = {}  # LangGraph namespace UUID -> task_id
-        self._next_task_number: int = 1
+        ] = {}  # LangGraph namespace UUID -> tool_call_id
         self._lock = asyncio.Lock()
         self._results: dict[str, Any] = {}
 
     async def register(
         self,
-        task_id: str,
+        tool_call_id: str,
         description: str,
         subagent_type: str,
         asyncio_task: asyncio.Task | None = None,
@@ -134,7 +129,7 @@ class BackgroundTaskRegistry:
         """Register a new background task.
 
         Args:
-            task_id: Unique identifier (typically tool_call_id)
+            tool_call_id: The LangGraph tool_call_id
             description: Description of the task
             subagent_type: Type of subagent
             asyncio_task: The asyncio.Task running the subagent (can be set later)
@@ -143,26 +138,25 @@ class BackgroundTaskRegistry:
             The registered BackgroundTask
         """
         async with self._lock:
-            # Assign sequential task number
-            task_number = self._next_task_number
-            self._next_task_number += 1
+            # Generate short alphanumeric task_id
+            task_id = secrets.token_urlsafe(4)[:6]
 
             agent_id = f"{subagent_type}:{uuid_mod.uuid4()}"
             task = BackgroundTask(
+                tool_call_id=tool_call_id,
                 task_id=task_id,
-                task_number=task_number,
                 description=description,
                 subagent_type=subagent_type,
                 asyncio_task=asyncio_task,
                 agent_id=agent_id,
             )
-            self._tasks[task_id] = task
-            self._task_by_number[task_number] = task_id
+            self._tasks[tool_call_id] = task
+            self._task_id_to_tool_call_id[task_id] = tool_call_id
 
             logger.info(
                 "Registered background task",
+                tool_call_id=tool_call_id,
                 task_id=task_id,
-                task_number=task_number,
                 display_id=task.display_id,
                 subagent_type=subagent_type,
                 description=description[:50],
@@ -188,50 +182,50 @@ class BackgroundTaskRegistry:
         async with self._lock:
             return list(self._tasks.values())
 
-    async def get_by_number(self, task_number: int) -> BackgroundTask | None:
-        """Get a task by its sequential number.
+    async def get_by_task_id(self, task_id: str) -> BackgroundTask | None:
+        """Get a task by its short alphanumeric task_id.
 
         Args:
-            task_number: The task number (1, 2, 3...)
+            task_id: The 6-char task identifier (e.g., 'k7Xm2p')
 
         Returns:
             The BackgroundTask or None if not found
         """
         async with self._lock:
-            task_id = self._task_by_number.get(task_number)
-            if task_id:
-                return self._tasks.get(task_id)
+            tool_call_id = self._task_id_to_tool_call_id.get(task_id)
+            if tool_call_id:
+                return self._tasks.get(tool_call_id)
             return None
 
-    def get_by_id(self, task_id: str) -> BackgroundTask | None:
-        """Get a task by its ID (synchronous).
+    def get_by_tool_call_id(self, tool_call_id: str) -> BackgroundTask | None:
+        """Get a task by its tool_call_id (synchronous).
 
         This is a synchronous method for use when the lock is not needed
         (e.g., formatting results after wait_for_all has completed).
 
         Args:
-            task_id: The task identifier (typically tool_call_id)
+            tool_call_id: The LangGraph tool_call_id
 
         Returns:
             The BackgroundTask or None if not found
         """
-        return self._tasks.get(task_id)
+        return self._tasks.get(tool_call_id)
 
-    def register_namespace(self, checkpoint_ns: str, task_id: str) -> None:
+    def register_namespace(self, checkpoint_ns: str, tool_call_id: str) -> None:
         """Register LangGraph namespace UUIDs for a background task.
 
         Parses checkpoint_ns like "tools:uuid1|model:uuid2" and maps
-        each LangGraph task UUID to our task_id for streaming lookup.
+        each LangGraph task UUID to our tool_call_id for streaming lookup.
 
         Args:
             checkpoint_ns: The checkpoint namespace string from LangGraph config
-            task_id: The background task identifier
+            tool_call_id: The background task's tool_call_id
         """
         for element in checkpoint_ns.split("|"):
             parts = element.split(":", 1)
             if len(parts) == 2:
                 ns_uuid = parts[1]
-                self._ns_uuid_to_task_id[ns_uuid] = task_id
+                self._ns_uuid_to_tool_call_id[ns_uuid] = tool_call_id
 
     def get_task_by_namespace(self, ns_element: str) -> BackgroundTask | None:
         """Look up task from a namespace element like 'tools:uuid'.
@@ -245,58 +239,62 @@ class BackgroundTaskRegistry:
         parts = ns_element.split(":", 1)
         if len(parts) == 2:
             ns_uuid = parts[1]
-            task_id = self._ns_uuid_to_task_id.get(ns_uuid)
-            if task_id:
-                return self._tasks.get(task_id)
+            tool_call_id = self._ns_uuid_to_tool_call_id.get(ns_uuid)
+            if tool_call_id:
+                return self._tasks.get(tool_call_id)
         return None
 
-    def clear_namespaces_for_task(self, task_id: str) -> None:
-        """Remove stale namespace UUID→task_id mappings for a task.
+    def clear_namespaces_for_task(self, tool_call_id: str) -> None:
+        """Remove stale namespace UUID→tool_call_id mappings for a task.
 
         Called before resuming a completed task so that new namespace UUIDs
         from the resumed invocation can be registered fresh.
 
         Args:
-            task_id: The task identifier to clear mappings for
+            tool_call_id: The tool_call_id to clear mappings for
         """
         stale_keys = [
-            ns for ns, tid in self._ns_uuid_to_task_id.items() if tid == task_id
+            ns
+            for ns, tid in self._ns_uuid_to_tool_call_id.items()
+            if tid == tool_call_id
         ]
         for key in stale_keys:
-            del self._ns_uuid_to_task_id[key]
+            del self._ns_uuid_to_tool_call_id[key]
         if stale_keys:
             logger.debug(
                 "Cleared stale namespace mappings for task",
-                task_id=task_id,
+                tool_call_id=tool_call_id,
                 cleared_count=len(stale_keys),
             )
 
-    async def append_captured_event(self, task_id: str, event: dict[str, Any]) -> None:
+    async def append_captured_event(
+        self, tool_call_id: str, event: dict[str, Any]
+    ) -> None:
         """Append a captured SSE event to a background task.
 
         Called by ToolCallCounterMiddleware to capture events for
         post-interrupt persistence.
 
         Args:
-            task_id: The task identifier
+            tool_call_id: The task's tool_call_id
             event: SSE-shaped event dict
         """
         async with self._lock:
-            task = self._tasks.get(task_id)
+            task = self._tasks.get(tool_call_id)
             if task:
                 task.captured_events.append(event)
 
-    async def update_metrics(self, task_id: str, tool_name: str) -> None:
+    async def update_metrics(self, tool_call_id: str, tool_name: str) -> None:
         """Update tool call metrics for a task.
 
         Called by ToolCallCounterMiddleware when a subagent makes a tool call.
 
         Args:
-            task_id: The task identifier
+            tool_call_id: The task's tool_call_id
             tool_name: Name of the tool being called
         """
         async with self._lock:
-            task = self._tasks.get(task_id)
+            task = self._tasks.get(tool_call_id)
             if task:
                 task.tool_call_counts[tool_name] = (
                     task.tool_call_counts.get(tool_name, 0) + 1
@@ -306,7 +304,7 @@ class BackgroundTaskRegistry:
                 task.last_update_time = time.time()
                 logger.debug(
                     "Updated task metrics",
-                    task_id=task_id,
+                    tool_call_id=tool_call_id,
                     display_id=task.display_id,
                     tool_name=tool_name,
                     total_calls=task.total_tool_calls,
@@ -314,16 +312,16 @@ class BackgroundTaskRegistry:
 
     async def wait_for_specific(
         self,
-        task_number: int,
+        task_id: str,
         timeout: float = 60.0,
         *,
         message_checker: MessageChecker | None = None,
         poll_interval: float = 2.0,
     ) -> dict[str, Any]:
-        """Wait for a specific task to complete by its number.
+        """Wait for a specific task to complete by its task_id.
 
         Args:
-            task_number: The task number (1, 2, 3...)
+            task_id: The 6-char task identifier (e.g., 'k7Xm2p')
             timeout: Maximum time to wait in seconds
             message_checker: Optional async callable that returns True when a
                 user message is queued (used to interrupt the wait early).
@@ -333,13 +331,13 @@ class BackgroundTaskRegistry:
         Returns:
             Dict with task result or error
         """
-        task_id = self._task_by_number.get(task_number)
-        if not task_id:
-            return {"success": False, "error": f"Task-{task_number} not found"}
+        tool_call_id = self._task_id_to_tool_call_id.get(task_id)
+        if not tool_call_id:
+            return {"success": False, "error": f"Task-{task_id} not found"}
 
-        task = self._tasks.get(task_id)
+        task = self._tasks.get(tool_call_id)
         if not task:
-            return {"success": False, "error": f"Task-{task_number} not found"}
+            return {"success": False, "error": f"Task-{task_id} not found"}
 
         if task.completed:
             return task.result or {"success": True, "result": None}
@@ -347,12 +345,12 @@ class BackgroundTaskRegistry:
         if task.asyncio_task is None:
             return {
                 "success": False,
-                "error": f"Task-{task_number} has no asyncio task",
+                "error": f"Task-{task_id} has no asyncio task",
             }
 
         logger.info(
             "Waiting for specific task",
-            task_number=task_number,
+            task_id=task_id,
             display_id=task.display_id,
             timeout=timeout,
         )
@@ -387,7 +385,7 @@ class BackgroundTaskRegistry:
                     if await message_checker():
                         logger.info(
                             "Wait interrupted by queued user message",
-                            task_number=task_number,
+                            task_id=task_id,
                             display_id=task.display_id,
                             elapsed=f"{time.monotonic() - start:.1f}s",
                         )
@@ -407,17 +405,17 @@ class BackgroundTaskRegistry:
                 try:
                     result = task.asyncio_task.result()
                     task.result = result
-                    self._results[task_id] = result
+                    self._results[tool_call_id] = result
                     logger.info(
                         "Specific task completed",
-                        task_number=task_number,
+                        task_id=task_id,
                         display_id=task.display_id,
                     )
                     return result
                 except Exception as e:
                     task.error = str(e)
                     error_result = {"success": False, "error": str(e)}
-                    self._results[task_id] = error_result
+                    self._results[tool_call_id] = error_result
                     return error_result
             else:
                 return {
@@ -443,13 +441,13 @@ class BackgroundTaskRegistry:
                 *message_checker* is None — falls back to a single wait).
 
         Returns:
-            Dict mapping task_id to result (success dict or error dict).
+            Dict mapping tool_call_id to result (success dict or error dict).
             When interrupted, still-running tasks get ``status="interrupted"``.
         """
         async with self._lock:
             tasks_to_wait = {
-                task_id: task.asyncio_task
-                for task_id, task in self._tasks.items()
+                tool_call_id: task.asyncio_task
+                for tool_call_id, task in self._tasks.items()
                 if not task.completed and task.asyncio_task is not None
             }
 
@@ -503,8 +501,8 @@ class BackgroundTaskRegistry:
         # Collect results
         results = {}
         async with self._lock:
-            for task_id, asyncio_task in tasks_to_wait.items():
-                task = self._tasks.get(task_id)
+            for tool_call_id, asyncio_task in tasks_to_wait.items():
+                task = self._tasks.get(tool_call_id)
                 if task is None:
                     continue
 
@@ -513,38 +511,38 @@ class BackgroundTaskRegistry:
                     try:
                         result = asyncio_task.result()
                         task.result = result
-                        results[task_id] = result
+                        results[tool_call_id] = result
                         logger.info(
                             "Background task completed",
-                            task_id=task_id,
+                            tool_call_id=tool_call_id,
                             success=result.get("success", False)
                             if isinstance(result, dict)
                             else True,
                         )
                     except Exception as e:
                         task.error = str(e)
-                        results[task_id] = {"success": False, "error": str(e)}
+                        results[tool_call_id] = {"success": False, "error": str(e)}
                         logger.error(
                             "Background task failed",
-                            task_id=task_id,
+                            tool_call_id=tool_call_id,
                             error=str(e),
                         )
                 elif interrupted:
-                    results[task_id] = {
+                    results[tool_call_id] = {
                         "success": False,
                         "status": "interrupted",
                         "reason": "user_message_queued",
                     }
                 else:
                     # Task didn't complete within timeout
-                    results[task_id] = {
+                    results[tool_call_id] = {
                         "success": False,
                         "error": f"Wait timed out after {timeout}s - task may still be running",
                         "status": "timeout",
                     }
                     logger.warning(
                         "Wait timed out for background task",
-                        task_id=task_id,
+                        tool_call_id=tool_call_id,
                         timeout=timeout,
                     )
 
@@ -552,19 +550,19 @@ class BackgroundTaskRegistry:
 
         return results
 
-    async def get_result(self, task_id: str) -> Any | None:
+    async def get_result(self, tool_call_id: str) -> Any | None:
         """Get the result for a specific task.
 
         Args:
-            task_id: The task identifier
+            tool_call_id: The task's tool_call_id
 
         Returns:
             The task result or None if not found/completed
         """
         async with self._lock:
-            task = self._tasks.get(task_id)
+            task = self._tasks.get(tool_call_id)
             if task is None:
-                return self._results.get(task_id)
+                return self._results.get(tool_call_id)
 
             if task.completed:
                 return task.result
@@ -580,37 +578,37 @@ class BackgroundTaskRegistry:
 
             return None
 
-    async def is_task_done(self, task_id: str) -> bool:
+    async def is_task_done(self, tool_call_id: str) -> bool:
         """Check if a specific task is done.
 
         Args:
-            task_id: The task identifier
+            tool_call_id: The task's tool_call_id
 
         Returns:
             True if the task is done, False otherwise
         """
         async with self._lock:
-            task = self._tasks.get(task_id)
+            task = self._tasks.get(tool_call_id)
             if task is None:
-                return task_id in self._results
+                return tool_call_id in self._results
             if task.completed:
                 return True
             if task.asyncio_task is not None:
                 return task.asyncio_task.done()
             return False
 
-    async def cancel_task(self, task_id: str, *, force: bool = False) -> bool:
+    async def cancel_task(self, tool_call_id: str, *, force: bool = False) -> bool:
         """Cancel a specific background task.
 
         Args:
-            task_id: The task identifier
+            tool_call_id: The task's tool_call_id
             force: Cancel the underlying handler task as well
 
         Returns:
             True if the task was cancelled, False otherwise
         """
         async with self._lock:
-            task = self._tasks.get(task_id)
+            task = self._tasks.get(tool_call_id)
             if task is None:
                 return False
 
@@ -629,7 +627,9 @@ class BackgroundTaskRegistry:
                     "error": "Cancelled",
                     "status": "cancelled",
                 }
-                logger.info("Cancelled background task", task_id=task_id, force=force)
+                logger.info(
+                    "Cancelled background task", tool_call_id=tool_call_id, force=force
+                )
                 return True
 
             return False
@@ -678,9 +678,8 @@ class BackgroundTaskRegistry:
         when no concurrent modifications are possible.
         """
         self._tasks.clear()
-        self._task_by_number.clear()
-        self._ns_uuid_to_task_id.clear()
-        self._next_task_number = 1
+        self._task_id_to_tool_call_id.clear()
+        self._ns_uuid_to_tool_call_id.clear()
         self._results.clear()
         logger.debug("Cleared background task registry")
 

@@ -63,13 +63,13 @@ def create_wait_tool(middleware: BackgroundSubagentMiddleware) -> StructuredTool
     """
 
     async def wait_for_subagents(
-        task_number: int | None = None,
+        task_id: str | None = None,
         timeout: float = 60.0,
     ) -> str:
         """Wait for background task(s) to complete.
 
         Args:
-            task_number: Task number (1, 2, ...) or None for all
+            task_id: Task ID (e.g., 'k7Xm2p') or None for all
             timeout: Max seconds (default: 60)
 
         Returns:
@@ -81,17 +81,17 @@ def create_wait_tool(middleware: BackgroundSubagentMiddleware) -> StructuredTool
         thread_id = get_config().get("configurable", {}).get("thread_id")
         checker = await build_message_checker(thread_id)
 
-        if task_number is not None:
+        if task_id is not None:
             # Wait for specific task
             logger.info(
                 "Waiting for specific task",
-                task_number=task_number,
+                task_id=task_id,
                 timeout=timeout,
             )
             result = await registry.wait_for_specific(
-                task_number, timeout, message_checker=checker
+                task_id, timeout, message_checker=checker
             )
-            task = await registry.get_by_number(task_number)
+            task = await registry.get_by_task_id(task_id)
 
             if task:
                 # Check if interrupted by a queued user message
@@ -112,7 +112,7 @@ def create_wait_tool(middleware: BackgroundSubagentMiddleware) -> StructuredTool
                     f"**{task.display_id}** ({task.subagent_type}) completed:\n\n"
                     f"{_format_result(result)}"
                 )
-            return f"Task-{task_number} not found"
+            return f"Task-{task_id} not found"
         # Wait for all tasks
         logger.info("Waiting for all background tasks", timeout=timeout)
         results = await registry.wait_for_all(timeout=timeout, message_checker=checker)
@@ -130,14 +130,14 @@ def create_wait_tool(middleware: BackgroundSubagentMiddleware) -> StructuredTool
         )
         if any_interrupted:
             still_running = [
-                registry.get_by_id(tid)
+                registry.get_by_tool_call_id(tid)
                 for tid, r in results.items()
                 if isinstance(r, dict) and r.get("status") == "interrupted"
             ]
             running_names = ", ".join(f"**{t.display_id}**" for t in still_running if t)
             completed_parts = []
             for tid, r in results.items():
-                t = registry.get_by_id(tid)
+                t = registry.get_by_tool_call_id(tid)
                 if t and not (isinstance(r, dict) and r.get("status") == "interrupted"):
                     t.result_seen = True
                     completed_parts.append(
@@ -168,7 +168,7 @@ def create_wait_tool(middleware: BackgroundSubagentMiddleware) -> StructuredTool
             output = f"Background tasks: {completed_count} completed, {running_count} still running:\n\n"
 
         for task_id, result in results.items():
-            task = registry.get_by_id(task_id)
+            task = registry.get_by_tool_call_id(task_id)
             if task:
                 is_running = (
                     isinstance(result, dict) and result.get("status") == "timeout"
@@ -187,7 +187,7 @@ def create_wait_tool(middleware: BackgroundSubagentMiddleware) -> StructuredTool
         name="Wait",
         description=(
             "Wait for background subagent(s) to complete and retrieve their results. "
-            "Use Wait(task_number=1) for a specific task or Wait() for all pending tasks. "
+            "Use Wait(task_id=\"k7Xm2p\") for a specific task or Wait() for all pending tasks. "
             "You can also specify a custom timeout in seconds."
         ),
         coroutine=wait_for_subagents,
@@ -208,19 +208,19 @@ def create_task_output_tool(registry: BackgroundTaskRegistry) -> StructuredTool:
         A StructuredTool for getting task output
     """
 
-    async def task_output(task_number: int | None = None) -> str:
+    async def task_output(task_id: str | None = None) -> str:
         """Get background task output.
 
         Args:
-            task_number: Task number or None for all
+            task_id: Task ID (e.g., 'k7Xm2p') or None for all
 
         Returns:
             Result if completed, progress if still running
         """
-        if task_number is not None:
-            task = await registry.get_by_number(task_number)
+        if task_id is not None:
+            task = await registry.get_by_task_id(task_id)
             if not task:
-                return f"Task-{task_number} not found"
+                return f"Task-{task_id} not found"
             # Sync completion status from asyncio task
             _sync_task_completion(task)
             # If completed, return the result
@@ -250,7 +250,7 @@ def create_task_output_tool(registry: BackgroundTaskRegistry) -> StructuredTool:
             f"{completed_count} completed, {pending_count} running)\n\n"
         )
 
-        for task in sorted(all_tasks, key=lambda t: t.task_number):
+        for task in sorted(all_tasks, key=lambda t: t.task_id):
             if task.completed:
                 task.result_seen = True  # Mark as seen
                 output += (
@@ -267,7 +267,7 @@ def create_task_output_tool(registry: BackgroundTaskRegistry) -> StructuredTool:
         description=(
             "Get the output of background subagent tasks. Returns the result "
             "if the task is completed, or shows progress if still running. "
-            "Use TaskOutput(task_number=1) for a specific task or "
+            "Use TaskOutput(task_id=\"k7Xm2p\") for a specific task or "
             "TaskOutput() to see all tasks."
         ),
         coroutine=task_output,

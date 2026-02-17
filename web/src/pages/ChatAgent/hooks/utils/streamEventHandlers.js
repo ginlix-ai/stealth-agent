@@ -280,10 +280,10 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
 
           // If this tool is the Task tool (subagent spawner), also create a subagent_task segment
           // Mirrors historyEventHandlers.js logic for consistency
-          // Skip for follow-up/resume calls (task_number present) — these target existing subagents
           const subagentTasks = { ...(msg.subagentTasks || {}) };
-          const isNewSpawn = !toolCall.args?.task_number;
-          if ((toolCall.name === 'task' || toolCall.name === 'Task') && toolCallId && isNewSpawn) {
+          const isTaskTool = toolCall.name === 'task' || toolCall.name === 'Task';
+          const isNewSpawn = !toolCall.args?.task_id;
+          if (isTaskTool && toolCallId && isNewSpawn) {
             const subagentId = toolCallId;
             const hasExistingSubagentSegment = contentSegments.some(
               (s) => s.type === 'subagent_task' && s.subagentId === subagentId
@@ -303,6 +303,25 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
               description: toolCall.args?.description || '',
               type: toolCall.args?.subagent_type || 'general-purpose',
               status: 'running',
+            };
+          } else if (isTaskTool && toolCallId && !isNewSpawn) {
+            // Resume/follow-up call — show a new card with "resumed" indicator
+            // Normalize to "task:xxx" format to match floating card keys
+            const rawTargetId = toolCall.args?.task_id || '';
+            const resumeTargetId = rawTargetId.startsWith('task:') ? rawTargetId : `task:${rawTargetId}`;
+            contentSegments.push({
+              type: 'subagent_task',
+              subagentId: toolCallId,
+              resumeTargetId,
+              order: contentOrderCounterRef.current,
+            });
+            subagentTasks[toolCallId] = {
+              subagentId: toolCallId,
+              resumeTargetId,
+              description: toolCall.args?.description || '',
+              type: toolCall.args?.subagent_type || 'general-purpose',
+              status: 'running',
+              resumed: true,
             };
           }
 
@@ -716,10 +735,10 @@ export function clearPendingToolCallChunks({ assistantMessageId, setMessages }) 
  */
 export function isSubagentEvent(event) {
   const agent = event?.agent;
-  if (!agent || typeof agent !== 'string' || !agent.includes(':')) {
+  if (!agent || typeof agent !== 'string') {
     return false;
   }
-  return !agent.startsWith('model:') && agent !== 'tools';
+  return agent.startsWith('task:');
 }
 
 /**

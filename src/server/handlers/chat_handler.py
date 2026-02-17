@@ -113,7 +113,7 @@ async def queue_message_for_thread(
 
 async def queue_message_for_subagent(
     thread_id: str,
-    task_number: int,
+    task_id: str,
     content: str,
     user_id: str,
 ) -> dict:
@@ -123,7 +123,7 @@ async def queue_message_for_subagent(
 
     Args:
         thread_id: The thread with an active workflow
-        task_number: The subagent task number (1, 2, 3...)
+        task_id: The subagent task ID (e.g., 'k7Xm2p')
         content: The message text to send
         user_id: User identifier
 
@@ -141,12 +141,12 @@ async def queue_message_for_subagent(
             detail=f"No active workflow for thread {thread_id}",
         )
 
-    # 2. Look up the task by number
-    task = await registry.get_by_number(task_number)
+    # 2. Look up the task by ID
+    task = await registry.get_by_task_id(task_id)
     if task is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Task-{task_number} not found in thread {thread_id}",
+            detail=f"Task-{task_id} not found in thread {thread_id}",
         )
 
     # 3. Reject if already completed or cancelled
@@ -154,7 +154,7 @@ async def queue_message_for_subagent(
         status = "cancelled" if task.cancelled else "completed"
         raise HTTPException(
             status_code=409,
-            detail=f"Task-{task_number} has already {status}",
+            detail=f"Task-{task_id} has already {status}",
         )
 
     # 4. Queue to Redis (same pattern as _queue_followup_to_redis)
@@ -166,7 +166,7 @@ async def queue_message_for_subagent(
         )
 
     try:
-        key = f"subagent:queued_messages:{task.task_id}"
+        key = f"subagent:queued_messages:{task.tool_call_id}"
         payload = json.dumps(content)
         pipe = cache.client.pipeline()
         pipe.rpush(key, payload)
@@ -181,7 +181,7 @@ async def queue_message_for_subagent(
         )
         return {
             "success": True,
-            "task_id": task.task_id,
+            "tool_call_id": task.tool_call_id,
             "display_id": task.display_id,
             "queue_position": position,
         }

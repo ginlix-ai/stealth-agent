@@ -49,14 +49,11 @@ function SubagentStatusBar({ agent, threadId, onInstructionSent }) {
   const isActive = effectiveStatus === 'active';
   const isCompleted = effectiveStatus === 'completed';
 
-  // Extract task number from display ID (e.g. "Task-1" → 1)
-  const taskNumber = (() => {
-    const match = agent.name?.match(/Task-(\d+)/);
-    return match ? parseInt(match[1], 10) : null;
-  })();
+  // Extract task ID from display ID (e.g. "Task-k7Xm2p" → "k7Xm2p")
+  const taskId = agent.name?.replace('Task-', '') || null;
 
-  // Can send: subagent is still running, we have a thread and task number
-  const canSend = !isCompleted && threadId && taskNumber != null;
+  // Can send: subagent is still running, we have a thread and task ID
+  const canSend = !isCompleted && threadId && taskId != null;
 
   const getStatusIcon = () => {
     if (derivedCurrentTool) {
@@ -98,13 +95,13 @@ function SubagentStatusBar({ agent, threadId, onInstructionSent }) {
     setInputValue('');
     setInputOpen(false);
     try {
-      await sendSubagentMessage(threadId, taskNumber, text);
+      await sendSubagentMessage(threadId, taskId, text);
     } catch (err) {
       console.error('[SubagentStatusBar] Failed to send message:', err);
     } finally {
       setSending(false);
     }
-  }, [inputValue, canSend, sending, threadId, taskNumber, onInstructionSent]);
+  }, [inputValue, canSend, sending, threadId, taskId, onInstructionSent]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
