@@ -14,7 +14,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { sendChatMessageStream, replayThreadHistory, getWorkflowStatus, reconnectToWorkflowStream, sendHitlResponse } from '../utils/api';
+import { sendChatMessageStream, replayThreadHistory, getWorkflowStatus, reconnectToWorkflowStream, sendHitlResponse, streamSubagentTaskEvents } from '../utils/api';
 import { getStoredThreadId, setStoredThreadId } from './utils/threadStorage';
 export { removeStoredThreadId } from './utils/threadStorage';
 import { createUserMessage, createAssistantMessage, insertMessage, appendMessage, updateMessage } from './utils/messageHelpers';
@@ -27,13 +27,13 @@ import {
   handleToolCallResult,
   handleToolCallChunks,
   handleTodoUpdate,
-  handleSubagentStatus,
   isSubagentEvent,
   handleSubagentMessageChunk,
   handleSubagentToolCallChunks,
   handleSubagentToolCalls,
   handleSubagentToolCallResult,
-  handleSubagentFollowupInjected,
+  handleTaskMessageQueued,
+  getOrCreateTaskRefs,
 } from './utils/streamEventHandlers';
 import {
   handleHistoryUserMessage,
@@ -71,7 +71,7 @@ function isOnboardingRelatedToolSuccess(resultContent) {
   return !!(parsed.risk_preference || parsed.watchlist_item || parsed.portfolio_holding);
 }
 
-export function useChatMessages(workspaceId, initialThreadId = null, updateTodoListCard = null, updateSubagentCard = null, inactivateAllSubagents = null, minimizeInactiveSubagents = null, completePendingTodos = null, onOnboardingRelatedToolComplete = null, onFileArtifact = null, agentMode = 'ptc') {
+export function useChatMessages(workspaceId, initialThreadId = null, updateTodoListCard = null, updateSubagentCard = null, inactivateAllSubagents = null, completePendingTodos = null, onOnboardingRelatedToolComplete = null, onFileArtifact = null, agentMode = 'ptc', clearSubagentCards = null) {
   // State
   const [messages, setMessages] = useState([]);
   const [threadId, setThreadId] = useState(() => {
@@ -83,7 +83,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [isTailing, setIsTailing] = useState(false);  // Subagents running after main agent finished
+  const [hasActiveSubagents, setHasActiveSubagents] = useState(false);  // Subagent streams open after main agent finished
   const [messageError, setMessageError] = useState(null);
   // HITL (Human-in-the-Loop) plan mode interrupt state
   const [pendingInterrupt, setPendingInterrupt] = useState(null);
@@ -116,6 +116,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
   // Track the last received SSE event ID for reconnection
   const lastEventIdRef = useRef(null);
+  // Ref-based thread ID for use inside closures (avoids stale React state in callbacks)
+  const threadIdRef = useRef(threadId);
   // Track reconnection state for UI indicator
   const [isReconnecting, setIsReconnecting] = useState(false);
 
@@ -125,38 +127,32 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   // Recently sent messages tracker
   const recentlySentTrackerRef = useRef(createRecentlySentTracker());
 
-  // Track whether subagents are still actively running after main agent finishes (tail phase)
-  const hasActiveSubagentsRef = useRef(false);
-
-  // Track active subagent tasks and map agent IDs (UUID-based: "type:uuid")
-  const activeSubagentTasksRef = useRef(new Map()); // Map<agentId, taskInfo> - keyed by agent_id
-  const agentToTaskMapRef = useRef(new Map()); // Map<agentId, agentId> - event.agent (agent_id) -> card key (agent_id)
   // Map tool call IDs (from main agent's task tool calls) to agent_ids for routing subagent events
   const toolCallIdToTaskIdMapRef = useRef(new Map()); // Map<toolCallId, agentId>
   // Map display_id ("Task-1") -> agent_id for resolving completed_tasks in subagent_status
   const displayIdToAgentIdMapRef = useRef(new Map());
-  // Track pending task tool calls (received before subagent_status)
-  // Structure: Array<{toolCallId, timestamp}> - ordered list of task tool calls
-  const pendingTaskToolCallsRef = useRef([]); // Array<{toolCallId, timestamp}>
-  // Track the order of agent IDs as they first appear in subagent events
-  // This helps us match agent IDs to task IDs when multiple subagents run in parallel
-  // Structure: Array<agentId> - ordered list of agent IDs as they first appear
-  const agentIdOrderRef = useRef([]); // Array<agentId>
-  // Track which task IDs have been mapped to agent IDs
-  // This helps us assign unmapped agent IDs to unmapped tasks
-  // Structure: Set<taskId> - set of task IDs that have been mapped
-  const mappedTaskIdsRef = useRef(new Set()); // Set<taskId>
+
+  // Per-task SSE connections: taskId → AbortController
+  const subagentStreamsRef = useRef(new Map());
+
+  // Track completed task IDs to prevent reactivation by stale artifact events
+  const completedTaskIdsRef = useRef(new Set());
 
   // Track subagent history loaded from replay so it can be shown lazily
   // Keyed by agent_id. Structure: { [agentId]: { taskId, description, type, messages, status, ... } }
   const subagentHistoryRef = useRef({});
 
+  // Persistent subagent state refs — survives across turns so resumed subagents
+  // retain messages from previous runs. Keyed by taskId (e.g., "task:k7Xm2p").
+  const subagentStateRefsRef = useRef({});
+
   // During history load: store agent_ids from subagent_status and task tool call IDs for order-based matching
   const historyPendingAgentIdsRef = useRef([]);
   const historyPendingTaskToolCallIdsRef = useRef([]);
 
-  // Update thread ID in localStorage whenever it changes
+  // Keep threadIdRef in sync with state (for use inside closures)
   useEffect(() => {
+    threadIdRef.current = threadId;
     if (workspaceId && threadId && threadId !== '__default__') {
       setStoredThreadId(workspaceId, threadId);
     }
@@ -229,9 +225,6 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       // Track subagent events by task ID for this history load
       // Map<taskId, { messages: Array, events: Array, description?: string, type?: string }>
       const subagentHistoryByTaskId = new Map();
-      // Use a fresh mapping for this history replay, seeded from the live ref
-      const agentToTaskMap = new Map(agentToTaskMapRef.current); // Map<agentId, taskId>
-
       try {
         await replayThreadHistory(threadIdToUse, (event) => {
         const eventType = event.event;
@@ -542,6 +535,40 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               }
             }
           }
+          if (artifactType === 'task') {
+            const payload = event.payload || {};
+            const { task_id, action, description, type } = payload;
+            if (task_id) {
+              const agentId = `task:${task_id}`;
+              if (!subagentHistoryByTaskId.has(agentId)) {
+                subagentHistoryByTaskId.set(agentId, {
+                  messages: [],
+                  events: [],
+                  description: description || '',
+                  type: type || 'general-purpose',
+                  resumePoints: [],
+                });
+              } else if (description) {
+                const existing = subagentHistoryByTaskId.get(agentId);
+                if (!existing.description) existing.description = description;
+              }
+              // Track resume boundaries for history replay
+              if (action === 'resumed') {
+                const existing = subagentHistoryByTaskId.get(agentId);
+                if (existing) {
+                  existing.resumePoints = existing.resumePoints || [];
+                  existing.resumePoints.push({
+                    description: description || 'Resume',
+                    turnIndex: event.turn_index,
+                  });
+                }
+              }
+              // Map tool_call_id from the event context
+              if (event.tool_call_id) {
+                toolCallIdToTaskIdMapRef.current.set(event.tool_call_id, agentId);
+              }
+            }
+          }
           return;
         }
 
@@ -612,6 +639,32 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           if (!currentAssistantMessageId || !pairState) {
             console.warn('[History] Received tool_call_result for unknown turn_index:', pairIndex);
             return;
+          }
+
+          // Build toolCallId → agentId mapping from Task tool artifact (preferred over order-based)
+          if (event.artifact?.task_id && event.tool_call_id) {
+            const agentId = `task:${event.artifact.task_id}`;
+            toolCallIdToTaskIdMapRef.current.set(event.tool_call_id, agentId);
+
+            // Ensure subagentHistoryByTaskId has description from artifact.
+            // Resume calls are filtered out of the tool_calls handler, so this
+            // is the only place to pick up the description for resumed tasks.
+            if (event.artifact.description) {
+              const existing = subagentHistoryByTaskId.get(agentId);
+              if (existing) {
+                // Only update if description was missing (don't overwrite original with stale)
+                if (!existing.description) {
+                  existing.description = event.artifact.description;
+                }
+              } else {
+                subagentHistoryByTaskId.set(agentId, {
+                  messages: [],
+                  events: [],
+                  description: event.artifact.description,
+                  type: event.artifact.type || 'general-purpose',
+                });
+              }
+            }
           }
 
           handleHistoryToolCallResult({
@@ -831,15 +884,17 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           // Process each subagent's events
           for (const [taskId, subagentHistory] of subagentHistoryByTaskId.entries()) {
             // Create temporary refs structure for processing
+            let currentRunIndex = 0;
             const tempSubagentStateRefs = {
               [taskId]: {
                 contentOrderCounterRef: { current: 0 },
                 currentReasoningIdRef: { current: null },
                 currentToolCallIdRef: { current: null },
                 messages: [],
+                runIndex: 0,
               },
             };
-            
+
             const tempRefs = {
               subagentStateRefs: tempSubagentStateRefs,
             };
@@ -848,19 +903,64 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             // created during history load while still letting handlers build
             // the in-memory message structures in tempSubagentStateRefs.
             const historyUpdateSubagentCard = () => {};
-            
+
+            // Pre-compute resume boundary turn indices from stored resumePoints
+            const resumePoints = subagentHistory.resumePoints || [];
+            const resumeByTurnIndex = new Map();
+            for (const rp of resumePoints) {
+              if (rp.turnIndex != null) {
+                resumeByTurnIndex.set(rp.turnIndex, rp);
+              }
+            }
+            let lastTurnIndex = null;
+
             // Process each event in chronological order
-            console.log('[History] Processing', subagentHistory.events.length, 'events for task:', taskId);
+            console.log('[History] Processing', subagentHistory.events.length, 'events for task:', taskId, 'resumePoints:', resumePoints.length);
             for (let i = 0; i < subagentHistory.events.length; i++) {
               const event = subagentHistory.events[i];
               const eventType = event.event;
               const contentType = event.content_type;
-              // Use a stable message ID per task so all events go into one message,
-              // matching main agent behavior for proper ActivityBlock grouping.
-              // Read from taskRefs (rotated by handleSubagentFollowupInjected on chain break).
-              const historyTaskRefs = tempRefs.subagentStateRefs?.[taskId];
-              const assistantMessageId = historyTaskRefs?.currentAssistantMessageId || `subagent-${taskId}-assistant`;
-              
+
+              // Detect resume boundary: turn_index transitions to a resume turn
+              const eventTurnIndex = event.turn_index;
+              if (eventTurnIndex != null && eventTurnIndex !== lastTurnIndex && resumeByTurnIndex.has(eventTurnIndex)) {
+                const resumePoint = resumeByTurnIndex.get(eventTurnIndex);
+                const taskRefsLocal = tempSubagentStateRefs[taskId];
+
+                // Finalize the previous run's last assistant message
+                for (let j = taskRefsLocal.messages.length - 1; j >= 0; j--) {
+                  if (taskRefsLocal.messages[j].role === 'assistant' && taskRefsLocal.messages[j].isStreaming) {
+                    taskRefsLocal.messages[j] = { ...taskRefsLocal.messages[j], isStreaming: false };
+                    break;
+                  }
+                }
+
+                // Inject user message with resume instruction
+                taskRefsLocal.messages.push({
+                  id: `resume-${taskId}-${currentRunIndex + 1}`,
+                  role: 'user',
+                  content: resumePoint.description || 'Resume',
+                  contentSegments: [{ type: 'text', content: resumePoint.description || 'Resume', order: 0 }],
+                  reasoningProcesses: {},
+                  toolCallProcesses: {},
+                });
+
+                // Bump run index and reset per-run counters
+                currentRunIndex++;
+                taskRefsLocal.runIndex = currentRunIndex;
+                taskRefsLocal.contentOrderCounterRef.current = 0;
+                taskRefsLocal.currentReasoningIdRef.current = null;
+                taskRefsLocal.currentToolCallIdRef.current = null;
+
+                console.log('[History] Resume boundary detected at turn_index:', eventTurnIndex, 'runIndex:', currentRunIndex);
+              }
+              if (eventTurnIndex != null) {
+                lastTurnIndex = eventTurnIndex;
+              }
+
+              // Use per-run assistant message ID
+              const assistantMessageId = `subagent-${taskId}-assistant-${currentRunIndex}`;
+
               console.log('[History] Processing subagent event', i + 1, 'of', subagentHistory.events.length, ':', {
                 taskId,
                 eventType,
@@ -869,7 +969,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 hasToolCalls: !!event.tool_calls,
                 toolCallId: event.tool_call_id,
               });
-              
+
               if (eventType === 'message_chunk' && event.role === 'assistant') {
                 const result = handleSubagentMessageChunk({
                   taskId,
@@ -905,20 +1005,61 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                   updateSubagentCard: historyUpdateSubagentCard,
                 });
                 console.log('[History] handleSubagentToolCallResult result:', result);
-              } else if (eventType === 'subagent_followup_injected') {
-                handleSubagentFollowupInjected({
-                  taskId,
-                  content: event.content,
-                  refs: tempRefs,
-                  updateSubagentCard: historyUpdateSubagentCard,
-                });
+              } else if (eventType === 'subagent_followup_injected' || eventType === 'turn_start') {
+                // Legacy subagent_followup_injected had content (queued user message).
+                // turn_start was an inter-model-call boundary — no longer emitted,
+                // but old persisted data may still contain it. Just extract content.
+                if (event.content) {
+                  handleTaskMessageQueued({
+                    taskId,
+                    content: event.content,
+                    refs: tempRefs,
+                    updateSubagentCard: historyUpdateSubagentCard,
+                  });
+                }
+              } else if (eventType === 'message_queued') {
+                if (event.content) {
+                  handleTaskMessageQueued({
+                    taskId,
+                    content: event.content,
+                    refs: tempRefs,
+                    updateSubagentCard: historyUpdateSubagentCard,
+                  });
+                }
               } else {
                 console.warn('[History] Unhandled subagent event type:', eventType);
               }
             }
             
             // Get final messages from temp refs
-            const finalMessages = tempSubagentStateRefs[taskId]?.messages || [];
+            const rawMessages = tempSubagentStateRefs[taskId]?.messages || [];
+
+            // Finalize messages: set isStreaming=false and close open reasoning/tool
+            // processes on the last assistant message so SubagentStatusBar shows 'completed'.
+            const finalMessages = rawMessages.map((msg) => {
+              if (msg.role !== 'assistant') return msg;
+              // Only finalize the last assistant message (or all, to be safe)
+              const m = { ...msg, isStreaming: false };
+              if (m.toolCallProcesses) {
+                const procs = { ...m.toolCallProcesses };
+                for (const [id, proc] of Object.entries(procs)) {
+                  if (proc.isInProgress) {
+                    procs[id] = { ...proc, isInProgress: false, isComplete: true };
+                  }
+                }
+                m.toolCallProcesses = procs;
+              }
+              if (m.reasoningProcesses) {
+                const rps = { ...m.reasoningProcesses };
+                for (const [id, rp] of Object.entries(rps)) {
+                  if (rp.isReasoning) {
+                    rps[id] = { ...rp, isReasoning: false, reasoningComplete: true };
+                  }
+                }
+                m.reasoningProcesses = rps;
+              }
+              return m;
+            });
 
             // Get task metadata from stored history
             const taskMetadata = subagentHistoryByTaskId.get(taskId);
@@ -939,7 +1080,17 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               currentTool: '',
             };
 
-            console.log('[History] Stored subagent history for task:', taskId, 'with', finalMessages.length, 'messages');
+            // Seed persistent subagent state refs from history so that
+            // reconnect or future resume can append to the existing messages.
+            subagentStateRefsRef.current[taskId] = {
+              contentOrderCounterRef: { current: tempSubagentStateRefs[taskId].contentOrderCounterRef.current },
+              currentReasoningIdRef: { current: null },
+              currentToolCallIdRef: { current: null },
+              messages: finalMessages,
+              runIndex: currentRunIndex,
+            };
+
+            console.log('[History] Stored subagent history for task:', taskId, 'with', finalMessages.length, 'messages, runIndex:', currentRunIndex);
           }
         }
       } catch (replayError) {
@@ -951,6 +1102,11 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           throw replayError; // Re-throw other errors
         }
       }
+
+      // NOTE: markAllSubagentTasksCompleted() is NOT called here because
+      // loadAndMaybeReconnect will call it after determining whether the
+      // workflow is still active (reconnect case) or truly completed.
+
       setIsLoadingHistory(false);
       historyLoadingRef.current = false;
     } catch (error) {
@@ -968,57 +1124,69 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
    * Reconnects to an in-progress workflow stream after page refresh.
    * Creates an assistant message placeholder and processes live SSE events.
    */
-  const reconnectToStream = async () => {
+  const reconnectToStream = async ({ activeTasks = [] } = {}) => {
     if (!threadId || threadId === '__default__') return;
 
     console.log('[Reconnect] Starting reconnection for thread:', threadId);
+
+    // Clear subagent cards to prevent duplicate content from cache + Redis overlap
+    if (clearSubagentCards) {
+      clearSubagentCards();
+    }
+    completedTaskIdsRef.current.clear();
+
     setIsLoading(true);
     setIsReconnecting(true);
     isStreamingRef.current = true;
 
-    // Create assistant message placeholder for reconnected content
+    // Create assistant message placeholder for reconnection
     const assistantMessageId = `assistant-reconnect-${Date.now()}`;
     contentOrderCounterRef.current = 0;
     currentReasoningIdRef.current = null;
     currentToolCallIdRef.current = null;
 
-    const assistantMessage = createAssistantMessage(assistantMessageId);
-    // Replace trailing empty history assistant message (created by history replay for the
-    // in-progress pair) to avoid a duplicate bubble. If the last message is a non-empty
-    // history assistant or something else, just append normally.
-    setMessages((prev) => {
-      if (prev.length > 0) {
-        const lastMsg = prev[prev.length - 1];
-        if (
-          lastMsg.role === 'assistant' &&
-          lastMsg.isHistory &&
-          (!lastMsg.contentSegments || lastMsg.contentSegments.length === 0) &&
-          !lastMsg.content
-        ) {
-          return [...prev.slice(0, -1), assistantMessage];
+    {
+      const assistantMessage = createAssistantMessage(assistantMessageId);
+      // Replace trailing empty history assistant message (created by history replay for the
+      // in-progress pair) to avoid a duplicate bubble. If the last message is a non-empty
+      // history assistant or something else, just append normally.
+      setMessages((prev) => {
+        if (prev.length > 0) {
+          const lastMsg = prev[prev.length - 1];
+          if (
+            lastMsg.role === 'assistant' &&
+            lastMsg.isHistory &&
+            (!lastMsg.contentSegments || lastMsg.contentSegments.length === 0) &&
+            !lastMsg.content
+          ) {
+            return [...prev.slice(0, -1), assistantMessage];
+          }
         }
-      }
-      return appendMessage(prev, assistantMessage);
-    });
-    currentMessageRef.current = assistantMessageId;
+        return appendMessage(prev, assistantMessage);
+      });
+      currentMessageRef.current = assistantMessageId;
+    }
 
-    // Prepare refs for event handlers
-    const subagentStateRefs = {};
+    // Prepare refs for event handlers — use persistent subagent state
     const refs = {
       contentOrderCounterRef,
       currentReasoningIdRef,
       currentToolCallIdRef,
       updateTodoListCard,
       isNewConversation: false,
-      subagentStateRefs,
-      updateSubagentCard: updateSubagentCard || (() => {}),
+      subagentStateRefs: subagentStateRefsRef.current,
+      updateSubagentCard: updateSubagentCard
+        ? (agentId, data) => updateSubagentCard(agentId, { ...data, isReconnect: true })
+        : (() => {}),
       isReconnect: true,
     };
 
     const processEvent = createStreamEventProcessor(assistantMessageId, refs, getTaskIdFromEvent);
 
     try {
-      // No lastEventId — backend replays all buffered events for the current pair
+      // Replay buffered events first — this processes artifact{task,spawned} events
+      // which create subagent cards with the correct description/type. Per-task streams
+      // are opened AFTER so they merge into existing cards instead of creating empty ones.
       await reconnectToWorkflowStream(threadId, null, processEvent);
 
       // Mark message as complete
@@ -1028,6 +1196,16 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           isStreaming: false,
         }))
       );
+
+      // Now open per-task SSE streams for active subagents. The buffered replay above
+      // has already created cards with descriptions; per-task endpoints replay from
+      // their own Redis buffer so no events are lost.
+      if (activeTasks.length > 0) {
+        console.log('[Reconnect] Opening per-task streams for active tasks:', activeTasks);
+        for (const taskId of activeTasks) {
+          openSubagentStream(threadId, taskId, processEvent);
+        }
+      }
     } catch (err) {
       // 404/410 = workflow no longer available, not a real error
       const status = err.message?.match(/status:\s*(\d+)/)?.[1];
@@ -1038,10 +1216,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         setMessageError(err.message || 'Failed to reconnect to stream');
       }
     } finally {
-      setIsLoading(false);
       setIsReconnecting(false);
-      isStreamingRef.current = false;
-      currentMessageRef.current = null;
 
       // Clean up empty reconnect messages (no content segments = nothing was streamed)
       setMessages((prev) => {
@@ -1052,45 +1227,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         return prev;
       });
 
-      if (!hasActiveSubagentsRef.current) {
-        if (inactivateAllSubagents) {
-          inactivateAllSubagents();
-        }
-        if (minimizeInactiveSubagents) {
-          minimizeInactiveSubagents();
-        }
-      }
-      hasActiveSubagentsRef.current = false;
-      setIsTailing(false);
-
-      // Auto-complete pending todos in floating card and inline message
-      if (completePendingTodos) {
-        completePendingTodos();
-      }
-      setMessages((prev) => {
-        const msg = prev.find((m) => m.id === assistantMessageId);
-        if (!msg?.todoListProcesses || Object.keys(msg.todoListProcesses).length === 0) return prev;
-        // Find the last todoListProcesses entry (highest order) and mark all todos completed
-        const entries = Object.entries(msg.todoListProcesses);
-        const lastEntry = entries.reduce((a, b) => ((a[1].order || 0) >= (b[1].order || 0) ? a : b));
-        const [lastKey, lastVal] = lastEntry;
-        const hasIncomplete = lastVal.todos?.some((t) => t.status !== 'completed');
-        if (!hasIncomplete) return prev;
-        const completedTodos = lastVal.todos.map((t) => ({ ...t, status: 'completed' }));
-        return prev.map((m) => m.id !== assistantMessageId ? m : {
-          ...m,
-          todoListProcesses: {
-            ...m.todoListProcesses,
-            [lastKey]: {
-              ...lastVal,
-              todos: completedTodos,
-              completed: lastVal.total || completedTodos.length,
-              in_progress: 0,
-              pending: 0,
-            },
-          },
-        });
-      });
+      cleanupAfterStreamEnd(assistantMessageId);
     }
   };
 
@@ -1121,22 +1258,69 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     const loadAndMaybeReconnect = async () => {
       console.log('[History] Calling loadConversationHistory for thread:', threadId);
 
-      // Run history load and workflow status check in parallel to save ~100-300ms
-      const [, status] = await Promise.all([
-        loadConversationHistory(),
-        getWorkflowStatus(threadId).catch((statusErr) => {
-          console.log('[Reconnect] Could not check workflow status:', statusErr.message);
-          return { can_reconnect: false };
-        }),
-      ]);
+      // Check workflow status FIRST, then load history.
+      // Sequential order avoids a race where /replay lands before the backend
+      // persists Turn N (on_background_workflow_complete) while /status already
+      // sees COMPLETED — which would cause the frontend to skip reconnect and
+      // miss the latest turn's events entirely.
+      const status = await getWorkflowStatus(threadId).catch((statusErr) => {
+        console.log('[Reconnect] Could not check workflow status:', statusErr.message);
+        return { can_reconnect: false };
+      });
+
+      if (cancelled) return;
+
+      await loadConversationHistory();
 
       if (cancelled) return;
 
       if (status.can_reconnect && !historyHasUnresolvedInterruptRef.current) {
-        console.log('[Reconnect] Workflow status:', status.status, 'can_reconnect:', status.can_reconnect);
-        await reconnectToStream();
+        console.log('[Reconnect] Workflow status:', status.status, 'can_reconnect:', status.can_reconnect, 'active_tasks:', status.active_tasks);
+        await reconnectToStream({ activeTasks: status.active_tasks || [] });
       } else if (status.can_reconnect && historyHasUnresolvedInterruptRef.current) {
         console.log('[Reconnect] Skipping reconnect: history has unresolved interrupt');
+      } else if (status.active_tasks && status.active_tasks.length > 0) {
+        // Main workflow completed but subagent tasks still running.
+        // Reopen per-task SSE streams so cards stay live after refresh.
+        console.log('[Reconnect] Main workflow done, reopening per-task streams for active subagents:', status.active_tasks);
+        const dummyAssistantId = `assistant-subagent-reconnect-${Date.now()}`;
+        const refs = {
+          contentOrderCounterRef,
+          currentReasoningIdRef,
+          currentToolCallIdRef,
+          updateTodoListCard,
+          isNewConversation: false,
+          subagentStateRefs: subagentStateRefsRef.current,
+          updateSubagentCard: updateSubagentCard
+            ? (agentId, data) => updateSubagentCard(agentId, { ...data, isReconnect: true })
+            : (() => {}),
+          isReconnect: true,
+        };
+        const processEvent = createStreamEventProcessor(dummyAssistantId, refs, getTaskIdFromEvent);
+        // Pre-seed cards from history so per-task events don't create empty cards
+        for (const taskId of status.active_tasks) {
+          const agentId = `task:${taskId}`;
+          const historyData = subagentHistoryRef.current?.[agentId];
+          if (updateSubagentCard && historyData) {
+            updateSubagentCard(agentId, {
+              agentId,
+              displayId: `Task-${taskId}`,
+              taskId: agentId,
+              description: historyData.description || '',
+              type: historyData.type || 'general-purpose',
+              status: 'active',
+              isActive: true,
+              isReconnect: true,
+            });
+          }
+          openSubagentStream(threadId, taskId, processEvent);
+        }
+        setHasActiveSubagents(true);
+      } else {
+        // Workflow is not active — mark all subagent tasks as completed.
+        // (Skipped when reconnecting because the reconnect stream will
+        //  deliver live subagent_status events with the real status.)
+        markAllSubagentTasksCompleted();
       }
     };
 
@@ -1147,10 +1331,96 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       console.log('[History] Cleanup: canceling history load for workspace:', workspaceId, 'thread:', threadId);
       cancelled = true;
       historyLoadingRef.current = false;
+      closeAllSubagentStreams();
+      subagentStateRefsRef.current = {};
     };
     // Note: loadConversationHistory is not in deps because it uses workspaceId and threadId from closure
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, threadId]);
+
+  /**
+   * Marks all subagentTasks in messages as 'completed'.
+   * Called when the SSE stream ends or history finishes loading, because a finished
+   * workflow implies all subagents are done. This is a safety net — the subagent_status
+   * event handler should have already updated most of them, but the final completion
+   * event from the tail phase may not be persisted in sse_events (history) or may have
+   * been missed during live streaming.
+   */
+  const markAllSubagentTasksCompleted = () => {
+    // Skip tasks with open per-task SSE streams (still active)
+    const activeShortIds = new Set(subagentStreamsRef.current.keys());
+
+    setMessages((prev) => {
+      let anyChanged = false;
+      const updated = prev.map((msg) => {
+        if (!msg.subagentTasks || Object.keys(msg.subagentTasks).length === 0) return msg;
+        let changed = false;
+        const updatedTasks = { ...msg.subagentTasks };
+        Object.keys(updatedTasks).forEach((toolCallId) => {
+          const agentId = toolCallIdToTaskIdMapRef.current.get(toolCallId);
+          // If the task still has an open per-task stream, skip it
+          if (agentId) {
+            const shortId = agentId.replace('task:', '');
+            if (activeShortIds.has(shortId)) return;
+          }
+
+          if (updatedTasks[toolCallId].status !== 'completed') {
+            updatedTasks[toolCallId] = { ...updatedTasks[toolCallId], status: 'completed' };
+            changed = true;
+          }
+        });
+        if (changed) anyChanged = true;
+        return changed ? { ...msg, subagentTasks: updatedTasks } : msg;
+      });
+      return anyChanged ? updated : prev;
+    });
+  };
+
+  /**
+   * Open a dedicated per-task SSE stream for a subagent.
+   * Events from the stream are routed through processEvent (same handler as the main stream).
+   * Idempotent — skips if a stream is already open for this taskId.
+   *
+   * @param {string} tid - Thread ID
+   * @param {string} shortTaskId - The 6-char task identifier (e.g., 'k7Xm2p')
+   * @param {Function} processEvent - The event processor (from createStreamEventProcessor)
+   */
+  const openSubagentStream = (tid, shortTaskId, processEvent) => {
+    if (subagentStreamsRef.current.has(shortTaskId)) return; // already open
+    const controller = new AbortController();
+    subagentStreamsRef.current.set(shortTaskId, controller);
+
+    streamSubagentTaskEvents(tid, shortTaskId, processEvent, controller.signal)
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error(`[SubagentStream:${shortTaskId}]`, err);
+        }
+      })
+      .finally(() => {
+        subagentStreamsRef.current.delete(shortTaskId);
+        completedTaskIdsRef.current.add(shortTaskId);
+        // Per-task stream close = task completion signal
+        if (updateSubagentCard) {
+          updateSubagentCard(`task:${shortTaskId}`, { status: 'completed', isActive: false });
+        }
+        // If this was the last open stream, clean up
+        if (subagentStreamsRef.current.size === 0) {
+          setHasActiveSubagents(false);
+          if (inactivateAllSubagents) inactivateAllSubagents();
+          markAllSubagentTasksCompleted();
+        }
+      });
+  };
+
+  /**
+   * Abort all open per-task subagent streams.
+   */
+  const closeAllSubagentStreams = () => {
+    for (const [, controller] of subagentStreamsRef.current) {
+      controller.abort();
+    }
+    subagentStreamsRef.current.clear();
+  };
 
   /**
    * Helper to get taskId from event.
@@ -1172,6 +1442,50 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   };
 
   /**
+   * Shared cleanup logic for all stream-end paths (send, reconnect, HITL resume).
+   * Resets loading/streaming state, finalizes subagents, and auto-completes todos.
+   */
+  const cleanupAfterStreamEnd = (assistantMessageId) => {
+    setIsLoading(false);
+    currentMessageRef.current = null;
+    isStreamingRef.current = false;
+
+    const hasOpenStreams = subagentStreamsRef.current.size > 0;
+    if (!hasOpenStreams) {
+      if (inactivateAllSubagents) inactivateAllSubagents();
+      markAllSubagentTasksCompleted();
+      closeAllSubagentStreams();
+    }
+    setHasActiveSubagents(hasOpenStreams);
+
+    // Auto-complete pending todos
+    if (completePendingTodos) completePendingTodos();
+    setMessages((prev) => {
+      const msg = prev.find((m) => m.id === assistantMessageId);
+      if (!msg?.todoListProcesses || Object.keys(msg.todoListProcesses).length === 0) return prev;
+      const entries = Object.entries(msg.todoListProcesses);
+      const lastEntry = entries.reduce((a, b) => ((a[1].order || 0) >= (b[1].order || 0) ? a : b));
+      const [lastKey, lastVal] = lastEntry;
+      const hasIncomplete = lastVal.todos?.some((t) => t.status !== 'completed');
+      if (!hasIncomplete) return prev;
+      const completedTodos = lastVal.todos.map((t) => ({ ...t, status: 'completed' }));
+      return prev.map((m) => m.id !== assistantMessageId ? m : {
+        ...m,
+        todoListProcesses: {
+          ...m.todoListProcesses,
+          [lastKey]: {
+            ...lastVal,
+            todos: completedTodos,
+            completed: lastVal.total || completedTodos.length,
+            in_progress: 0,
+            pending: 0,
+          },
+        },
+      });
+    });
+  };
+
+  /**
    * Creates a stream event processor that handles SSE events from the backend.
    * Used by both handleSendMessage (live) and reconnectToStream (reconnection).
    *
@@ -1187,7 +1501,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     // message chunks from the post-injection model call).
     let queuedAtOrder = null;
 
-    return (event) => {
+    const processEvent = (event) => {
       const eventType = event.event || 'message_chunk';
 
       // Track last event ID for reconnection
@@ -1200,10 +1514,13 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         console.log('[Stream] Artifact event detected:', { eventType, event, artifact_type: event.artifact_type });
       }
 
-      // Update thread_id if provided in the event
-      if (event.thread_id && event.thread_id !== threadId && event.thread_id !== '__default__') {
-        setThreadId(event.thread_id);
-        setStoredThreadId(workspaceId, event.thread_id);
+      // Update thread_id if provided in the event (ref = synchronous for closures)
+      if (event.thread_id && event.thread_id !== '__default__') {
+        threadIdRef.current = event.thread_id;
+        if (event.thread_id !== threadId) {
+          setThreadId(event.thread_id);
+          setStoredThreadId(workspaceId, event.thread_id);
+        }
       }
 
       // Check if this is a subagent event - filter it out from main chat view
@@ -1330,103 +1647,6 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         return;
       }
 
-      // Handle subagents_pending event (main agent done, subagents still running)
-      if (eventType === 'subagents_pending') {
-        hasActiveSubagentsRef.current = true;
-        setIsTailing(true);
-        return;
-      }
-
-      // Handle subagent_status events
-      if (eventType === 'subagent_status') {
-        const subagentStatus = {
-          active_tasks: event.active_tasks || [],
-          completed_tasks: event.completed_tasks || [],
-          active_subagents: event.active_subagents || [],
-          completed_subagents: event.completed_subagents || [],
-        };
-
-        activeSubagentTasksRef.current.clear();
-
-        // Preferred format: active_tasks with agent_id
-        const activeTasks = subagentStatus.active_tasks;
-
-        // Track whether any subagents are still active (for tail phase)
-        if (activeTasks.length === 0) {
-          hasActiveSubagentsRef.current = false;
-          setIsTailing(false);
-        }
-        const completedTasks = subagentStatus.completed_tasks;
-
-        // Register active tasks — agent_id is now "task:{task_id}" and serves as key
-        activeTasks.forEach((task) => {
-          if (!task) return;
-          const agentId = task.agent_id || task.agent;
-          if (agentId) {
-            activeSubagentTasksRef.current.set(agentId, task);
-            if (task.id) {
-              displayIdToAgentIdMapRef.current.set(task.id, agentId);
-            }
-          }
-        });
-
-        if (updateSubagentCard) {
-          handleSubagentStatus({
-            subagentStatus,
-            updateSubagentCard,
-            displayIdToAgentIdMap: displayIdToAgentIdMapRef.current,
-          });
-        }
-
-        // Also update message-level subagentTasks status for completed tasks.
-        // The Task tool_call_result only means "task was launched", not "task finished".
-        // The real completion signal comes here via completed_tasks in subagent_status.
-        const resolvedCompletedAgentIds = new Set();
-        const agentIdToResult = new Map();
-        completedTasks.forEach((item) => {
-          if (typeof item === 'string') {
-            const aid = displayIdToAgentIdMapRef.current.get(item) || item;
-            resolvedCompletedAgentIds.add(aid);
-          } else if (item && typeof item === 'object') {
-            const aid = item.agent_id || item.agent || (item.id && displayIdToAgentIdMapRef.current.get(item.id));
-            if (aid) {
-              resolvedCompletedAgentIds.add(aid);
-              if (item.result) agentIdToResult.set(aid, item.result);
-            }
-          }
-        });
-
-        if (resolvedCompletedAgentIds.size > 0) {
-          // Build reverse map: agentId → toolCallId
-          const agentIdToToolCallId = new Map();
-          toolCallIdToTaskIdMapRef.current.forEach((agentId, toolCallId) => {
-            agentIdToToolCallId.set(agentId, toolCallId);
-          });
-
-          setMessages((prev) =>
-            prev.map((msg) => {
-              if (!msg.subagentTasks || Object.keys(msg.subagentTasks).length === 0) return msg;
-              let changed = false;
-              const updatedSubagentTasks = { ...msg.subagentTasks };
-              resolvedCompletedAgentIds.forEach((agentId) => {
-                const toolCallId = agentIdToToolCallId.get(agentId);
-                if (toolCallId && updatedSubagentTasks[toolCallId]) {
-                  const existing = updatedSubagentTasks[toolCallId];
-                  const result = agentIdToResult.get(agentId) || existing.result || null;
-                  if (existing.status !== 'completed' || (result && !existing.result)) {
-                    updatedSubagentTasks[toolCallId] = { ...existing, status: 'completed', result };
-                    changed = true;
-                  }
-                }
-              });
-              return changed ? { ...msg, subagentTasks: updatedSubagentTasks } : msg;
-            })
-          );
-        }
-
-        return;
-      }
-
       // Handle subagent message events (filter them out from main chat view)
       if (isSubagent) {
         // With task:{task_id} format, the agent field IS the task key
@@ -1439,14 +1659,11 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         // Process the event with the correct taskId
         if (updateSubagentCard) {
 
-          // Use a stable message ID per task so all events from the same subagent
-          // go into one message (same pattern as main agent). Using event.id would
-          // create a separate message per model call since LangGraph assigns a new
-          // AIMessage ID each invocation, breaking ActivityBlock grouping.
-          // The ID is stored in taskRefs and rotated by handleSubagentFollowupInjected
-          // when a follow-up breaks the message chain (mirrors queued_message_injected).
-          const taskRefsForId = refs.subagentStateRefs?.[taskId];
-          const subagentAssistantMessageId = taskRefsForId?.currentAssistantMessageId || `subagent-${taskId}-assistant`;
+          // Use a stable message ID per task+run so all events from the same run
+          // go into one message. Each resume bumps runIndex, creating a new message
+          // so the card shows a unified conversation across resume boundaries.
+          const taskRefs = getOrCreateTaskRefs(refs, taskId);
+          const subagentAssistantMessageId = `subagent-${taskId}-assistant-${taskRefs.runIndex}`;
 
           if (eventType === 'message_chunk') {
             const contentType = event.content_type || 'text';
@@ -1509,25 +1726,18 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 agent: event.agent,
               });
             }
-          } else if (eventType === 'subagent_followup_injected') {
-            handleSubagentFollowupInjected({
-              taskId,
-              content: event.content,
-              refs,
-              updateSubagentCard,
-            });
+          } else if (eventType === 'message_queued') {
+            if (event.content) {
+              handleTaskMessageQueued({
+                taskId,
+                content: event.content,
+                refs,
+                updateSubagentCard,
+              });
+            }
           }
         }
         return; // Don't process subagent events in main chat view
-      }
-
-      // Handle different event types (main agent only)
-      if (isSubagent) {
-        console.warn('[Stream] Subagent event reached main agent handler - this should not happen:', {
-          eventType,
-          agent: event.agent,
-        });
-        return;
       }
 
       if (eventType === 'message_chunk') {
@@ -1586,19 +1796,13 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           }))
         );
       } else if (eventType === 'tool_call_chunks') {
-        if (!isSubagent) {
-          handleToolCallChunks({
-            assistantMessageId,
-            chunks: event.tool_call_chunks,
-            setMessages,
-          });
-        }
+        handleToolCallChunks({
+          assistantMessageId,
+          chunks: event.tool_call_chunks,
+          setMessages,
+        });
         return;
       } else if (eventType === 'artifact') {
-        if (isSubagent) {
-          return;
-        }
-
         const artifactType = event.artifact_type;
         console.log('[Stream] Received artifact event:', { artifactType, artifactId: event.artifact_id, payload: event.payload });
         if (artifactType === 'todo_update') {
@@ -1614,29 +1818,93 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           console.log('[Stream] handleTodoUpdate result:', result);
         } else if (artifactType === 'file_operation' && onFileArtifact) {
           onFileArtifact(event);
+        } else if (artifactType === 'task') {
+          const payload = event.payload || {};
+          const { task_id, action, description, type } = payload;
+          if (!task_id) return;
+          const agentId = `task:${task_id}`;
+
+          if (action === 'spawned') {
+            const alreadyCompleted = completedTaskIdsRef.current.has(task_id);
+            if (updateSubagentCard) {
+              updateSubagentCard(agentId, {
+                agentId,
+                displayId: `Task-${task_id}`,
+                taskId: agentId,
+                type: type || 'general-purpose',
+                description: description || '',
+                status: alreadyCompleted ? 'completed' : 'active',
+                isActive: !alreadyCompleted,
+              });
+            }
+            if (!alreadyCompleted) {
+              const currentThreadId = event.thread_id || threadIdRef.current;
+              openSubagentStream(currentThreadId, task_id, processEvent);
+            }
+          } else if (action === 'resumed') {
+            // Resume: preserve existing messages, inject user boundary, bump runIndex
+            const taskRefsForResume = getOrCreateTaskRefs(refs, agentId);
+
+            // Finalize the last assistant message from the previous run
+            const updatedMessages = [...taskRefsForResume.messages];
+            for (let i = updatedMessages.length - 1; i >= 0; i--) {
+              if (updatedMessages[i].role === 'assistant' && updatedMessages[i].isStreaming) {
+                updatedMessages[i] = { ...updatedMessages[i], isStreaming: false };
+                break;
+              }
+            }
+
+            // Inject user message with resume instruction
+            updatedMessages.push({
+              id: `resume-${agentId}-${Date.now()}`,
+              role: 'user',
+              content: description || 'Resume',
+              contentSegments: [{ type: 'text', content: description || 'Resume', order: 0 }],
+              reasoningProcesses: {},
+              toolCallProcesses: {},
+            });
+
+            // Bump runIndex and reset per-run counters
+            taskRefsForResume.runIndex = (taskRefsForResume.runIndex || 0) + 1;
+            taskRefsForResume.contentOrderCounterRef.current = 0;
+            taskRefsForResume.currentReasoningIdRef.current = null;
+            taskRefsForResume.currentToolCallIdRef.current = null;
+            taskRefsForResume.messages = updatedMessages;
+
+            if (updateSubagentCard) {
+              // Prefer preserving the original spawn description (already on the card).
+              // But after reconnect the card may have been wiped + recreated without a
+              // description, so fall back to subagentHistoryRef as a safety net.
+              const historyDesc = subagentHistoryRef.current?.[agentId]?.description;
+              updateSubagentCard(agentId, {
+                agentId,
+                displayId: `Task-${task_id}`,
+                taskId: agentId,
+                type: type || 'general-purpose',
+                status: 'active',
+                isActive: true,
+                messages: updatedMessages,
+                ...(historyDesc ? { description: historyDesc } : {}),
+              });
+            }
+
+            // Abort existing stream before opening new one (race condition safety)
+            const existingController = subagentStreamsRef.current.get(task_id);
+            if (existingController) {
+              existingController.abort();
+              subagentStreamsRef.current.delete(task_id);
+            }
+
+            const currentThreadId = event.thread_id || threadIdRef.current;
+            openSubagentStream(currentThreadId, task_id, processEvent);
+          } else if (action === 'message_queued') {
+            if (updateSubagentCard) {
+              updateSubagentCard(agentId, { queuedMessage: payload.content });
+            }
+          }
         }
         return;
       } else if (eventType === 'tool_calls') {
-        // Track 'task' tool calls for mapping to task IDs
-        // Skip follow-up/resume calls (task_id present) — they target existing subagents
-        if (event.tool_calls && Array.isArray(event.tool_calls)) {
-          event.tool_calls.forEach((toolCall) => {
-            if ((toolCall.name === 'task' || toolCall.name === 'Task') && toolCall.id && !toolCall.args?.task_id) {
-              pendingTaskToolCallsRef.current.push({
-                toolCallId: toolCall.id,
-                timestamp: Date.now(),
-              });
-              if (process.env.NODE_ENV === 'development') {
-                console.log('[Stream] Tracked task tool call for mapping:', {
-                  toolCallId: toolCall.id,
-                  description: toolCall.args?.description,
-                  pendingCount: pendingTaskToolCallsRef.current.length,
-                });
-              }
-            }
-          });
-        }
-
         handleToolCalls({
           assistantMessageId,
           toolCalls: event.tool_calls,
@@ -1646,11 +1914,16 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         });
       } else if (eventType === 'tool_call_result') {
         const toolCallId = event.tool_call_id;
-        if (toolCallId && !toolCallIdToTaskIdMapRef.current.has(toolCallId)) {
+
+        // Build toolCallId → agentId mapping from Task tool artifact
+        if (event.artifact?.task_id && toolCallId) {
+          const agentId = `task:${event.artifact.task_id}`;
+          toolCallIdToTaskIdMapRef.current.set(toolCallId, agentId);
           if (process.env.NODE_ENV === 'development') {
-            console.log('[Stream] Received tool_call_result for task tool:', {
+            console.log('[Stream] Mapped toolCallId to agentId from artifact:', {
               toolCallId,
-              agent: event.agent,
+              agentId,
+              description: event.artifact.description,
             });
           }
         }
@@ -1753,6 +2026,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         currentMessageRef.current = null;
       }
     };
+
+    return processEvent;
   };
 
   /**
@@ -1870,9 +2145,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
     setIsLoading(true);
     setMessageError(null);
-    hasActiveSubagentsRef.current = false;
-    setIsTailing(false);
-
+    setHasActiveSubagents(false);
+    completedTaskIdsRef.current.clear();
     // Mark streaming as in progress to prevent history loading during streaming
     isStreamingRef.current = true;
 
@@ -1895,15 +2169,14 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     currentMessageRef.current = assistantMessageId;
 
     try {
-      // Prepare refs for event handlers
-      const subagentStateRefs = {}; // Will be populated as subagents are detected
+      // Prepare refs for event handlers — use persistent subagent state
       const refs = {
         contentOrderCounterRef,
         currentReasoningIdRef,
         currentToolCallIdRef,
         updateTodoListCard,
         isNewConversation: isNewConversationRef.current,
-        subagentStateRefs,
+        subagentStateRefs: subagentStateRefsRef.current,
         updateSubagentCard: updateSubagentCard || (() => {}),
       };
 
@@ -1952,58 +2225,15 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             );
           }
         } finally {
-          setIsLoading(false);
-          currentMessageRef.current = null;
-          // Mark streaming as complete - this will allow history loading to proceed if thread ID changed
-          isStreamingRef.current = false;
+          // Mark message as complete (in case the try-block didn't reach it)
+          setMessages((prev) =>
+            updateMessage(prev, assistantMessageId, (msg) => ({
+              ...msg,
+              isStreaming: false,
+            }))
+          );
 
-          // Only inactivate subagent cards if no subagents are actively running (tail phase)
-          // During tail phase, subagent cards should remain active until all subagents complete
-          if (!hasActiveSubagentsRef.current) {
-            if (inactivateAllSubagents) {
-              inactivateAllSubagents();
-              if (process.env.NODE_ENV === 'development') {
-                console.log('[useChatMessages] Inactivated all subagents at end of streaming');
-              }
-            }
-            if (minimizeInactiveSubagents) {
-              minimizeInactiveSubagents();
-              if (process.env.NODE_ENV === 'development') {
-                console.log('[useChatMessages] Minimized all inactive subagents at end of streaming');
-              }
-            }
-          }
-          // Reset for next interaction
-          hasActiveSubagentsRef.current = false;
-          setIsTailing(false);
-
-          // Auto-complete pending todos in floating card and inline message
-          if (completePendingTodos) {
-            completePendingTodos();
-          }
-          setMessages((prev) => {
-            const msg = prev.find((m) => m.id === assistantMessageId);
-            if (!msg?.todoListProcesses || Object.keys(msg.todoListProcesses).length === 0) return prev;
-            const entries = Object.entries(msg.todoListProcesses);
-            const lastEntry = entries.reduce((a, b) => ((a[1].order || 0) >= (b[1].order || 0) ? a : b));
-            const [lastKey, lastVal] = lastEntry;
-            const hasIncomplete = lastVal.todos?.some((t) => t.status !== 'completed');
-            if (!hasIncomplete) return prev;
-            const completedTodos = lastVal.todos.map((t) => ({ ...t, status: 'completed' }));
-            return prev.map((m) => m.id !== assistantMessageId ? m : {
-              ...m,
-              todoListProcesses: {
-                ...m.todoListProcesses,
-                [lastKey]: {
-                  ...lastVal,
-                  todos: completedTodos,
-                  completed: lastVal.total || completedTodos.length,
-                  in_progress: 0,
-                  pending: 0,
-                },
-              },
-            });
-          });
+          cleanupAfterStreamEnd(assistantMessageId);
         }
       };
 
@@ -2028,15 +2258,14 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     setMessageError(null);
     isStreamingRef.current = true;
 
-    // Prepare refs for event handlers
-    const subagentStateRefs = {};
+    // Prepare refs for event handlers — use persistent subagent state
     const refs = {
       contentOrderCounterRef,
       currentReasoningIdRef,
       currentToolCallIdRef,
       updateTodoListCard,
       isNewConversation: false,
-      subagentStateRefs,
+      subagentStateRefs: subagentStateRefsRef.current,
       updateSubagentCard: updateSubagentCard || (() => {}),
     };
 
@@ -2070,51 +2299,10 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         }))
       );
     } finally {
-      setIsLoading(false);
-      currentMessageRef.current = null;
-      isStreamingRef.current = false;
-
-      if (!hasActiveSubagentsRef.current) {
-        if (inactivateAllSubagents) {
-          inactivateAllSubagents();
-        }
-        if (minimizeInactiveSubagents) {
-          minimizeInactiveSubagents();
-        }
-      }
-      hasActiveSubagentsRef.current = false;
-      setIsTailing(false);
-
-      // Auto-complete pending todos in floating card and inline message
-      if (completePendingTodos) {
-        completePendingTodos();
-      }
-      setMessages((prev) => {
-        const msg = prev.find((m) => m.id === assistantMessageId);
-        if (!msg?.todoListProcesses || Object.keys(msg.todoListProcesses).length === 0) return prev;
-        const entries = Object.entries(msg.todoListProcesses);
-        const lastEntry = entries.reduce((a, b) => ((a[1].order || 0) >= (b[1].order || 0) ? a : b));
-        const [lastKey, lastVal] = lastEntry;
-        const hasIncomplete = lastVal.todos?.some((t) => t.status !== 'completed');
-        if (!hasIncomplete) return prev;
-        const completedTodos = lastVal.todos.map((t) => ({ ...t, status: 'completed' }));
-        return prev.map((m) => m.id !== assistantMessageId ? m : {
-          ...m,
-          todoListProcesses: {
-            ...m.todoListProcesses,
-            [lastKey]: {
-              ...lastVal,
-              todos: completedTodos,
-              completed: lastVal.total || completedTodos.length,
-              in_progress: 0,
-              pending: 0,
-            },
-          },
-        });
-      });
+      cleanupAfterStreamEnd(assistantMessageId);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, minimizeInactiveSubagents, completePendingTodos]);
+  }, [workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, completePendingTodos]);
 
   const handleApproveInterrupt = useCallback(() => {
     if (!pendingInterrupt) return;
@@ -2224,7 +2412,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     messages,
     threadId,
     isLoading,
-    isTailing,
+    hasActiveSubagents,
     isLoadingHistory,
     isReconnecting,
     messageError,

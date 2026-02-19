@@ -18,6 +18,27 @@ function extractLastReasoningTitle(content) {
 }
 
 /**
+ * Initializes per-task ref state if it doesn't exist yet.
+ * Shared by all subagent event handlers to avoid repeated boilerplate.
+ * @param {Object} refs - Refs object with subagentStateRefs
+ * @param {string} taskId - Task ID (e.g., "task:k7Xm2p")
+ * @returns {Object} The task refs ({ contentOrderCounterRef, currentReasoningIdRef, currentToolCallIdRef, messages })
+ */
+export function getOrCreateTaskRefs(refs, taskId) {
+  const subagentStateRefs = refs.subagentStateRefs || {};
+  if (!subagentStateRefs[taskId]) {
+    subagentStateRefs[taskId] = {
+      contentOrderCounterRef: { current: 0 },
+      currentReasoningIdRef: { current: null },
+      currentToolCallIdRef: { current: null },
+      messages: [],
+      runIndex: 0,
+    };
+  }
+  return subagentStateRefs[taskId];
+}
+
+/**
  * Handles reasoning signal events during streaming
  * @param {Object} params - Handler parameters
  * @param {string} params.assistantMessageId - ID of the assistant message being updated
@@ -392,11 +413,15 @@ export function handleToolCallResult({ assistantMessageId, toolCallId, result, r
       // If this toolCallId is associated with a subagent task, store the tool call result
       // but do NOT mark as 'completed' — the Task tool returns immediately ("Task-N started
       // in background") while the actual subagent is still running. Real completion comes
-      // via subagent_status events with completed_tasks.
+      // via the per-task SSE stream closing.
+      // Also propagate description from artifact if the inline card's description is empty.
       if (subagentTasks[toolCallId]) {
+        const artifactDescription = result.artifact?.description;
+        const existingDescription = subagentTasks[toolCallId].description;
         subagentTasks[toolCallId] = {
           ...subagentTasks[toolCallId],
           toolCallResult: result.content,
+          ...(artifactDescription && !existingDescription ? { description: artifactDescription } : {}),
         };
       }
 
@@ -426,23 +451,31 @@ export function handleToolCallResult({ assistantMessageId, toolCallId, result, r
 export function handleTodoUpdate({ assistantMessageId, artifactType, artifactId, payload, refs, setMessages }) {
   const { contentOrderCounterRef, updateTodoListCard, isNewConversation } = refs;
 
-  console.log('[handleTodoUpdate] Called with:', { assistantMessageId, artifactType, artifactId, payload, isNewConversation });
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[handleTodoUpdate] Called with:', { assistantMessageId, artifactType, artifactId, payload, isNewConversation });
+  }
 
   // Only handle todo_update artifacts
   if (artifactType !== 'todo_update' || !payload) {
-    console.log('[handleTodoUpdate] Skipping - artifactType:', artifactType, 'hasPayload:', !!payload);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[handleTodoUpdate] Skipping - artifactType:', artifactType, 'hasPayload:', !!payload);
+    }
     return false;
   }
 
   const { todos, total, completed, in_progress, pending } = payload;
-  console.log('[handleTodoUpdate] Extracted data:', { todos, total, completed, in_progress, pending });
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[handleTodoUpdate] Extracted data:', { todos, total, completed, in_progress, pending });
+  }
 
   // Update floating card with todo list data (only during live streaming, not history)
   // Do this before setMessages to ensure we have the latest data
   // Always update the card if updateTodoListCard is available, even if todos array is empty
   // This ensures the card persists and shows the latest state
   if (updateTodoListCard) {
-    console.log('[handleTodoUpdate] Updating todo list card, isNewConversation:', isNewConversation, 'todos count:', todos?.length || 0);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[handleTodoUpdate] Updating todo list card, isNewConversation:', isNewConversation, 'todos count:', todos?.length || 0);
+    }
     updateTodoListCard(
       {
         todos: todos || [],
@@ -460,14 +493,20 @@ export function handleTodoUpdate({ assistantMessageId, artifactType, artifactId,
   const baseTodoListId = artifactId || `todo-list-base-${Date.now()}`;
   // Create a unique segment ID that includes timestamp to ensure chronological ordering
   const segmentId = `${baseTodoListId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  console.log('[handleTodoUpdate] Using baseTodoListId:', baseTodoListId, 'segmentId:', segmentId);
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[handleTodoUpdate] Using baseTodoListId:', baseTodoListId, 'segmentId:', segmentId);
+  }
 
   setMessages((prev) => {
-    console.log('[handleTodoUpdate] Current messages:', prev.map(m => ({ id: m.id, role: m.role, hasSegments: !!m.contentSegments, hasTodoProcesses: !!m.todoListProcesses })));
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[handleTodoUpdate] Current messages:', prev.map(m => ({ id: m.id, role: m.role, hasSegments: !!m.contentSegments, hasTodoProcesses: !!m.todoListProcesses })));
+    }
     const updated = prev.map((msg) => {
       if (msg.id !== assistantMessageId) return msg;
 
-      console.log('[handleTodoUpdate] Found matching message:', msg.id);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[handleTodoUpdate] Found matching message:', msg.id);
+      }
       const todoListProcesses = { ...(msg.todoListProcesses || {}) };
       const contentSegments = [...(msg.contentSegments || [])];
 
@@ -475,7 +514,9 @@ export function handleTodoUpdate({ assistantMessageId, artifactType, artifactId,
       // Increment order counter to get the current position in the stream
       contentOrderCounterRef.current++;
       const currentOrder = contentOrderCounterRef.current;
-      console.log('[handleTodoUpdate] Creating new todo list segment with order:', currentOrder, 'segmentId:', segmentId);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[handleTodoUpdate] Creating new todo list segment with order:', currentOrder, 'segmentId:', segmentId);
+      }
 
       // Add new segment at the current chronological position
       contentSegments.push({
@@ -496,179 +537,30 @@ export function handleTodoUpdate({ assistantMessageId, artifactType, artifactId,
         order: currentOrder,
         baseTodoListId: baseTodoListId, // Keep reference to base ID for potential future use
       };
-      console.log('[handleTodoUpdate] Created new todo list process:', todoListProcesses[segmentId]);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[handleTodoUpdate] Created new todo list process:', todoListProcesses[segmentId]);
+      }
 
       const updatedMsg = {
         ...msg,
         contentSegments,
         todoListProcesses,
       };
-      console.log('[handleTodoUpdate] Updated message:', { 
-        id: updatedMsg.id, 
-        segmentsCount: updatedMsg.contentSegments?.length,
-        todoListIds: Object.keys(updatedMsg.todoListProcesses || {})
-      });
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[handleTodoUpdate] Updated message:', {
+          id: updatedMsg.id,
+          segmentsCount: updatedMsg.contentSegments?.length,
+          todoListIds: Object.keys(updatedMsg.todoListProcesses || {})
+        });
+      }
       return updatedMsg;
     });
-    console.log('[handleTodoUpdate] Final messages after update:', updated.map(m => ({ id: m.id, segmentsCount: m.contentSegments?.length, todoListIds: Object.keys(m.todoListProcesses || {}) })));
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[handleTodoUpdate] Final messages after update:', updated.map(m => ({ id: m.id, segmentsCount: m.contentSegments?.length, todoListIds: Object.keys(m.todoListProcesses || {}) })));
+    }
     return updated;
   });
 
-  return true;
-}
-
-/**
- * Handles subagent_status events during streaming.
- * Supports both preferred format (active_tasks/completed_tasks) and fallback format (active_subagents/completed_subagents).
- * 
- * Preferred format: active_tasks = array of { id, agent_id, description, type, tool_calls, current_tool }
- *   - id: display_id (e.g., "Task-1")
- *   - agent_id: stable UUID identity (e.g., "research:550e8400-...") - used as card key
- * completed_tasks: array of display_id strings ("Task-1", "Task-2")
- * 
- * Fallback format: active_subagents/completed_subagents = arrays of agent_id strings
- * 
- * @param {Object} params - Handler parameters
- * @param {Object} params.subagentStatus - Subagent status data
- * @param {Function} params.updateSubagentCard - Callback(agentId, data) to update subagent card
- * @param {Map} [params.displayIdToAgentIdMap] - Optional ref to persist display_id -> agent_id mapping for completed_tasks
- * @returns {boolean} True if event was handled
- */
-export function handleSubagentStatus({ subagentStatus, updateSubagentCard, displayIdToAgentIdMap }) {
-  if (!subagentStatus || !updateSubagentCard) {
-    return false;
-  }
-
-  if (typeof subagentStatus !== 'object') {
-    console.warn('[handleSubagentStatus] Invalid subagentStatus format:', subagentStatus);
-    return false;
-  }
-
-  const displayToAgentMap = displayIdToAgentIdMap || new Map();
-
-  // --- Preferred format: active_tasks / completed_tasks arrays ---
-  const activeTasks = Array.isArray(subagentStatus.active_tasks) ? subagentStatus.active_tasks : [];
-  const completedTasks = Array.isArray(subagentStatus.completed_tasks) ? subagentStatus.completed_tasks : [];
-  if (activeTasks.length > 0 || completedTasks.length > 0) {
-    const completedAgentIds = new Set();
-    const completedTaskMap = new Map(); // agent_id -> task object if available
-
-    // Store display_id -> agent_id from active_tasks first (for resolving completed_tasks)
-    activeTasks.forEach((task) => {
-      if (task?.id && (task.agent_id || task.agent)) {
-        const aid = task.agent_id || task.agent;
-        displayToAgentMap.set(task.id, aid);
-      }
-    });
-
-    completedTasks.forEach((item) => {
-      let agentId = null;
-      let taskObj = null;
-      if (typeof item === 'string') {
-        agentId = displayToAgentMap.get(item) || item;
-      } else if (item && typeof item === 'object') {
-        const aid = item.agent_id || item.agent;
-        const did = item.id;
-        if (aid) {
-          agentId = aid;
-          taskObj = item;
-          if (did) displayToAgentMap.set(did, aid);
-        } else if (did) {
-          agentId = displayToAgentMap.get(did) || did;
-          taskObj = item;
-        }
-      }
-      if (agentId) {
-        completedAgentIds.add(agentId);
-        if (taskObj) completedTaskMap.set(agentId, taskObj);
-      }
-    });
-
-    // Process completed first
-    completedAgentIds.forEach((agentId) => {
-      const taskObj = completedTaskMap.get(agentId);
-      updateSubagentCard(agentId, {
-        agentId,
-        displayId: taskObj?.id || '',
-        taskId: agentId,
-        description: taskObj?.description || '',
-        type: taskObj?.type || 'general-purpose',
-        toolCalls: taskObj?.tool_calls ?? taskObj?.toolCalls ?? 0,
-        currentTool: '',
-        status: 'completed',
-        isActive: false,
-      });
-    });
-
-    // Process active tasks - use agent_id as card key
-    activeTasks.forEach((task) => {
-      if (!task) return;
-      const agentId = task.agent_id || task.agent;
-      const displayId = task.id;
-      if (!agentId) {
-        console.warn('[handleSubagentStatus] Skipping task without agent_id:', task);
-        return;
-      }
-      if (completedAgentIds.has(agentId)) return;
-
-      const updateData = {
-        agentId,
-        displayId: displayId || '',
-        taskId: agentId,
-        description: task.description || '',
-        type: task.type || 'general-purpose',
-        toolCalls: task.tool_calls ?? task.toolCalls ?? 0,
-        status: 'active',
-        isActive: true,
-      };
-      if (task.current_tool && String(task.current_tool).trim() !== '') {
-        updateData.currentTool = task.current_tool;
-      }
-      updateSubagentCard(agentId, updateData);
-    });
-    return true;
-  }
-
-  // --- Fallback format: active_subagents / completed_subagents (arrays of agent_id strings) ---
-  const activeSubagents = subagentStatus.active_subagents;
-  const completedSubagents = subagentStatus.completed_subagents;
-  if (!Array.isArray(activeSubagents) && !Array.isArray(completedSubagents)) {
-    return false;
-  }
-
-  const fallbackActive = Array.isArray(activeSubagents) ? activeSubagents : [];
-  const fallbackCompleted = Array.isArray(completedSubagents) ? completedSubagents : [];
-  const completedSet = new Set(fallbackCompleted);
-
-  fallbackCompleted.forEach((agentId) => {
-    if (agentId) {
-      updateSubagentCard(agentId, {
-        agentId,
-        displayId: '',
-        taskId: agentId,
-        description: '',
-        type: 'general-purpose',
-        toolCalls: 0,
-        currentTool: '',
-        status: 'completed',
-        isActive: false,
-      });
-    }
-  });
-
-  fallbackActive.forEach((agentId) => {
-    if (!agentId || completedSet.has(agentId)) return;
-    updateSubagentCard(agentId, {
-      agentId,
-      displayId: '',
-      taskId: agentId,
-      description: '',
-      type: 'general-purpose',
-      toolCalls: 0,
-      status: 'active',
-      isActive: true,
-    });
-  });
   return true;
 }
 
@@ -679,7 +571,6 @@ export function handleSubagentStatus({ subagentStatus, updateSubagentCard, displ
  * @param {Object} params - Handler parameters
  * @param {string} params.assistantMessageId - ID of the assistant message being updated
  * @param {Array} params.chunks - Array of tool_call_chunk objects
- * @param {string} params.agentName - Agent name from the event
  * @param {Function} params.setMessages - State setter for messages
  */
 export function handleToolCallChunks({ assistantMessageId, chunks, setMessages }) {
@@ -705,22 +596,6 @@ export function handleToolCallChunks({ assistantMessageId, chunks, setMessages }
       })
     );
   });
-}
-
-/**
- * Clears pending tool call chunks for a message.
- * Called when the final tool_calls event arrives — React batches
- * the clear and the handleToolCalls update into one render.
- * @param {Object} params - Handler parameters
- * @param {string} params.assistantMessageId - ID of the assistant message being updated
- * @param {Function} params.setMessages - State setter for messages
- */
-export function clearPendingToolCallChunks({ assistantMessageId, setMessages }) {
-  setMessages((prev) =>
-    prev.map((msg) =>
-      msg.id === assistantMessageId ? { ...msg, pendingToolCallChunks: {} } : msg
-    )
-  );
 }
 
 /**
@@ -767,18 +642,7 @@ export function handleSubagentMessageChunk({
     return false;
   }
 
-  // Get or create subagent state refs
-  const subagentStateRefs = refs.subagentStateRefs || {};
-  if (!subagentStateRefs[taskId]) {
-    subagentStateRefs[taskId] = {
-      contentOrderCounterRef: { current: 0 },
-      currentReasoningIdRef: { current: null },
-      currentToolCallIdRef: { current: null },
-      messages: [],
-    };
-  }
-
-  const taskRefs = subagentStateRefs[taskId];
+  const taskRefs = getOrCreateTaskRefs(refs, taskId);
   const { contentOrderCounterRef, currentReasoningIdRef } = taskRefs;
 
   // Handle finishReason with no content — model call complete
@@ -844,10 +708,9 @@ export function handleSubagentMessageChunk({
 
       taskRefs.messages = updatedMessages;
       // Update card with messages only - don't update status here
-      // Status is managed by handleSubagentStatus to prevent overwriting 'completed' status
-      updateSubagentCard(taskId, { 
+      // Status is managed by per-task stream close to prevent overwriting 'completed' status
+      updateSubagentCard(taskId, {
         messages: updatedMessages,
-        // Don't set status - let handleSubagentStatus manage it
       });
       return true;
     } else if (signalContent === 'complete') {
@@ -1010,17 +873,7 @@ export function handleSubagentToolCallChunks({ taskId, assistantMessageId, chunk
     return false;
   }
 
-  const subagentStateRefs = refs.subagentStateRefs || {};
-  if (!subagentStateRefs[taskId]) {
-    subagentStateRefs[taskId] = {
-      contentOrderCounterRef: { current: 0 },
-      currentReasoningIdRef: { current: null },
-      currentToolCallIdRef: { current: null },
-      messages: [],
-    };
-  }
-
-  const taskRefs = subagentStateRefs[taskId];
+  const taskRefs = getOrCreateTaskRefs(refs, taskId);
   const updatedMessages = [...taskRefs.messages];
 
   let messageIndex = updatedMessages.findIndex(m => m.id === assistantMessageId);
@@ -1074,17 +927,7 @@ export function handleSubagentToolCalls({ taskId, assistantMessageId, toolCalls,
     return false;
   }
 
-  const subagentStateRefs = refs.subagentStateRefs || {};
-  if (!subagentStateRefs[taskId]) {
-    subagentStateRefs[taskId] = {
-      contentOrderCounterRef: { current: 0 },
-      currentReasoningIdRef: { current: null },
-      currentToolCallIdRef: { current: null },
-      messages: [],
-    };
-  }
-
-  const taskRefs = subagentStateRefs[taskId];
+  const taskRefs = getOrCreateTaskRefs(refs, taskId);
   const { contentOrderCounterRef } = taskRefs;
 
   if (process.env.NODE_ENV === 'development') {
@@ -1191,17 +1034,7 @@ export function handleSubagentToolCallResult({ taskId, assistantMessageId, toolC
     return false;
   }
 
-  const subagentStateRefs = refs.subagentStateRefs || {};
-  if (!subagentStateRefs[taskId]) {
-    subagentStateRefs[taskId] = {
-      contentOrderCounterRef: { current: 0 },
-      currentReasoningIdRef: { current: null },
-      currentToolCallIdRef: { current: null },
-      messages: [],
-    };
-  }
-
-  const taskRefs = subagentStateRefs[taskId];
+  const taskRefs = getOrCreateTaskRefs(refs, taskId);
   const { contentOrderCounterRef } = taskRefs;
 
   const updatedMessages = [...taskRefs.messages];
@@ -1378,7 +1211,7 @@ export function handleSubagentToolCallResult({ taskId, assistantMessageId, toolC
   
   // Update subagent card: clear currentTool when tool call completes
   // Priority:
-  // 1. If the tool that just completed failed, clear currentTool immediately (don't wait for subagent_status)
+  // 1. If the tool that just completed failed, clear currentTool immediately
   // 2. Otherwise, check if there are any other in-progress tool calls
   let hasInProgressTool = false;
   let currentToolName = '';
@@ -1410,7 +1243,7 @@ export function handleSubagentToolCallResult({ taskId, assistantMessageId, toolC
       taskId,
       toolCallId,
       failedToolName: justCompletedToolName,
-      reason: 'Tool call failed, clearing currentTool without waiting for subagent_status',
+      reason: 'Tool call failed, clearing currentTool immediately',
     });
   }
   
@@ -1423,73 +1256,31 @@ export function handleSubagentToolCallResult({ taskId, assistantMessageId, toolC
 }
 
 /**
- * Handles subagent_followup_injected events.
+ * Handles message_queued events on per-task SSE streams.
+ * Emitted when a follow-up instruction is queued for the running subagent.
+ * Inserts a user message bubble with the instruction content.
+ * NOT a turn boundary — the subagent keeps its current assistant message streaming.
  *
- * Adds a user-role message to the subagent's per-task message array so the
- * follow-up instruction from the orchestrator is visible in the subagent view.
+ * @param {Object} params - Handler parameters
+ * @param {string} params.taskId - Task ID (e.g., "task:k7Xm2p")
+ * @param {string} params.content - The queued instruction content
+ * @param {Object} params.refs - Refs object with subagentStateRefs
+ * @param {Function} params.updateSubagentCard - Callback to update subagent card
+ * @returns {boolean} True if event was handled
  */
-/**
- * Handles subagent_followup_injected events — mirrors the main agent's
- * queued_message_injected handler: finalizes the current assistant message,
- * inserts a user message, creates a fresh assistant message, and resets
- * content counters so subsequent events start a clean message chain.
- */
-export function handleSubagentFollowupInjected({ taskId, content, refs, updateSubagentCard }) {
+export function handleTaskMessageQueued({ taskId, content, refs, updateSubagentCard }) {
   if (!taskId || !content || !updateSubagentCard) {
     return false;
   }
 
-  const subagentStateRefs = refs.subagentStateRefs || {};
-  if (!subagentStateRefs[taskId]) {
-    subagentStateRefs[taskId] = {
-      contentOrderCounterRef: { current: 0 },
-      currentReasoningIdRef: { current: null },
-      currentToolCallIdRef: { current: null },
-      messages: [],
-    };
-  }
-
-  const taskRefs = subagentStateRefs[taskId];
+  const taskRefs = getOrCreateTaskRefs(refs, taskId);
   const updatedMessages = [...taskRefs.messages];
-  const oldAssistantId = taskRefs.currentAssistantMessageId || `subagent-${taskId}-assistant`;
 
-  // 1. Finalize the current assistant message (stop streaming, complete in-progress items)
-  const oldMsgIdx = updatedMessages.findIndex(m => m.id === oldAssistantId);
-  if (oldMsgIdx !== -1) {
-    const msg = { ...updatedMessages[oldMsgIdx] };
-
-    // Mark all in-progress tool calls as complete
-    if (msg.toolCallProcesses) {
-      const procs = { ...msg.toolCallProcesses };
-      for (const [id, proc] of Object.entries(procs)) {
-        if (proc.isInProgress) {
-          procs[id] = { ...proc, isInProgress: false, isComplete: true, _completedAt: 0 };
-        }
-      }
-      msg.toolCallProcesses = procs;
-    }
-
-    // Mark active reasoning as complete
-    if (msg.reasoningProcesses) {
-      const rps = { ...msg.reasoningProcesses };
-      for (const [id, rp] of Object.entries(rps)) {
-        if (rp.isReasoning) {
-          rps[id] = { ...rp, isReasoning: false, reasoningComplete: true, _completedAt: 0 };
-        }
-      }
-      msg.reasoningProcesses = rps;
-    }
-
-    msg.isStreaming = false;
-    updatedMessages[oldMsgIdx] = msg;
-  }
-
-  // 2. Insert user follow-up message (or confirm a pending one from the frontend)
+  // Confirm an optimistic pending message if it matches, otherwise insert new one
   const pendingIdx = updatedMessages.findIndex(
     m => m.role === 'user' && m.isPending && m.content === content
   );
   if (pendingIdx !== -1) {
-    // Confirm the optimistic pending message — remove isPending flag
     updatedMessages[pendingIdx] = { ...updatedMessages[pendingIdx], isPending: false };
   } else {
     updatedMessages.push({
@@ -1501,26 +1292,6 @@ export function handleSubagentFollowupInjected({ taskId, content, refs, updateSu
       toolCallProcesses: {},
     });
   }
-
-  // 3. Create new assistant message placeholder (subsequent events attach here)
-  const newAssistantId = `subagent-${taskId}-assistant-${Date.now()}`;
-  updatedMessages.push({
-    id: newAssistantId,
-    role: 'assistant',
-    content: '',
-    contentSegments: [],
-    reasoningProcesses: {},
-    toolCallProcesses: {},
-    isStreaming: true,
-  });
-
-  // 4. Rotate the current assistant message ID so subsequent events use the new one
-  taskRefs.currentAssistantMessageId = newAssistantId;
-
-  // 5. Reset content counters (same as main agent's queued_message_injected handler)
-  taskRefs.contentOrderCounterRef.current = 0;
-  taskRefs.currentReasoningIdRef.current = null;
-  taskRefs.currentToolCallIdRef.current = null;
 
   taskRefs.messages = updatedMessages;
   updateSubagentCard(taskId, { messages: updatedMessages });

@@ -42,11 +42,13 @@ function AgentSidebar({ agents, activeAgentId, onSelectAgent, onRemoveAgent }) {
           : false;
         const effectiveStatus = isMainAgent
           ? agent.status
-          : messages.length === 0
-            ? 'initializing'
-            : isMessageStreaming || hasInProgressTool
-              ? 'active'
-              : (lastAssistant && lastAssistant.isStreaming === false) ? 'completed' : agent.status;
+          : agent.status === 'completed'
+            ? 'completed'
+            : messages.length === 0
+              ? 'initializing'
+              : isMessageStreaming || hasInProgressTool
+                ? 'active'
+                : (lastAssistant && lastAssistant.isStreaming === false) ? 'completed' : agent.status;
 
         const isActive = effectiveStatus === 'active';
         const isCompleted = effectiveStatus === 'completed';

@@ -7,7 +7,7 @@ import { updateCurrentUser } from '../../Dashboard/utils/api';
 import { softInterruptWorkflow, getWorkspace } from '../utils/api';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { saveChatSession, getChatSession, clearChatSession } from '../hooks/utils/chatSessionRestore';
-import { useFloatingCards } from '../hooks/useFloatingCards';
+import { useCardState } from '../hooks/useCardState';
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
 import FilePanel from './FilePanel';
 import './FilePanel.css';
@@ -38,12 +38,15 @@ function SubagentStatusIndicator({ status, currentTool, toolCalls = 0, messages 
     return inProgress?.toolName || '';
   })();
 
-  // Effective status: prefer message-derived state, fall back to card status
-  const effectiveStatus = messages.length === 0
-    ? 'initializing'
-    : isMessageStreaming || derivedCurrentTool
-      ? 'active'
-      : (lastAssistant && lastAssistant.isStreaming === false) ? 'completed' : status;
+  // Effective status: prefer authoritative card status when completed,
+  // otherwise derive from message state, fall back to card status
+  const effectiveStatus = status === 'completed'
+    ? 'completed'
+    : messages.length === 0
+      ? 'initializing'
+      : isMessageStreaming || derivedCurrentTool
+        ? 'active'
+        : (lastAssistant && lastAssistant.isStreaming === false) ? 'completed' : status;
 
   const getIcon = () => {
     if (derivedCurrentTool) {
@@ -197,13 +200,13 @@ function ChatView({ workspaceId, threadId, onBack }) {
   // Floating cards management - extracted to custom hook for better encapsulation
   // Must be called before useChatMessages since updateTodoListCard and updateSubagentCard are passed to it
   const {
-    floatingCards,
+    cards,
     updateTodoListCard,
     updateSubagentCard,
     inactivateAllSubagents,
-    minimizeInactiveSubagents,
     completePendingTodos,
-  } = useFloatingCards();
+    clearSubagentCards,
+  } = useCardState();
 
   // Sync onboarding_completed via PUT when ChatAgent completes onboarding (risk_preference + stocks)
   const handleOnboardingRelatedToolComplete = useCallback(async () => {
@@ -229,7 +232,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
   const {
     messages,
     isLoading,
-    isTailing,
+    hasActiveSubagents,
     isLoadingHistory,
     isReconnecting,
     messageError,
@@ -244,7 +247,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
     threadId: currentThreadId,
     getSubagentHistory,
     resolveSubagentIdToAgentId,
-  } = useChatMessages(workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, minimizeInactiveSubagents, completePendingTodos, handleOnboardingRelatedToolComplete, refreshFiles, agentMode);
+  } = useChatMessages(workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, completePendingTodos, handleOnboardingRelatedToolComplete, refreshFiles, agentMode, clearSubagentCards);
 
   // Ref to avoid stale closure in unmount cleanup
   const currentThreadIdRef = useRef(currentThreadId);
@@ -334,7 +337,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
 
   // Ensure new active agents are visible (remove from hidden list)
   useEffect(() => {
-    Object.entries(floatingCards).forEach(([cardId, card]) => {
+    Object.entries(cards).forEach(([cardId, card]) => {
       if (cardId.startsWith('subagent-')) {
         const agentId = cardId.replace('subagent-', '');
         const isNewActiveAgent = card.subagentData?.isActive !== false && !card.subagentData?.isHistory;
@@ -350,12 +353,12 @@ function ChatView({ workspaceId, threadId, onBack }) {
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [floatingCards]);
+  }, [cards]);
 
-  // Convert floatingCards to agents array for sidebar
+  // Convert cards to agents array for sidebar
   // Filter out hidden agents and add main agent
   // Limit to 12 agents total (1 main + 11 subagents), hide older ones
-  const allSubagentAgents = Object.entries(floatingCards)
+  const allSubagentAgents = Object.entries(cards)
     .filter(([cardId]) => cardId.startsWith('subagent-'))
     .map(([cardId, card]) => ({
       id: cardId.replace('subagent-', ''),
@@ -423,7 +426,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
     if (!activeAgent) return;
     const agentId = activeAgent.id;
     const cardId = `subagent-${agentId}`;
-    const card = floatingCards[cardId];
+    const card = cards[cardId];
     const existingMessages = card?.subagentData?.messages || [];
 
     const pendingMessage = {
@@ -439,7 +442,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
     updateSubagentCard(agentId, {
       messages: [...existingMessages, pendingMessage],
     });
-  }, [activeAgent, floatingCards, updateSubagentCard]);
+  }, [activeAgent, cards, updateSubagentCard]);
 
   // Show sidebar when new subagent spawns (don't auto-switch activeAgentId)
   const prevSubagentCountRef = useRef(0);
@@ -554,8 +557,15 @@ function ChatView({ workspaceId, threadId, onBack }) {
     if (!updateSubagentCard || !agentId) return;
 
     const history = getSubagentHistory ? getSubagentHistory(agentId) : null;
-    const finalDescription = history?.description || overrides.description || '';
-    const finalType = history?.type || overrides.type || 'general-purpose';
+    // Preserve existing card description/type when neither history nor overrides supply them.
+    // During live streaming, the card already has description from the artifact{task,spawned}
+    // event — calling refreshSubagentCard without overrides (e.g., sidebar click) must not
+    // overwrite it with an empty string.
+    const cardId = `subagent-${agentId}`;
+    const existingDescription = cards[cardId]?.subagentData?.description;
+    const existingType = cards[cardId]?.subagentData?.type;
+    const finalDescription = history?.description || overrides.description || existingDescription || '';
+    const finalType = history?.type || overrides.type || existingType || 'general-purpose';
     const finalStatus = history?.status || overrides.status || 'completed';
 
     const updateData = {
@@ -577,7 +587,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
     }
 
     updateSubagentCard(agentId, updateData);
-  }, [updateSubagentCard, getSubagentHistory]);
+  }, [updateSubagentCard, getSubagentHistory, cards]);
 
   // Handle sidebar agent selection — refresh card data, then switch tab
   const handleSelectAgent = useCallback((agentId) => {
@@ -911,7 +921,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
               <div className="w-full max-w-3xl space-y-3">
                 {activeAgentId === 'main' ? (
                   <>
-                    <TodoDrawer todoData={floatingCards['todo-list-card']?.todoData} defaultCollapsed={!!floatingCards['todo-list-card']?.todoData?.fromHistory} />
+                    <TodoDrawer todoData={cards['todo-list-card']?.todoData} defaultCollapsed={!!cards['todo-list-card']?.todoData?.fromHistory} />
                     {pendingRejection && (
                       <div
                         className="flex items-center gap-2 px-3 py-2 rounded-md text-sm"
@@ -942,7 +952,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
                         </div>
                       );
                     })()}
-                    {isTailing && (
+                    {hasActiveSubagents && !isLoading && (
                       <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground">
                         <span className="relative flex h-2 w-2">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/60 opacity-75" />
@@ -955,7 +965,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
                       onSend={handleSendWithAttachments}
                       disabled={isLoadingHistory || !workspaceId || !!pendingInterrupt}
                       onStop={handleSoftInterrupt}
-                      isLoading={isLoading && !isTailing}
+                      isLoading={isLoading}
                       files={workspaceFiles}
                       tokenUsage={tokenUsage}
                     />

@@ -39,12 +39,16 @@ function SubagentStatusBar({ agent, threadId, onInstructionSent }) {
     return inProgress?.toolName || '';
   })();
 
-  // Effective status: prefer message-derived state, fall back to card status
-  const effectiveStatus = messages.length === 0
-    ? 'initializing'
-    : isMessageStreaming || derivedCurrentTool
-      ? 'active'
-      : (lastAssistant && lastAssistant.isStreaming === false) ? 'completed' : agent.status;
+  // Effective status: if card-level status is explicitly 'completed', trust it
+  // (set by inactivateAllSubagents, subagent_status handler, or history load).
+  // Otherwise derive from message streaming state.
+  const effectiveStatus = agent.status === 'completed'
+    ? 'completed'
+    : messages.length === 0
+      ? 'initializing'
+      : isMessageStreaming || derivedCurrentTool
+        ? 'active'
+        : (lastAssistant && lastAssistant.isStreaming === false) ? 'completed' : agent.status;
 
   const isActive = effectiveStatus === 'active';
   const isCompleted = effectiveStatus === 'completed';

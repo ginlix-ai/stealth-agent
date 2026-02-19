@@ -235,6 +235,25 @@ export async function reconnectToWorkflowStream(threadId, lastEventId = null, on
 }
 
 /**
+ * Stream a single subagent's content events (message_chunk, tool_calls, etc.)
+ * via a dedicated per-task SSE endpoint.
+ * @param {string} threadId - The thread ID
+ * @param {string} taskId - The 6-char subagent task ID (e.g., 'k7Xm2p')
+ * @param {Function} onEvent - Callback for each SSE event
+ * @param {AbortSignal} signal - AbortController signal for cancellation
+ */
+export async function streamSubagentTaskEvents(threadId, taskId, onEvent, signal) {
+  if (!threadId) throw new Error('Thread ID is required');
+  if (!taskId) throw new Error('Task ID is required');
+  const authHeaders = await getAuthHeaders();
+  await streamFetch(
+    `/api/v1/threads/${threadId}/tasks/${taskId}`,
+    { method: 'GET', headers: { ...authHeaders }, signal },
+    onEvent
+  );
+}
+
+/**
  * Send a message/instruction to a running background subagent.
  * @param {string} threadId - The thread ID
  * @param {string} taskId - The subagent task ID (e.g., 'k7Xm2p')
@@ -245,7 +264,7 @@ export async function sendSubagentMessage(threadId, taskId, content) {
   if (!threadId) throw new Error('Thread ID is required');
   if (!taskId) throw new Error('Task ID is required');
   const { data } = await api.post(
-    `/api/v1/threads/${threadId}/subagents/${taskId}/messages`,
+    `/api/v1/threads/${threadId}/tasks/${taskId}/messages`,
     { content }
   );
   return data;
