@@ -224,8 +224,7 @@ async def get_workflow_status(thread_id: str) -> dict:
         can_reconnect = status in [WorkflowStatus.ACTIVE, WorkflowStatus.DISCONNECTED]
 
         # Get subagent info from background task manager
-        active_subagents = []
-        completed_subagents = []
+        active_tasks = []
         soft_interrupted = False
 
         from src.config.settings import is_background_execution_enabled
@@ -235,8 +234,7 @@ async def get_workflow_status(thread_id: str) -> dict:
                 manager = BackgroundTaskManager.get_instance()
                 bg_status = await manager.get_workflow_status(thread_id)
                 if bg_status.get("status") != "not_found":
-                    active_subagents = bg_status.get("active_subagents", [])
-                    completed_subagents = bg_status.get("completed_subagents", [])
+                    active_tasks = bg_status.get("active_tasks", [])
                     soft_interrupted = bg_status.get("soft_interrupted", False)
             except Exception as e:
                 logger.debug(f"Could not get background task status for {thread_id}: {e}")
@@ -249,8 +247,7 @@ async def get_workflow_status(thread_id: str) -> dict:
             "workspace_id": workspace_id,
             "user_id": user_id,
             "progress": checkpoint_info,
-            "active_subagents": active_subagents,
-            "completed_subagents": completed_subagents,
+            "active_tasks": active_tasks,
             "soft_interrupted": soft_interrupted,
         }
 

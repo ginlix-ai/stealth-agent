@@ -412,7 +412,8 @@ class ConversationPersistenceService:
         timestamp: Optional[datetime] = None,
         per_call_records: Optional[list] = None,
         tool_usage: Optional[Dict[str, int]] = None,
-        sse_events: Optional[List[Dict[str, Any]]] = None
+        sse_events: Optional[List[Dict[str, Any]]] = None,
+        skip_finalize: bool = False
     ) -> str:
         """
         Persist workflow completion (atomic transaction).
@@ -441,6 +442,9 @@ class ConversationPersistenceService:
                 f"[ConversationPersistence] Completion already persisted for thread_id={self.thread_id} "
                 f"turn_index={turn_index}, skipping"
             )
+            # Advance turn if caller expects it (e.g. reinvoke dedup after pre-tail persist)
+            if not skip_finalize:
+                await self._finalize_pair()
             return self._current_response_id
 
         try:
@@ -505,8 +509,9 @@ class ConversationPersistenceService:
                 f"turn_index={turn_index} response_id={response_id}"
             )
 
-            # Increment turn_index and run post-persist hook (e.g. clear event buffer)
-            await self._finalize_pair()
+            if not skip_finalize:
+                # Increment turn_index and run post-persist hook (e.g. clear event buffer)
+                await self._finalize_pair()
 
             return response_id
 

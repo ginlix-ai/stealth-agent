@@ -61,6 +61,10 @@ from src.config.settings import (
 from src.server.app import setup
 
 logger = logging.getLogger(__name__)
+_sse_logger = logging.getLogger("sse_events")
+
+from src.config.settings import is_sse_event_log_enabled
+_SSE_LOG_ENABLED = is_sse_event_log_enabled()
 
 # Maps agent mode → (config field on llm, preference key in other_preference)
 _MODE_MODEL_MAP = {
@@ -437,7 +441,6 @@ async def astream_flash_workflow(
         # Create stream handler
         handler = WorkflowStreamHandler(
             thread_id=thread_id,
-            track_tokens=True,
             token_callback=token_callback,
             tool_tracker=tool_tracker,
         )
@@ -882,7 +885,6 @@ async def astream_ptc_workflow(
         # Reuse WorkflowStreamHandler for SSE streaming
         handler = WorkflowStreamHandler(
             thread_id=thread_id,
-            track_tokens=True,
             token_callback=token_callback,
             tool_tracker=tool_tracker,
             background_registry=background_registry,
@@ -941,9 +943,20 @@ async def astream_ptc_workflow(
 
         # Define completion callback for background persistence
         async def on_background_workflow_complete():
-            """Persists workflow data after background execution completes."""
+            """Persists workflow data after background execution completes.
+
+            Reads fresh handler/token_callback from task_info metadata because
+            reinvocation may have replaced them with new instances.
+            """
             try:
-                execution_time = time.time() - start_time
+                # Read fresh refs from task_info (may have been updated by reinvoke)
+                task_info = manager.tasks.get(thread_id)
+                _handler = task_info.metadata.get("handler") if task_info else handler
+                _token_cb = task_info.metadata.get("token_callback") if task_info else token_callback
+                _start_time = task_info.metadata.get("start_time", start_time) if task_info else start_time
+
+                execution_time = time.time() - _start_time
+
                 _persistence_service = ConversationPersistenceService.get_instance(
                     thread_id
                 )
@@ -951,16 +964,16 @@ async def astream_ptc_workflow(
 
                 # Get per-call records for usage tracking
                 _per_call_records = (
-                    token_callback.per_call_records if token_callback else None
+                    _token_cb.per_call_records if _token_cb else None
                 )
 
                 # Get tool usage summary from handler
                 _tool_usage = None
-                if handler:
-                    _tool_usage = handler.get_tool_usage()
+                if _handler:
+                    _tool_usage = _handler.get_tool_usage()
 
                 # Persist completion to database
-                _sse_events = handler.get_sse_events() if handler else None
+                _sse_events = _handler.get_sse_events() if _handler else None
                 await _persistence_service.persist_completion(
                     metadata={
                         "workspace_id": request.workspace_id,
@@ -1360,7 +1373,8 @@ async def reconnect_to_workflow_stream(
             )
         raise HTTPException(status_code=404, detail=f"Workflow {thread_id} not found")
 
-    # Replay buffered events
+    # Replay buffered events (during tailing, Redis only holds tail-phase
+    # events because the buffer is cleared after pre-tail persist)
     buffered_events = await manager.get_buffered_events_redis(
         thread_id,
         from_beginning=True,
@@ -1375,9 +1389,8 @@ async def reconnect_to_workflow_stream(
     for event in buffered_events:
         yield event
 
-    # Attach to live stream if still running
+    # Attach to live stream if still running or tailing
     status = await manager.get_task_status(thread_id)
-
     if status == TaskStatus.RUNNING:
         live_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
         await manager.subscribe_to_live_events(thread_id, live_queue)
@@ -1406,59 +1419,106 @@ async def reconnect_to_workflow_stream(
             await manager.decrement_connection(thread_id)
 
 
-async def stream_subagent_status(thread_id: str):
-    """Stream subagent status updates for a thread.
+async def stream_subagent_task_events(thread_id: str, task_id: str, last_event_id: int | None = None):
+    """SSE stream of a single subagent's content events.
+
+    Per-task SSE stream with its own Redis buffer. Events are
+    message_chunk, tool_calls, tool_call_result, and message_queued.
+
+    Redis key: subagent:events:{thread_id}:{task_id}
+    Cleared after task completion + persistence (mirrors main stream per-turn clearing).
+
+    Args:
+        thread_id: Workflow thread identifier
+        task_id: The 6-char alphanumeric task identifier
+        last_event_id: Last received event ID for reconnect replay
 
     Yields:
         SSE-formatted event strings
     """
-    import json
-    from datetime import datetime, timezone
+    from src.utils.cache.redis_cache import get_cache_client
+    from src.server.services.background_task_manager import drain_task_captured_events
 
     registry_store = BackgroundRegistryStore.get_instance()
-    event_id = 0
-    last_payload: dict[str, list] | None = None
+    cache = get_cache_client()
+    redis_key = f"subagent:events:{thread_id}:{task_id}"
+    seq = 0
+    cursor = 0
+    max_wait, waited = 30, 0
 
-    while True:
+    def _format_sse(seq_id: int, event_type: str, data: dict) -> str:
+        result = f"id: {seq_id}\nevent: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+        if _SSE_LOG_ENABLED:
+            _sse_logger.info(result)
+        return result
+
+    def _parse_sse_id(raw_sse: str) -> int | None:
+        """Extract event ID from raw SSE string."""
+        try:
+            first_line = raw_sse.split("\n", 1)[0]
+            if first_line.startswith("id: "):
+                return int(first_line[4:].strip())
+        except (ValueError, IndexError):
+            pass
+        return None
+
+    # Phase 1: Replay from Redis buffer on reconnect
+    if last_event_id is not None:
+        try:
+            stored = await cache.list_range(redis_key, 0, -1) or []
+            for raw_sse in stored:
+                eid = _parse_sse_id(raw_sse)
+                if eid is not None and eid > last_event_id:
+                    yield raw_sse
+                seq = max(seq, eid or 0)
+        except Exception as e:
+            logger.warning(f"[SubagentStream:{task_id}] Redis replay failed: {e}")
+
+        # Seed cursor past already-buffered events
         registry = await registry_store.get_registry(thread_id)
         if registry:
-            tasks = await registry.get_all_tasks()
-            pending = [task for task in tasks if task.is_pending]
-            completed = [task for task in tasks if task.completed]
+            task = await registry.get_task_by_task_id(task_id)
+            if task:
+                cursor = len(task.captured_events)
 
-            active_tasks = [
-                {
-                    "id": task.display_id,
-                    "description": task.description[:100]
-                    if task.description
-                    else "",
-                    "type": task.subagent_type,
-                    "tool_calls": task.total_tool_calls,
-                    "current_tool": task.current_tool,
-                }
-                for task in sorted(pending, key=lambda task: task.display_id)
-            ]
-            completed_tasks = sorted([task.display_id for task in completed])
-        else:
-            active_tasks = []
-            completed_tasks = []
+    # Phase 2: Live polling
+    while True:
+        registry = await registry_store.get_registry(thread_id)
+        if not registry:
+            if waited >= max_wait:
+                break
+            waited += 0.5
+            await asyncio.sleep(0.5)
+            continue
 
-        payload = {
-            "active_tasks": active_tasks,
-            "completed_tasks": completed_tasks,
-        }
+        task = await registry.get_task_by_task_id(task_id)
+        if not task:
+            if waited >= max_wait:
+                break
+            waited += 0.5
+            await asyncio.sleep(0.5)
+            continue
 
-        if payload != last_payload:
-            event_id += 1
-            last_payload = payload
-            event_payload = {
-                "thread_id": thread_id,
-                **payload,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-            yield f"id: {event_id}\nevent: subagent_status\ndata: {json.dumps(event_payload)}\n\n"
+        # Reset wait counter once we find the task
+        waited = 0
 
-        if not active_tasks:
+        # Drain new captured_events (shared helper)
+        for ev, agent_id in drain_task_captured_events(task, cursor):
+            seq += 1
+            data = {"thread_id": thread_id, "agent": agent_id, **ev["data"]}
+            sse = _format_sse(seq, ev["event"], data)
+            # Buffer to per-task Redis key
+            try:
+                await cache.list_append(redis_key, sse, max_size=100, ttl=3600)
+            except Exception:
+                pass  # Non-fatal: live delivery still works
+            yield sse
+        cursor = len(task.captured_events)
+
+        # Task done → final drain complete → close
+        if task.completed or (task.asyncio_task and task.asyncio_task.done()):
+            # Signal collector that all events have been emitted to the client
+            task.sse_drain_complete.set()
             break
 
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(0.5)

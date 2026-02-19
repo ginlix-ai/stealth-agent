@@ -18,9 +18,7 @@ import asyncio
 import copy
 import json
 import logging
-import os
-from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Set, Tuple, cast
+from typing import Any, AsyncGenerator, Dict, List, Optional, Set, Tuple, cast
 
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, ToolMessage
 from langgraph.types import StateSnapshot
@@ -41,7 +39,6 @@ from src.config.settings import (
     get_workflow_timeout,
     get_sse_keepalive_interval,
     is_sse_event_log_enabled,
-    is_background_execution_enabled,
 )
 
 WORKFLOW_TIMEOUT = get_workflow_timeout(default=900)  # seconds
@@ -249,7 +246,6 @@ class WorkflowStreamHandler:
     def __init__(
         self,
         thread_id: str,
-        track_tokens: bool = True,
         token_callback: Optional[Any] = None,
         tool_tracker: Optional[Any] = None,
         keepalive_interval: Optional[float] = None,
@@ -262,7 +258,6 @@ class WorkflowStreamHandler:
 
         Args:
             thread_id: Thread identifier for this streaming session
-            track_tokens: Whether token tracking is enabled (always True, kept for compatibility)
             token_callback: Token tracking callback instance (PerCallTokenTracker)
             tool_tracker: Tool usage tracker instance (ToolUsageTracker) for infrastructure cost tracking
             keepalive_interval: Seconds between keepalive events (default from env)
@@ -309,25 +304,16 @@ class WorkflowStreamHandler:
         self._last_event_time: float = 0.0
 
         # Background task registry (single source of truth for SSE events)
-        # When provided, _maybe_emit_subagent_status reads directly from registry
         self._background_registry = background_registry
 
-        # Legacy subagent tracking (used only when no registry provided)
-        # TODO: Remove once all callers pass background_registry
-        self._active_subagents: Set[str] = set()
-        self._completed_subagents: Set[str] = set()
-        self._last_subagent_status_snapshot: Optional[dict[str, Any]] = None
-
-        # Current namespace tuple (for subagent tracking in _process_message_chunk)
-        self._current_namespace: tuple = ()
-
-        # Track which completed task results have already been sent (avoid re-sending)
-        self._sent_result_tool_call_ids: set[str] = set()
-
-        # Cursor tracking for old subagent event emission (task_id → index)
-        self._old_subagent_cursors: dict[str, int] = {}
         # Snapshot of task IDs from previous workflow (set at stream start)
         self._old_tool_call_ids: set[str] = set()
+
+        # Shared event sequence counter (set by BackgroundTaskManager for concurrent tail)
+        self.event_counter: Optional[Any] = None
+
+        # When True, skip all subagent-related emission (drain, status) — tail handles it
+        self.skip_subagent_events: bool = False
 
     async def _keepalive_loop(self, keepalive_queue: asyncio.Queue):
         """
@@ -376,7 +362,10 @@ class WorkflowStreamHandler:
             SSE-formatted keepalive event string with sequence ID
         """
         # Increment sequence for keepalive too (for proper event ordering)
-        self.event_sequence += 1
+        if self.event_counter is not None:
+            self.event_sequence = self.event_counter.next()
+        else:
+            self.event_sequence += 1
         return f"id: {self.event_sequence}\nevent: keepalive\ndata: {{\"status\": \"alive\"}}\n\n"
 
     async def stream_workflow(
@@ -424,17 +413,11 @@ class WorkflowStreamHandler:
             # Events are streamed with accumulate=False so they are NOT persisted
             # with this (new) response — the collector owns persistence to the
             # OLD response where the subagent was created.
-            if self._background_registry:
+            # When skip_subagent_events is True, the concurrent tail handles all
+            # subagent event delivery, so this block is skipped entirely.
+            if self._background_registry and not self.skip_subagent_events:
                 old_tasks = list(self._background_registry._tasks.values())
                 self._old_tool_call_ids = {t.tool_call_id for t in old_tasks}
-
-                if any(t.captured_events for t in old_tasks):
-                    # Emit subagent_status first so frontend has context
-                    if status_event := self._maybe_emit_subagent_status():
-                        yield status_event
-
-                    for event_str in self._drain_old_subagent_events():
-                        yield event_str
 
             # Create graph stream
             graph_stream = graph.astream(
@@ -454,11 +437,6 @@ class WorkflowStreamHandler:
                     # Directly yield keepalive event (already formatted)
                     yield data
                     logger.debug(f"[KEEPALIVE] Yielded for thread_id={self.thread_id}")
-
-                    # Drain any new events from old-workflow subagents during idle periods
-                    for event_str in self._drain_old_subagent_events():
-                        self._last_event_time = time.time()
-                        yield event_str
 
                     continue
 
@@ -586,21 +564,6 @@ class WorkflowStreamHandler:
                             })
                             continue
 
-                        # Handle subagent follow-up injection signal
-                        if event_type == "subagent_followup_injected":
-                            # Use explicit agent field if provided (e.g. from resume path),
-                            # otherwise extract from graph namespace (live follow-up path).
-                            agent_name = event_data.get("agent") or self._extract_agent_name(agent_from_stream, {})
-                            yield self._format_sse_event("subagent_followup_injected", {
-                                "thread_id": self.thread_id,
-                                "agent": agent_name,
-                                "tool_call_id": event_data.get("tool_call_id"),
-                                "content": event_data.get("content", ""),
-                                "count": event_data.get("count", 0),
-                                "timestamp": event_data.get("timestamp"),
-                            })
-                            continue
-
                         # Check if this is an artifact event from middleware
                         # Generic handler: any event with artifact_type is emitted as artifact SSE
                         artifact_type = event_data.get("artifact_type")
@@ -662,14 +625,6 @@ class WorkflowStreamHandler:
                 # Extract agent identity from namespace tuple (subgraphs) and metadata (parent graph)
                 agent_name = self._extract_agent_name(agent_from_stream, message_metadata)
 
-                # Track subagent activity (for ESC soft interrupt status)
-                self._current_namespace = agent_from_stream  # Store for use in _process_message_chunk
-                self._update_subagent_tracking(agent_name, agent_from_stream)
-
-                # Emit periodic subagent status events
-                if subagent_status_event := self._maybe_emit_subagent_status():
-                    yield subagent_status_event
-
                 # Log metadata for debugging
                 logger.debug(
                     f"[MESSAGE_METADATA] agent={agent_name} metadata={message_metadata}"
@@ -705,11 +660,6 @@ class WorkflowStreamHandler:
                     # Update last event time for each yielded event
                     self._last_event_time = time.time()
                     yield event
-
-                # Drain any new events from old-workflow subagents after each graph event
-                for event_str in self._drain_old_subagent_events():
-                    self._last_event_time = time.time()
-                    yield event_str
 
             # After workflow completes, emit credit_usage event
             try:
@@ -761,34 +711,6 @@ class WorkflowStreamHandler:
                 # Don't fail workflow if credit event fails
                 logger.warning(
                     f"[Credit SSE] Failed to emit credit_usage event for thread_id={self.thread_id}: {e}"
-                )
-
-            # Emit subagents_pending if any background subagents are still running
-            # This goes through the normal stream (before consume_workflow finishes),
-            # ensuring the frontend receives it while the connection is still active.
-            # The tail loop in _run_workflow_shielded then takes over.
-            try:
-                if self._background_registry and self._background_registry.has_pending_tasks():
-                    pending = [t for t in self._background_registry._tasks.values() if t.is_pending]
-                    yield self._format_sse_event("subagents_pending", {
-                        "thread_id": self.thread_id,
-                        "active_tasks": [
-                            {
-                                "id": t.display_id,
-                                "agent_id": f"task:{t.task_id}",
-                                "description": (t.description or "")[:100],
-                                "type": t.subagent_type,
-                            }
-                            for t in pending
-                        ],
-                    })
-                    logger.info(
-                        f"[SubagentsPending] Emitted subagents_pending with "
-                        f"{len(pending)} pending tasks for thread_id={self.thread_id}"
-                    )
-            except Exception as e:
-                logger.warning(
-                    f"[SubagentsPending] Failed to emit subagents_pending for thread_id={self.thread_id}: {e}"
                 )
 
         except asyncio.CancelledError:
@@ -883,163 +805,6 @@ class WorkflowStreamHandler:
             return str(checkpoint_ns)
 
         return str(message_metadata.get("langgraph_node", "unknown"))
-
-    def _update_subagent_tracking(
-        self,
-        agent_name: str,
-        namespace_tuple: tuple,
-        is_done: bool = False,
-    ) -> None:
-        """Track subagent activity for status/soft-interrupt UI."""
-        # Only track if this is a subagent (non-empty namespace)
-        if not namespace_tuple:
-            return
-
-        if agent_name in ("unknown", "main", ""):
-            return
-
-        if is_done:
-            self._active_subagents.discard(agent_name)
-            self._completed_subagents.add(agent_name)
-        else:
-            self._active_subagents.add(agent_name)
-            self._completed_subagents.discard(agent_name)
-
-        # Update background task manager
-        if is_background_execution_enabled():
-            try:
-                from src.server.services.background_task_manager import BackgroundTaskManager
-
-                manager = BackgroundTaskManager.get_instance()
-                manager.update_subagent_status(self.thread_id, agent_name, not is_done)
-            except Exception as e:
-                logger.debug(f"[SUBAGENT_TRACKING] Failed to update manager: {e}")
-
-    def _maybe_emit_subagent_status(self) -> Optional[str]:
-        """
-        Emit subagent_status event from registry (single source of truth).
-
-        When a BackgroundTaskRegistry is provided, reads task status directly from
-        the registry. This eliminates duplicate state tracking and provides richer
-        metadata (task numbers, descriptions, tool call progress).
-
-        Returns:
-            SSE event string or None if status is unchanged
-        """
-        # If we have a registry, use it as the single source of truth
-        if self._background_registry:
-            # Read directly from registry (no duplicate state)
-            tasks = list(self._background_registry._tasks.values())
-            if not tasks and self._last_subagent_status_snapshot is None:
-                return None
-
-            pending = [t for t in tasks if t.is_pending]
-            completed = [t for t in tasks if t.completed]
-
-            # Clear stale entries for resumed tasks (pending again after completion)
-            for task in pending:
-                self._sent_result_tool_call_ids.discard(task.tool_call_id)
-
-            active_tasks = [
-                {
-                    "id": task.display_id,
-                    "agent_id": f"task:{task.task_id}",
-                    "description": task.description or "",
-                    "type": task.subagent_type,
-                    "tool_calls": task.total_tool_calls,
-                    "current_tool": task.current_tool,
-                }
-                for task in sorted(pending, key=lambda t: t.display_id)
-            ]
-            completed_tasks = []
-            for task in sorted(completed, key=lambda t: t.display_id):
-                entry: dict[str, Any] = {
-                    "id": task.display_id,
-                    "agent_id": f"task:{task.task_id}",
-                }
-                # Include result text only the first time a task appears completed
-                if task.tool_call_id not in self._sent_result_tool_call_ids and task.result:
-                    from ptc_agent.agent.middleware.background.tools import extract_result_content
-                    _success, content = extract_result_content(task.result)
-                    entry["result"] = content
-                    self._sent_result_tool_call_ids.add(task.tool_call_id)
-                completed_tasks.append(entry)
-
-            payload = {
-                "active_tasks": active_tasks,
-                "completed_tasks": completed_tasks,
-            }
-
-            if payload == self._last_subagent_status_snapshot:
-                return None
-
-            self._last_subagent_status_snapshot = payload
-
-            return self._format_sse_event("subagent_status", {
-                "thread_id": self.thread_id,
-                **payload,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
-
-        # Fallback: Legacy tracking (for backward compatibility)
-        active_subagents = sorted(self._active_subagents)
-        completed_subagents = sorted(self._completed_subagents)
-        if not (active_subagents or completed_subagents) and self._last_subagent_status_snapshot is None:
-            return None
-
-        payload = {
-            "active_subagents": active_subagents,
-            "completed_subagents": completed_subagents,
-        }
-
-        if payload == self._last_subagent_status_snapshot:
-            return None
-
-        self._last_subagent_status_snapshot = payload
-
-        return self._format_sse_event(
-            "subagent_status",
-            {
-                "thread_id": self.thread_id,
-                **payload,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-
-    def _drain_old_subagent_events(self) -> Generator[str, None, None]:
-        """Yield new captured events from old-workflow subagents without accumulating.
-
-        Uses per-task cursors to track which events have already been streamed.
-        Events are formatted with accumulate=False so they are NOT included in
-        the new response's persistence — the collector owns persistence for these.
-        """
-        if not self._background_registry or not self._old_tool_call_ids:
-            return
-
-        for task_id in self._old_tool_call_ids:
-            task = self._background_registry.get_by_tool_call_id(task_id)
-            if task is None:
-                continue
-
-            cursor = self._old_subagent_cursors.get(task_id, 0)
-            events = task.captured_events  # live reference
-            # Reset cursor if captured_events was cleared (e.g., on resume)
-            if cursor > 0 and len(events) < cursor:
-                cursor = 0
-                self._old_subagent_cursors[task_id] = 0
-            if len(events) <= cursor:
-                continue
-
-            # Slice creates a snapshot — safe even if collector clears later
-            new_events = events[cursor:]
-            for event in new_events:
-                yield self._format_sse_event(
-                    event["event"],
-                    {"thread_id": self.thread_id, **event["data"]},
-                    accumulate=False,
-                )
-
-            self._old_subagent_cursors[task_id] = cursor + len(new_events)
 
     async def _process_message_chunk(
         self,
@@ -1299,10 +1064,6 @@ class WorkflowStreamHandler:
                 f"response_metadata={message_chunk.response_metadata}"
             )
 
-            # Mark subagent as completed when it finishes (for ESC soft interrupt status)
-            if finish_reason == "stop":
-                self._update_subagent_tracking(agent_name, self._current_namespace, is_done=True)
-
             # If finishing while reasoning is active, emit completion signal
             if agent_name in self.reasoning_active:
                 yield self._format_reasoning_signal(agent_name, message_id, "complete")
@@ -1407,6 +1168,18 @@ class WorkflowStreamHandler:
                     f"[TOOL_ARTIFACT] agent={agent_name} tool_call_id={message_chunk.tool_call_id} "
                     f"artifact_keys={list(message_chunk.artifact.keys()) if isinstance(message_chunk.artifact, dict) else 'non-dict'}"
                 )
+
+            # Emit task artifact as a dedicated artifact SSE event
+            task_artifact = message_chunk.additional_kwargs.get("task_artifact")
+            if task_artifact:
+                yield self._format_sse_event("artifact", {
+                    "artifact_type": "task",
+                    "artifact_id": f"task:{task_artifact['task_id']}",
+                    "agent": "main",
+                    "thread_id": self.thread_id,
+                    "status": "completed",
+                    "payload": task_artifact,
+                })
 
             yield self._format_sse_event("tool_call_result", event_stream_message)
 
@@ -1515,7 +1288,10 @@ class WorkflowStreamHandler:
                 logger.debug(f"[WorkflowStreamHandler] Failed to accumulate stream event: {e}")
 
         # Increment sequence number for this event
-        self.event_sequence += 1
+        if self.event_counter is not None:
+            self.event_sequence = self.event_counter.next()
+        else:
+            self.event_sequence += 1
 
         json_data = json.dumps(data, ensure_ascii=False)
 

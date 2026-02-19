@@ -45,6 +45,12 @@ logger = logging.getLogger(__name__)
 # Single router for all thread operations
 router = APIRouter(prefix="/api/v1/threads", tags=["Threads"])
 
+SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "X-Accel-Buffering": "no",
+    "Connection": "keep-alive",
+}
+
 
 # =============================================================================
 # THREAD CRUD
@@ -255,11 +261,7 @@ async def _handle_send_message(request: ChatRequest, auth: ChatRateLimited, thre
                 byok_active=byok_active,
             ),
             media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "X-Accel-Buffering": "no",
-                "Connection": "keep-alive",
-            },
+            headers=SSE_HEADERS,
         )
 
     return StreamingResponse(
@@ -272,11 +274,7 @@ async def _handle_send_message(request: ChatRequest, auth: ChatRateLimited, thre
             byok_active=byok_active,
         ),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
+        headers=SSE_HEADERS,
     )
 
 
@@ -305,11 +303,7 @@ async def reconnect_to_stream(
     return StreamingResponse(
         stream_reconnection(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
+        headers=SSE_HEADERS,
     )
 
 
@@ -423,6 +417,7 @@ async def interrupt_thread(thread_id: str):
     return await soft_interrupt_workflow(thread_id)
 
 
+
 @router.post("/{thread_id}/summarize", status_code=200)
 async def summarize_thread(
     thread_id: str,
@@ -433,23 +428,23 @@ async def summarize_thread(
     return await trigger_summarization(thread_id, keep_messages)
 
 
-@router.get("/{thread_id}/subagents")
-async def get_thread_subagents(thread_id: str):
-    """Stream subagent status updates for a thread."""
-    from src.server.handlers.chat_handler import stream_subagent_status
+@router.get("/{thread_id}/tasks/{task_id}")
+async def stream_subagent_task(
+    thread_id: str,
+    task_id: str,
+    last_event_id: Optional[int] = Query(None, description="Last received event ID for reconnect"),
+):
+    """Stream a single subagent's content events (message_chunk, tool_calls, etc.)."""
+    from src.server.handlers.chat_handler import stream_subagent_task_events
 
     return StreamingResponse(
-        stream_subagent_status(thread_id),
+        stream_subagent_task_events(thread_id, task_id, last_event_id),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
+        headers=SSE_HEADERS,
     )
 
 
-@router.post("/{thread_id}/subagents/{task_id}/messages")
+@router.post("/{thread_id}/tasks/{task_id}/messages")
 async def send_subagent_message(
     thread_id: str,
     task_id: str,
