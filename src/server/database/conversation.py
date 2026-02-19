@@ -1375,7 +1375,7 @@ async def create_usage_record(
             "user_id": usage_data["user_id"],
             "conversation_thread_id": usage_data["conversation_thread_id"],
             "workspace_id": usage_data["workspace_id"],
-            "msg_type": usage_data.get("msg_type", "chat"),
+            "msg_type": usage_data.get("msg_type", "ptc"),
             "status": usage_data.get("status", "completed"),
             "token_usage": Json(usage_data.get("token_usage")),
             "infrastructure_usage": Json(usage_data.get("infrastructure_usage")),
@@ -1394,6 +1394,61 @@ async def create_usage_record(
                 await _create(cur)
 
     return True
+
+
+async def update_usage_record(
+    conversation_response_id: str,
+    token_usage: Dict[str, Any],
+    conn: Optional[AsyncConnection] = None,
+) -> bool:
+    """
+    Update the token_usage JSONB on an existing conversation_usages record.
+
+    Used by the subagent result collector to merge subagent token costs
+    into the parent turn's usage record after subagents complete.
+
+    Args:
+        conversation_response_id: The response ID whose usage to update
+        token_usage: Updated token_usage dict (replaces existing value)
+        conn: Optional connection (for transactions)
+
+    Returns:
+        True if a row was updated, False if not found
+    """
+    async def _update(cur):
+        await cur.execute(
+            """
+            UPDATE conversation_usages
+            SET token_usage = %s
+            WHERE conversation_response_id = %s
+            """,
+            (Json(token_usage), conversation_response_id),
+        )
+        return cur.rowcount > 0
+
+    try:
+        if conn:
+            async with conn.cursor() as cur:
+                updated = await _update(cur)
+        else:
+            async with get_db_connection() as conn_new:
+                async with conn_new.cursor() as cur:
+                    updated = await _update(cur)
+
+        if updated:
+            logger.info(
+                f"[conversation_db] update_usage_record response_id={conversation_response_id}"
+            )
+        else:
+            logger.warning(
+                f"[conversation_db] update_usage_record: no row found for "
+                f"response_id={conversation_response_id}"
+            )
+        return updated
+
+    except Exception as e:
+        logger.error(f"Error updating usage record: {e}")
+        raise
 
 
 async def get_user_total_credits(

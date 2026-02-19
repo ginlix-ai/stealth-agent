@@ -190,11 +190,6 @@ class ChatRequest(BaseModel):
         default=None,
         description="Workspace identifier - required for 'full' mode, optional for 'flash' mode",
     )
-    thread_id: Optional[str] = Field(
-        default=None,
-        description="Thread identifier. Omit or null when creating a new thread via POST /threads/messages; "
-        "required when sending to an existing thread via POST /threads/{thread_id}/messages.",
-    )
 
     # Messages
     messages: List[ChatMessage] = Field(
@@ -206,10 +201,6 @@ class ChatRequest(BaseModel):
     subagents_enabled: Optional[List[str]] = Field(
         default=None,
         description="List of subagent names to enable (default: from config)",
-    )
-    background_auto_wait: Optional[bool] = Field(
-        default=None,
-        description="Whether to wait for background tasks (default: from config)",
     )
     plan_mode: bool = Field(
         default=False,
@@ -248,35 +239,6 @@ class ChatRequest(BaseModel):
     )
 
 
-class SessionInfo(BaseModel):
-    """Information about a chat session."""
-
-    workspace_id: str
-    sandbox_id: Optional[str] = None
-    initialized: bool = False
-    last_active: Optional[str] = None
-    mcp_servers_connected: int = 0
-
-
-class StreamEvent(BaseModel):
-    """Base model for SSE stream events."""
-
-    event: str = Field(description="Event type (message_chunk, tool_calls, etc.)")
-    data: dict = Field(description="Event payload")
-
-
-class StatusResponse(BaseModel):
-    """Response model for workflow status."""
-
-    thread_id: str
-    status: str = Field(description="Status: running, completed, failed, cancelled")
-    workspace_id: Optional[str] = None
-    sandbox_id: Optional[str] = None
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    error: Optional[str] = None
-
-
 # =============================================================================
 # Utility Request Models
 # =============================================================================
@@ -308,30 +270,3 @@ class SubagentMessageRequest(BaseModel):
     content: str = Field(..., description="The instruction/message to send to the subagent")
 
 
-class WorkflowResumeRequest(BaseModel):
-    """
-    Request to resume workflow execution from a checkpoint.
-
-    Note: This is deprecated. Use ChatRequest with interrupt_feedback instead.
-    """
-
-    checkpoint_id: Optional[str] = Field(
-        None,
-        description="Specific checkpoint ID to resume from (None = resume from latest)",
-    )
-
-    new_input: Optional[dict] = Field(
-        None, description="Optional new state/messages to add before resuming execution"
-    )
-
-    retry_failed: bool = Field(
-        False, description="Automatically retry from last checkpoint before failure"
-    )
-
-    max_retries: int = Field(
-        3, ge=1, le=5, description="Maximum retry attempts for failed workflows (1-5)"
-    )
-
-    track_tokens: bool = Field(
-        True, description="Track token usage and save execution logs"
-    )

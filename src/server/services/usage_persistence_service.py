@@ -269,14 +269,7 @@ class UsagePersistenceService:
             if self._tool_usage:
                 infrastructure_usage = format_infrastructure_usage(self._tool_usage)
 
-            # Determine final msg_type based on deep_thinking logic
-            # If base msg_type is 'chat' or None, and deepthinking=True, use 'deep_thinking'
-            # Otherwise use base msg_type (default to 'chat' if None)
-            base_msg_type = msg_type or 'chat'
-            if (base_msg_type == 'chat' or base_msg_type is None) and deepthinking:
-                final_msg_type = 'deep_thinking'
-            else:
-                final_msg_type = base_msg_type
+            final_msg_type = msg_type or 'ptc'
 
             # Build usage record (write-once data, no updates)
             usage_data = {

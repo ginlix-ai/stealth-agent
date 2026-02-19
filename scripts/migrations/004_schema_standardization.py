@@ -416,16 +416,8 @@ async def step5_convert_varchar_pks_to_uuid(cur):
                             except Exception as e:
                                 print(f"      Could not re-add FK {fk_name}: {e}")
 
-                        # Re-add UNIQUE on response_id in usages
-                        uq_name = f"uq_{usages_table}_{fk_col}"
-                        if not await constraint_exists(cur, uq_name):
-                            try:
-                                await cur.execute(
-                                    f"ALTER TABLE {usages_table} ADD CONSTRAINT {uq_name} UNIQUE ({fk_col})"
-                                )
-                                print(f"      Re-added UNIQUE {uq_name}")
-                            except Exception as e:
-                                print(f"      Could not re-add UNIQUE {uq_name}: {e}")
+                        # Note: no UNIQUE on response_id in usages — multiple
+                        # usage rows per response are allowed (main agent + subagents).
         else:
             print(f"   {responses_table}.{response_pk} is already UUID (or missing), skipping")
 
@@ -544,15 +536,8 @@ async def step7_rename_fk_columns(cur):
                 except Exception as e:
                     print(f"      Could not add FK {fk_name}: {e}")
 
-            # Re-add UNIQUE constraint where needed (response_id in usages was UNIQUE)
-            if old_col == 'response_id':
-                uq_name = f"uq_{table}_{new_col}"
-                if not await constraint_exists(cur, uq_name):
-                    try:
-                        await cur.execute(f"ALTER TABLE {table} ADD CONSTRAINT {uq_name} UNIQUE ({new_col})")
-                        print(f"      Added UNIQUE {uq_name}")
-                    except Exception as e:
-                        print(f"      Could not add UNIQUE {uq_name}: {e}")
+            # Note: no UNIQUE on conversation_response_id in usages — multiple
+            # usage rows per response are allowed (main agent + subagents).
 
         elif await column_exists(cur, table, new_col):
             # Ensure FK exists even if column already renamed
@@ -701,7 +686,7 @@ async def step11_add_check_constraints(cur):
         ),
         (
             'conversation_threads', 'chk_threads_msg_type',
-            "msg_type IN ('flash','ptc','chat','deep_thinking','interrupted')"
+            "msg_type IN ('flash','ptc','interrupted','task')"
         ),
         (
             'conversation_responses', 'chk_responses_status',
@@ -713,7 +698,7 @@ async def step11_add_check_constraints(cur):
         ),
         (
             'conversation_usages', 'chk_usages_msg_type',
-            "msg_type IN ('flash','ptc','chat','deep_thinking','interrupted')"
+            "msg_type IN ('flash','ptc','interrupted','task')"
         ),
         (
             'conversation_queries', 'chk_queries_type',

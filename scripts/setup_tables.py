@@ -510,7 +510,7 @@ async def setup_tables_async():
                                 REFERENCES workspaces(workspace_id) ON DELETE CASCADE,
                             msg_type VARCHAR(50)
                                 CHECK (msg_type IN (
-                                    'flash','ptc','chat','deep_thinking','interrupted'
+                                    'flash','ptc','interrupted','task'
                                 )),
                             current_status VARCHAR(50) NOT NULL
                                 CHECK (current_status IN (
@@ -618,7 +618,7 @@ async def setup_tables_async():
                     await cur.execute("""
                         CREATE TABLE IF NOT EXISTS conversation_usages (
                             conversation_usage_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            conversation_response_id UUID UNIQUE NOT NULL
+                            conversation_response_id UUID NOT NULL
                                 REFERENCES conversation_responses(conversation_response_id)
                                 ON DELETE CASCADE,
                             user_id VARCHAR(255) NOT NULL,
@@ -628,9 +628,9 @@ async def setup_tables_async():
                             workspace_id UUID NOT NULL
                                 REFERENCES workspaces(workspace_id)
                                 ON DELETE CASCADE,
-                            msg_type VARCHAR(50) NOT NULL DEFAULT 'chat'
+                            msg_type VARCHAR(50) NOT NULL DEFAULT 'ptc'
                                 CHECK (msg_type IN (
-                                    'flash','ptc','chat','deep_thinking','interrupted'
+                                    'flash','ptc','interrupted','task'
                                 )),
                             status VARCHAR(50) NOT NULL
                                 CHECK (status IN (
