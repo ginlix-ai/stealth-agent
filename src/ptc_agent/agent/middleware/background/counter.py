@@ -125,8 +125,23 @@ class ToolCallCounterMiddleware(AgentMiddleware):
                     agent_id = self._get_agent_id(tool_call_id)
                     msg_id = getattr(ai_msg, "id", f"msg-{tool_call_id}")
 
-                    # Emit reasoning chunk if present
+                    # Emit reasoning with start/complete signals so frontend
+                    # can initialize currentReasoningIdRef properly
                     if formatted.get("reasoning"):
+                        await self.registry.append_captured_event(
+                            tool_call_id,
+                            {
+                                "event": "message_chunk",
+                                "data": {
+                                    "agent": agent_id,
+                                    "id": msg_id,
+                                    "role": "assistant",
+                                    "content": "start",
+                                    "content_type": "reasoning_signal",
+                                },
+                                "ts": time.time(),
+                            },
+                        )
                         await self.registry.append_captured_event(
                             tool_call_id,
                             {
@@ -138,6 +153,20 @@ class ToolCallCounterMiddleware(AgentMiddleware):
                                     "content": formatted["reasoning"],
                                     "content_type": "reasoning",
                                     "finish_reason": None,
+                                },
+                                "ts": time.time(),
+                            },
+                        )
+                        await self.registry.append_captured_event(
+                            tool_call_id,
+                            {
+                                "event": "message_chunk",
+                                "data": {
+                                    "agent": agent_id,
+                                    "id": msg_id,
+                                    "role": "assistant",
+                                    "content": "complete",
+                                    "content_type": "reasoning_signal",
                                 },
                                 "ts": time.time(),
                             },

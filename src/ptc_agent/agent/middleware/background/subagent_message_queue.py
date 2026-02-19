@@ -16,7 +16,6 @@ import time
 from typing import Any
 
 from langchain_core.messages import HumanMessage
-from langgraph.config import get_stream_writer
 from langgraph.runtime import Runtime
 
 from langchain.agents.middleware.types import AgentMiddleware, AgentState
@@ -102,18 +101,7 @@ class SubagentMessageQueueMiddleware(AgentMiddleware):
 
             # Emit SSE custom event so frontend can render the follow-up
             # in the subagent view as a user message
-            event_data = {
-                "type": "subagent_followup_injected",
-                "tool_call_id": tool_call_id,
-                "content": content,
-                "count": len(queued),
-                "timestamp": time.time(),
-            }
-            try:
-                writer = get_stream_writer()
-                writer(event_data)
-            except Exception:
-                pass
+            ts = time.time()
 
             # Capture for history replay so it appears when loading
             # subagent conversation from stored events
@@ -124,15 +112,13 @@ class SubagentMessageQueueMiddleware(AgentMiddleware):
                     await self.registry.append_captured_event(
                         tool_call_id,
                         {
-                            "event": "subagent_followup_injected",
+                            "event": "message_queued",
                             "data": {
                                 "agent": agent_id,
-                                "tool_call_id": tool_call_id,
                                 "content": content,
                                 "count": len(queued),
-                                "timestamp": event_data["timestamp"],
                             },
-                            "ts": event_data["timestamp"],
+                            "ts": ts,
                         },
                     )
                 except Exception:

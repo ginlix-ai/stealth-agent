@@ -20,6 +20,7 @@ from langgraph.config import get_config
 from langgraph.types import Command
 
 from ptc_agent.agent.middleware.background.middleware import (
+    current_background_token_tracker,
     current_background_tool_call_id,
 )
 from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
@@ -601,6 +602,11 @@ def _create_task_tool(
                     "description": description[:200],
                 },
             }
+            # Override callbacks with subagent-specific token tracker if available
+            bg_tracker = current_background_token_tracker.get(None)
+            if bg_tracker:
+                config["callbacks"] = [bg_tracker]
+
             logger.info(
                 "Resuming subagent from checkpoint",
                 checkpoint_ns=resume_task_id,
@@ -636,6 +642,14 @@ def _create_task_tool(
                 }
             else:
                 config = {}
+
+            # Override callbacks with subagent-specific token tracker if available
+            bg_tracker = current_background_token_tracker.get(None)
+            if bg_tracker:
+                if not config:
+                    config = {}
+                config["callbacks"] = [bg_tracker]
+
             result = await subagent.ainvoke(subagent_state, config)
 
         if not runtime.tool_call_id:

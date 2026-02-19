@@ -82,6 +82,22 @@ class BackgroundTask:
     cancelled: bool = False
     """Whether the task was explicitly cancelled (distinct from completed with error)."""
 
+    spawned_turn_index: int = 0
+    """The turn_index of the parent turn that spawned this subagent."""
+
+    per_call_records: list[dict[str, Any]] = field(default_factory=list)
+    """Token usage records collected when subagent completes."""
+
+    collector_response_id: str | None = None
+    """Response ID of the collector that claimed this task for persistence.
+    Set atomically during the _mark_completed filter to prevent two collectors
+    from persisting the same subagent events to different response_ids."""
+
+    sse_drain_complete: asyncio.Event = field(default_factory=asyncio.Event)
+    """Set by stream_subagent_task_events after its final drain.
+    The collector awaits this before clearing captured_events so that
+    live SSE consumers are guaranteed to have emitted all events."""
+
     @property
     def display_id(self) -> str:
         """Return Task-<id> format for display."""
@@ -118,6 +134,7 @@ class BackgroundTaskRegistry:
         ] = {}  # LangGraph namespace UUID -> tool_call_id
         self._lock = asyncio.Lock()
         self._results: dict[str, Any] = {}
+        self.current_turn_index: int = 0
 
     async def register(
         self,
@@ -149,6 +166,7 @@ class BackgroundTaskRegistry:
                 subagent_type=subagent_type,
                 asyncio_task=asyncio_task,
                 agent_id=agent_id,
+                spawned_turn_index=self.current_turn_index,
             )
             self._tasks[tool_call_id] = task
             self._task_id_to_tool_call_id[task_id] = tool_call_id
@@ -196,6 +214,10 @@ class BackgroundTaskRegistry:
             if tool_call_id:
                 return self._tasks.get(tool_call_id)
             return None
+
+    async def get_task_by_task_id(self, task_id: str) -> BackgroundTask | None:
+        """Alias for get_by_task_id, used by the HTTP layer."""
+        return await self.get_by_task_id(task_id)
 
     def get_by_tool_call_id(self, tool_call_id: str) -> BackgroundTask | None:
         """Get a task by its tool_call_id (synchronous).
@@ -549,90 +571,6 @@ class BackgroundTaskRegistry:
             self._results.update(results)
 
         return results
-
-    async def get_result(self, tool_call_id: str) -> Any | None:
-        """Get the result for a specific task.
-
-        Args:
-            tool_call_id: The task's tool_call_id
-
-        Returns:
-            The task result or None if not found/completed
-        """
-        async with self._lock:
-            task = self._tasks.get(tool_call_id)
-            if task is None:
-                return self._results.get(tool_call_id)
-
-            if task.completed:
-                return task.result
-
-            if task.asyncio_task is not None and task.asyncio_task.done():
-                task.completed = True
-                try:
-                    task.result = task.asyncio_task.result()
-                    return task.result
-                except Exception as e:
-                    task.error = str(e)
-                    return {"success": False, "error": str(e)}
-
-            return None
-
-    async def is_task_done(self, tool_call_id: str) -> bool:
-        """Check if a specific task is done.
-
-        Args:
-            tool_call_id: The task's tool_call_id
-
-        Returns:
-            True if the task is done, False otherwise
-        """
-        async with self._lock:
-            task = self._tasks.get(tool_call_id)
-            if task is None:
-                return tool_call_id in self._results
-            if task.completed:
-                return True
-            if task.asyncio_task is not None:
-                return task.asyncio_task.done()
-            return False
-
-    async def cancel_task(self, tool_call_id: str, *, force: bool = False) -> bool:
-        """Cancel a specific background task.
-
-        Args:
-            tool_call_id: The task's tool_call_id
-            force: Cancel the underlying handler task as well
-
-        Returns:
-            True if the task was cancelled, False otherwise
-        """
-        async with self._lock:
-            task = self._tasks.get(tool_call_id)
-            if task is None:
-                return False
-
-            if task.asyncio_task is None:
-                return False
-
-            if not task.completed and not task.asyncio_task.done():
-                if force and task.handler_task and not task.handler_task.done():
-                    task.handler_task.cancel()
-                task.asyncio_task.cancel()
-                task.completed = True
-                task.cancelled = True
-                task.error = "Cancelled"
-                task.result = {
-                    "success": False,
-                    "error": "Cancelled",
-                    "status": "cancelled",
-                }
-                logger.info(
-                    "Cancelled background task", tool_call_id=tool_call_id, force=force
-                )
-                return True
-
-            return False
 
     async def cancel_all(self, *, force: bool = False) -> int:
         """Cancel all pending background tasks.
