@@ -375,7 +375,7 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
                         content=f"Follow-up sent to **{task.display_id}**. The subagent will receive your instructions before its next reasoning step.",
                         tool_call_id=tool_call_id,
                         name="Task",
-                        additional_kwargs={"task_artifact": {"task_id": task.task_id, "action": "message_queued"}},
+                        additional_kwargs={"task_artifact": {"task_id": task.task_id, "action": "message_queued", "description": description}},
                     )
                 else:
                     return ToolMessage(
@@ -445,11 +445,6 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
                 tool_call_id=tool_call_id,
                 name="Task",
                 additional_kwargs={"task_artifact": {"task_id": task.task_id, "action": "resumed", "description": description, "type": task.subagent_type}},
-                artifact={
-                    "task_id": task.task_id,
-                    "description": task.description,
-                    "type": task.subagent_type,
-                },
             )
 
         # --- NEW TASK: No task_id → existing logic ---
@@ -506,11 +501,6 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
             tool_call_id=tool_call_id,
             name="Task",
             additional_kwargs={"task_artifact": {"task_id": task.task_id, "action": "spawned", "description": description, "type": subagent_type}},
-            artifact={
-                "task_id": task.task_id,
-                "description": description,
-                "type": subagent_type,
-            },
         )
 
     def clear_registry(self) -> None:
