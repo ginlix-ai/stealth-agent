@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Loader2, ArrowRight, RotateCw } from 'lucide-react';
+import { Check, Loader2, ArrowRight, RotateCw, RefreshCw } from 'lucide-react';
 import iconRobo from '../../../assets/img/icon-robo.png';
 import iconRoboSing from '../../../assets/img/icon-robo-sing.png';
 import './AgentSidebar.css';
@@ -32,7 +32,7 @@ function SubagentTaskMessageContent({
   description,
   type = 'general-purpose',
   status = 'unknown',
-  resumed = false,
+  resumed = false, // false | true | 'updated'
   resumeTargetId,
   onOpen,
   onDetailOpen,
@@ -74,7 +74,7 @@ function SubagentTaskMessageContent({
       onClick={handleCardClick}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
-      title={resumed ? 'Click to view resumed subagent' : isRunning ? 'Click to view running subagent' : 'Click to view subagent details'}
+      title={resumed === 'updated' ? 'Click to view updated subagent' : resumed ? 'Click to view resumed subagent' : isRunning ? 'Click to view running subagent' : 'Click to view subagent details'}
     >
       {/* Top row: icon + summary text */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -113,10 +113,11 @@ function SubagentTaskMessageContent({
           {type}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: resumed ? '#E8A838' : isRunning ? '#6155F5' : isCompleted ? '#6155F5' : 'rgba(255,255,255,0.4)' }}>
-          {resumed && <RotateCw style={{ width: 12, height: 12 }} />}
+          {resumed === 'updated' && <RefreshCw style={{ width: 12, height: 12 }} />}
+          {resumed && resumed !== 'updated' && <RotateCw style={{ width: 12, height: 12 }} />}
           {!resumed && isRunning && <Loader2 style={{ width: 12, height: 12, animation: 'spin 1s linear infinite' }} />}
           {!resumed && isCompleted && <Check style={{ width: 12, height: 12 }} />}
-          {resumed ? 'Resumed' : isRunning ? 'Running' : isCompleted ? 'Completed' : status}
+          {resumed === 'updated' ? 'Updated' : resumed ? 'Resumed' : isRunning ? 'Running' : isCompleted ? 'Completed' : status}
         </span>
       </div>
     </div>

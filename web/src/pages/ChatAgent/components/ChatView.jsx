@@ -557,15 +557,17 @@ function ChatView({ workspaceId, threadId, onBack }) {
     if (!updateSubagentCard || !agentId) return;
 
     const history = getSubagentHistory ? getSubagentHistory(agentId) : null;
-    // Preserve existing card description/type when neither history nor overrides supply them.
-    // During live streaming, the card already has description from the artifact{task,spawned}
-    // event — calling refreshSubagentCard without overrides (e.g., sidebar click) must not
-    // overwrite it with an empty string.
+    // Preserve existing card description/type. Priority:
+    // 1. History description (most authoritative — from replay)
+    // 2. Existing card description (set during spawn — must not be overwritten
+    //    by follow-up/resume inline cards whose description is the instruction)
+    // 3. Override description (from inline card click — only used when card has
+    //    no description yet, e.g., first open of a newly spawned task)
     const cardId = `subagent-${agentId}`;
     const existingDescription = cards[cardId]?.subagentData?.description;
     const existingType = cards[cardId]?.subagentData?.type;
-    const finalDescription = history?.description || overrides.description || existingDescription || '';
-    const finalType = history?.type || overrides.type || existingType || 'general-purpose';
+    const finalDescription = history?.description || existingDescription || overrides.description || '';
+    const finalType = history?.type || existingType || overrides.type || 'general-purpose';
     const finalStatus = history?.status || overrides.status || 'completed';
 
     const updateData = {

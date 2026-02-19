@@ -485,15 +485,12 @@ export function handleHistoryToolCallResult({ assistantMessageId, toolCallId, re
       // If this toolCallId is associated with a subagent task, mark it as completed
       // and propagate description from artifact if the inline card's description is empty
       if (subagentTasks[toolCallId]) {
-        const artifactDescription = result.artifact?.description;
-        const existingDescription = subagentTasks[toolCallId].description;
         // Don't set status: 'completed' here — the Task tool returns immediately
         // after spawning, so its tool_call_result doesn't mean the subagent finished.
         // Final status is set by markAllSubagentTasksCompleted() when workflow ends.
         subagentTasks[toolCallId] = {
           ...subagentTasks[toolCallId],
           result: result.content,
-          ...(artifactDescription && !existingDescription ? { description: artifactDescription } : {}),
         };
       }
 

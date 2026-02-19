@@ -695,7 +695,7 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
                 description={task.description}
                 type={task.type}
                 status={task.status}
-                resumed={!!task.resumed}
+                resumed={task.resumed}
                 resumeTargetId={task.resumeTargetId}
                 onOpen={onOpenSubagentTask}
                 onDetailOpen={onToolCallDetailClick}
@@ -823,7 +823,7 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
                 description={task.description}
                 type={task.type}
                 status={task.status}
-                resumed={!!task.resumed}
+                resumed={task.resumed}
                 resumeTargetId={task.resumeTargetId}
                 onOpen={onOpenSubagentTask}
               />

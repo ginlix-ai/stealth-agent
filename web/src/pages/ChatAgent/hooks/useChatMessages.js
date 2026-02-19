@@ -225,6 +225,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       // Track subagent events by task ID for this history load
       // Map<taskId, { messages: Array, events: Array, description?: string, type?: string }>
       const subagentHistoryByTaskId = new Map();
+      // Track which agentIds had message_queued actions (for inline card "Updated" label)
+      const messageQueuedAgentIds = new Set();
       try {
         await replayThreadHistory(threadIdToUse, (event) => {
         const eventType = event.event;
@@ -562,6 +564,10 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                     turnIndex: event.turn_index,
                   });
                 }
+              }
+              // Track message_queued actions for inline card "Updated" label
+              if (action === 'message_queued') {
+                messageQueuedAgentIds.add(agentId);
               }
               // Map tool_call_id from the event context
               if (event.tool_call_id) {
@@ -1016,6 +1022,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                     refs: tempRefs,
                     updateSubagentCard: historyUpdateSubagentCard,
                   });
+                  // Sync local run index — handleTaskMessageQueued bumps runIndex
+                  currentRunIndex = tempSubagentStateRefs[taskId].runIndex;
                 }
               } else if (eventType === 'message_queued') {
                 if (event.content) {
@@ -1025,6 +1033,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                     refs: tempRefs,
                     updateSubagentCard: historyUpdateSubagentCard,
                   });
+                  // Sync local run index — handleTaskMessageQueued bumps runIndex
+                  currentRunIndex = tempSubagentStateRefs[taskId].runIndex;
                 }
               } else {
                 console.warn('[History] Unhandled subagent event type:', eventType);
@@ -1106,6 +1116,22 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       // NOTE: markAllSubagentTasksCompleted() is NOT called here because
       // loadAndMaybeReconnect will call it after determining whether the
       // workflow is still active (reconnect case) or truly completed.
+
+      // Post-process: update inline cards for message_queued actions to show "Updated"
+      if (messageQueuedAgentIds.size > 0) {
+        setMessages(prev => prev.map(msg => {
+          if (!msg.subagentTasks) return msg;
+          let changed = false;
+          const newTasks = { ...msg.subagentTasks };
+          for (const [tcId, task] of Object.entries(newTasks)) {
+            if (task.resumeTargetId && messageQueuedAgentIds.has(task.resumeTargetId) && task.resumed && task.resumed !== 'updated') {
+              newTasks[tcId] = { ...task, resumed: 'updated' };
+              changed = true;
+            }
+          }
+          return changed ? { ...msg, subagentTasks: newTasks } : msg;
+        }));
+      }
 
       setIsLoadingHistory(false);
       historyLoadingRef.current = false;
@@ -1536,8 +1562,9 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         });
       }
 
-      // Handle message_queued events (user sent a message while agent is streaming)
-      if (eventType === 'message_queued') {
+      // Handle message_queued events for the MAIN agent (user sent a message while agent streams).
+      // Subagent message_queued events are handled below in the isSubagent block.
+      if (eventType === 'message_queued' && !isSubagent) {
         // Record the content order counter so we can roll back leaked content
         // when queued_message_injected arrives (see handler below).
         queuedAtOrder = refs.contentOrderCounterRef.current;
@@ -1899,8 +1926,21 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             openSubagentStream(currentThreadId, task_id, processEvent);
           } else if (action === 'message_queued') {
             if (updateSubagentCard) {
-              updateSubagentCard(agentId, { queuedMessage: payload.content });
+              updateSubagentCard(agentId, { queuedMessage: payload.description });
             }
+            // Update inline card to show "Updated" instead of "Resumed"
+            setMessages(prev => prev.map(msg => {
+              if (!msg.subagentTasks) return msg;
+              let changed = false;
+              const newTasks = { ...msg.subagentTasks };
+              for (const [tcId, task] of Object.entries(newTasks)) {
+                if (task.resumeTargetId === agentId && task.resumed && task.resumed !== 'updated') {
+                  newTasks[tcId] = { ...task, resumed: 'updated' };
+                  changed = true;
+                }
+              }
+              return changed ? { ...msg, subagentTasks: newTasks } : msg;
+            }));
           }
         }
         return;

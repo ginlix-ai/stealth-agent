@@ -416,12 +416,9 @@ export function handleToolCallResult({ assistantMessageId, toolCallId, result, r
       // via the per-task SSE stream closing.
       // Also propagate description from artifact if the inline card's description is empty.
       if (subagentTasks[toolCallId]) {
-        const artifactDescription = result.artifact?.description;
-        const existingDescription = subagentTasks[toolCallId].description;
         subagentTasks[toolCallId] = {
           ...subagentTasks[toolCallId],
           toolCallResult: result.content,
-          ...(artifactDescription && !existingDescription ? { description: artifactDescription } : {}),
         };
       }
 
@@ -1258,8 +1255,9 @@ export function handleSubagentToolCallResult({ taskId, assistantMessageId, toolC
 /**
  * Handles message_queued events on per-task SSE streams.
  * Emitted when a follow-up instruction is queued for the running subagent.
- * Inserts a user message bubble with the instruction content.
- * NOT a turn boundary — the subagent keeps its current assistant message streaming.
+ * Inserts a user message bubble with the instruction content, finalizes
+ * the current assistant message, and bumps runIndex so subsequent events
+ * create a new assistant message below the user bubble.
  *
  * @param {Object} params - Handler parameters
  * @param {string} params.taskId - Task ID (e.g., "task:k7Xm2p")
@@ -1275,6 +1273,15 @@ export function handleTaskMessageQueued({ taskId, content, refs, updateSubagentC
 
   const taskRefs = getOrCreateTaskRefs(refs, taskId);
   const updatedMessages = [...taskRefs.messages];
+
+  // Finalize the current assistant message so content before the queued
+  // instruction stays above the user bubble
+  for (let i = updatedMessages.length - 1; i >= 0; i--) {
+    if (updatedMessages[i].role === 'assistant' && updatedMessages[i].isStreaming) {
+      updatedMessages[i] = { ...updatedMessages[i], isStreaming: false };
+      break;
+    }
+  }
 
   // Confirm an optimistic pending message if it matches, otherwise insert new one
   const pendingIdx = updatedMessages.findIndex(
@@ -1292,6 +1299,12 @@ export function handleTaskMessageQueued({ taskId, content, refs, updateSubagentC
       toolCallProcesses: {},
     });
   }
+
+  // Bump runIndex so the next event creates a new assistant message below the user bubble
+  taskRefs.runIndex = (taskRefs.runIndex || 0) + 1;
+  taskRefs.contentOrderCounterRef.current = 0;
+  taskRefs.currentReasoningIdRef.current = null;
+  taskRefs.currentToolCallIdRef.current = null;
 
   taskRefs.messages = updatedMessages;
   updateSubagentCard(taskId, { messages: updatedMessages });
