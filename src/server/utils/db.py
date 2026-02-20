@@ -44,21 +44,23 @@ class UpdateQueryBuilder:
         value: Any,
         *,
         is_json: bool = False,
+        nullable: bool = False,
     ) -> "UpdateQueryBuilder":
         """
-        Add a field to update if value is not None.
+        Add a field to update if value is not None (or always if nullable).
 
         Args:
             column: Database column name
-            value: Value to set (skipped if None)
+            value: Value to set (skipped if None unless nullable=True)
             is_json: If True, wrap value with Json() for JSONB columns
+            nullable: If True, include even when value is None (SET col = NULL)
 
         Returns:
             Self for method chaining
         """
-        if value is not None:
+        if value is not None or nullable:
             self._updates.append(f"{column} = %s")
-            self._params.append(Json(value) if is_json else value)
+            self._params.append(Json(value) if (is_json and value is not None) else value)
         return self
 
     def has_updates(self) -> bool:

@@ -63,6 +63,8 @@ ALL_TABLES = [
     "conversation_queries",
     "conversation_responses",
     "conversation_usages",
+    "automations",
+    "automation_executions",
 ]
 
 # Tables that have an updated_at column and need the auto-update trigger
@@ -76,6 +78,7 @@ TABLES_WITH_UPDATED_AT_TRIGGER = [
     "watchlist_items",
     "user_portfolios",
     "conversation_threads",
+    "automations",
 ]
 
 
@@ -660,6 +663,89 @@ async def setup_tables_async():
                     print("   conversation_usages OK")
 
                     # ===================================================
+                    # 15. automations
+                    # ===================================================
+                    print("\n-- Creating 'automations' table ...")
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS automations (
+                            automation_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                            user_id             VARCHAR(255) NOT NULL
+                                                    REFERENCES users(user_id) ON DELETE CASCADE,
+                            name                VARCHAR(255) NOT NULL,
+                            description         TEXT,
+                            trigger_type        VARCHAR(20) NOT NULL
+                                                    CHECK (trigger_type IN ('cron', 'once')),
+                            cron_expression     VARCHAR(100),
+                            timezone            VARCHAR(100) NOT NULL DEFAULT 'UTC',
+                            trigger_config      JSONB DEFAULT '{}'::jsonb,
+                            next_run_at         TIMESTAMPTZ,
+                            last_run_at         TIMESTAMPTZ,
+                            agent_mode          VARCHAR(20) NOT NULL DEFAULT 'flash'
+                                                    CHECK (agent_mode IN ('ptc', 'flash')),
+                            instruction         TEXT NOT NULL,
+                            workspace_id        UUID
+                                                    REFERENCES workspaces(workspace_id) ON DELETE SET NULL,
+                            llm_model           VARCHAR(100),
+                            additional_context  JSONB,
+                            thread_strategy     VARCHAR(20) NOT NULL DEFAULT 'new'
+                                                    CHECK (thread_strategy IN ('new', 'continue')),
+                            conversation_thread_id UUID,
+                            status              VARCHAR(20) NOT NULL DEFAULT 'active'
+                                                    CHECK (status IN ('active', 'paused', 'completed', 'disabled')),
+                            max_failures        INT NOT NULL DEFAULT 3,
+                            failure_count       INT NOT NULL DEFAULT 0,
+                            delivery_config     JSONB DEFAULT '{}'::jsonb,
+                            metadata            JSONB DEFAULT '{}'::jsonb,
+                            created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        );
+                    """)
+                    await cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_automations_next_run
+                            ON automations(next_run_at ASC)
+                            WHERE status = 'active' AND next_run_at IS NOT NULL;
+                    """)
+                    await cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_automations_user_id
+                            ON automations(user_id);
+                    """)
+                    print("   automations OK")
+
+                    # ===================================================
+                    # 16. automation_executions
+                    # ===================================================
+                    print("\n-- Creating 'automation_executions' table ...")
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS automation_executions (
+                            automation_execution_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                            automation_id       UUID NOT NULL
+                                                    REFERENCES automations(automation_id) ON DELETE CASCADE,
+                            status              VARCHAR(20) NOT NULL DEFAULT 'pending'
+                                                    CHECK (status IN ('pending', 'running', 'completed', 'failed', 'timeout')),
+                            conversation_thread_id UUID,
+                            scheduled_at        TIMESTAMPTZ NOT NULL,
+                            started_at          TIMESTAMPTZ,
+                            completed_at        TIMESTAMPTZ,
+                            error_message       TEXT,
+                            server_id           VARCHAR(100),
+                            created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        );
+                    """)
+                    await cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_automation_executions_automation_id
+                            ON automation_executions(automation_id);
+                    """)
+                    await cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_automation_executions_status
+                            ON automation_executions(status);
+                    """)
+                    await cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_automation_executions_created_at
+                            ON automation_executions(created_at DESC);
+                    """)
+                    print("   automation_executions OK")
+
+                    # ===================================================
                     # Attach updated_at triggers
                     # ===================================================
                     print("\n-- Attaching updated_at triggers ...")
@@ -706,7 +792,7 @@ async def setup_tables_async():
                         )
                         return False
 
-            print("\n   Setup complete! All 15 tables are ready.")
+            print(f"\n   Setup complete! All {len(ALL_TABLES)} tables are ready.")
             print("\n   Schema Summary:")
             print("    - memberships:            Membership tiers (free/pro/enterprise)")
             print("    - users:                  Central user profiles")
@@ -723,6 +809,8 @@ async def setup_tables_async():
             print("    - conversation_queries:   User messages per thread")
             print("    - conversation_responses:  Agent responses (with sse_events)")
             print("    - conversation_usages:    Token/credit usage tracking")
+            print("    - automations:            Scheduled automation triggers")
+            print("    - automation_executions:  Automation run history")
             return True
 
     except Exception as e:

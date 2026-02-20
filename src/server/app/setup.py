@@ -189,10 +189,28 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Failed to initialize PTC Agent: {e}")
         logger.warning("PTC Agent endpoints may not work correctly")
 
+    # Start AutomationScheduler (polling loop for time-based triggers)
+    try:
+        from src.server.services.automation_scheduler import AutomationScheduler
+        automation_scheduler = AutomationScheduler.get_instance()
+        await automation_scheduler.start()
+        logger.info("AutomationScheduler started")
+    except Exception as e:
+        logger.warning(f"Failed to start AutomationScheduler: {e}")
+        logger.warning("Scheduled automations will not run")
+
     yield  # Server is running
 
     # Shutdown
     logger.info("Application shutdown started...")
+
+    # 0. Shutdown AutomationScheduler
+    try:
+        from src.server.services.automation_scheduler import AutomationScheduler
+        scheduler = AutomationScheduler.get_instance()
+        await scheduler.shutdown()
+    except Exception as e:
+        logger.warning(f"Error shutting down AutomationScheduler: {e}")
 
     # 0. Cancel background subagent tasks
     try:
@@ -343,6 +361,7 @@ from src.server.app.sec_proxy import router as sec_proxy_router
 from src.server.app.usage import router as usage_router
 from src.server.app.memberships import router as memberships_router
 from src.server.app.api_keys import router as api_keys_router
+from src.server.app.automations import router as automations_router
 
 # Include all routers
 app.include_router(threads_router)  # /api/v1/threads/* - Thread CRUD, messages, control
@@ -360,4 +379,5 @@ app.include_router(sec_proxy_router)  # /api/v1/sec-proxy/* - SEC EDGAR document
 app.include_router(usage_router)  # /api/v1/usage/* - Usage limits and code redemption
 app.include_router(memberships_router)  # /api/v1/memberships - Membership definitions (public)
 app.include_router(api_keys_router)  # /api/v1/users/me/api-keys + /api/v1/models - BYOK & model config
+app.include_router(automations_router)  # /api/v1/automations/* - Scheduled automation triggers
 app.include_router(health_router)  # /health - Health check

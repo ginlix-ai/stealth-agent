@@ -58,6 +58,7 @@ dependencies = [
     "ptc-cli",
     "certifi>=2026.1.4",
     "requests>=2.32.5",
+    "croniter>=2.0.0",
 ]
 
 [tool.uv.sources]
