@@ -112,7 +112,7 @@ class PromptLoader:
         """Get a single component template.
 
         Args:
-            component_name: Component name (search_first, image_upload, etc.)
+            component_name: Component name (search_first, visualizations, etc.)
             **kwargs: Variables to pass to the template
 
         Returns:

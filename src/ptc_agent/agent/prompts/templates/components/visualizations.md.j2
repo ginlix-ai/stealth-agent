@@ -1,5 +1,5 @@
-# Image Auto-Upload
-
+# Visualizations
+{% if storage_enabled | default(false) %}
 Images saved to `results/` are automatically uploaded to cloud storage. The URL is returned in the response.
 
 **CRITICAL**: Use RELATIVE paths, NOT absolute paths:
@@ -39,4 +39,19 @@ print("Chart saved")
 ```
 
 The response includes: `![chart](https://storage-url/chart.png)` - reference this URL in your report.
+{% endif %}
+{% else %}
+Save visualizations to `results/` and reference them with markdown image syntax.
+The frontend renders sandbox images inline automatically.
+
+**CRITICAL**: Use RELATIVE paths, NOT absolute paths:
+- CORRECT: `plt.savefig('results/chart.png')`
+- WRONG: `plt.savefig('/results/chart.png')`
+
+Example:
+```python
+plt.savefig('results/chart.png', dpi=150, bbox_inches='tight')
+```
+
+Reference in your response: `![Chart Title](results/chart.png)`
 {% endif %}

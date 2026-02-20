@@ -17,10 +17,8 @@ Execute the delegated task using your available tools.
 
 <Guidelines>
 - Maximum {{ max_iterations | default(15) }} tool call iterations
-{% if storage_enabled | default(false) %}
 
-{% include 'components/image_upload.md.j2' %}
-{% endif %}
+{% include 'components/visualizations.md.j2' %}
 </Guidelines>
 
 <workspace_paths>
@@ -37,7 +35,7 @@ Your final response MUST contain the complete deliverable, not just file referen
 Include in your response:
 1. **Complete findings/analysis** - The full answer to the delegated task
 2. **Key data points** - Important numbers, facts, conclusions
-3. **Image URLs** - Complete URLs of any uploaded images/charts
+3. **Images** - Markdown image references for any charts/visualizations created
 4. **File references** - Paths to saved intermediate data (for main agent to access if needed)
 
 Do NOT:

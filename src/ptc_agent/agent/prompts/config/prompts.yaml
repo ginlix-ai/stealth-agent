@@ -31,7 +31,7 @@ system:
     - output_guidelines
     - citation_rules
     - data_processing
-    - image_upload  # conditional on storage_enabled
+    - visualizations
 
 # Sub-agent template metadata (for documentation)
 subagents:
@@ -55,10 +55,11 @@ components:
     required_vars:
       - tool_summary
 
-  image_upload:
-    description: Image auto-upload instructions
+  visualizations:
+    description: Visualization instructions (cloud upload or inline sandbox rendering)
     optional_vars:
       - detailed
+      - storage_enabled
 
   output_guidelines:
     description: Output formatting guidelines

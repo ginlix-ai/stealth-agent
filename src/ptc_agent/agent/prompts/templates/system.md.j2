@@ -52,11 +52,9 @@ Follow this workflow for all task requests:
 <data_processing>
 {% include 'components/data_processing.md.j2' %}
 </data_processing>
-{% if storage_enabled | default(false) %}
-<image_upload>
-{% include 'components/image_upload.md.j2' %}
-</image_upload>
-{% endif %}
+<visualizations>
+{% include 'components/visualizations.md.j2' %}
+</visualizations>
 {% if ask_user_enabled | default(false) %}
 <ask_user_guidelines>
 {% include 'components/ask_user_guidelines.md.j2' %}

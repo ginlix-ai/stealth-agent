@@ -81,9 +81,7 @@ User: "Research topics A, B, C and synthesize findings"
 ## Processing Sub-Agent Results
 
 When a sub-agent returns results:
-1. **View images/charts**: If the sub-agent mentions images, charts, or visualizations, use `Read` to view them
-   - Check for image URLs in the response (e.g., `Read("https://example.com/chart.png")`)
-   - Check for image paths in `data/` or `results/` directories (e.g., `Read("results/chart.png")`)
+1. **Include images/charts**: If the sub-agent mentions images, charts, or visualizations, include the markdown image references in your final response (e.g., `![Chart](results/chart.png)`)
 2. **Read referenced files if needed**: If the sub-agent saved intermediate results, read them from:
    - `data/` - Raw data, large datasets
    - `results/task_*.md` - Textual analysis
