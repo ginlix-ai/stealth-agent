@@ -40,7 +40,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["Workspace Files"])
 
-_SYSTEM_DIR_PREFIXES = ("code/", "tools/", "mcp_servers/", "skills/", ".agent/")
+_SYSTEM_DIR_PREFIXES = (
+    # Agent infrastructure
+    "code/", "tools/", "mcp_servers/", "skills/", ".agent/",
+    # Package managers / dependencies
+    "node_modules/", ".venv/", "venv/", "vendor/",
+    # Build artifacts
+    ".next/", ".nuxt/",
+    # Caches
+    ".cache/", ".pytest_cache/", ".mypy_cache/", ".ruff_cache/",
+    # VCS
+    ".git/",
+)
 
 # Hidden internal directories (used for SDKs/packages uploaded into the sandbox).
 # These should not show up in `/files` output unless the user explicitly lists them.
@@ -223,7 +234,7 @@ async def list_workspace_files(
     path: str = Query(".", description="Directory to list (virtual or absolute)."),
     include_system: bool = Query(
         False,
-        description="Include system directories (code/, tools/, mcp_servers/, skills/).",
+        description="Include system and dependency directories (node_modules/, .venv/, etc.).",
     ),
     pattern: str = Query(
         "**/*", description="Glob pattern (evaluated in the sandbox)."
