@@ -327,3 +327,293 @@
     color: #fca5a5;
     background-color: rgba(220, 38, 38, 0.12);
   }
+
+  /* ====== Active Icon Button (toggled on) ====== */
+  .file-panel-icon-btn-active {
+    color: #a39bff !important;
+    background-color: rgba(97, 85, 245, 0.18) !important;
+  }
+
+  /* ====== Print Settings Toolbar ====== */
+  .print-settings-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background-color: rgba(97, 85, 245, 0.05);
+    flex-shrink: 0;
+  }
+  .print-settings-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .print-settings-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.45);
+    min-width: 32px;
+    flex-shrink: 0;
+  }
+  .print-settings-select {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.85);
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    outline: none;
+    cursor: pointer;
+    transition: all 0.15s;
+    appearance: auto;
+  }
+  .print-settings-select:hover {
+    border-color: rgba(255, 255, 255, 0.25);
+    background-color: rgba(255, 255, 255, 0.09);
+  }
+  .print-settings-select:focus {
+    border-color: rgba(97, 85, 245, 0.5);
+    box-shadow: 0 0 0 1px rgba(97, 85, 245, 0.25);
+  }
+  .print-settings-select option,
+  .print-settings-select optgroup {
+    background-color: #1e2029;
+    color: rgba(255, 255, 255, 0.85);
+  }
+  .print-settings-stepper {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 1px 2px;
+  }
+  .print-settings-stepper-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.5);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .print-settings-stepper-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+  }
+  .print-settings-stepper-btn:disabled {
+    opacity: 0.25;
+    cursor: not-allowed;
+  }
+  .print-settings-stepper-value {
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.8);
+    min-width: 34px;
+    text-align: center;
+    user-select: none;
+  }
+  .print-settings-print-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid rgba(97, 85, 245, 0.4);
+    background: rgba(97, 85, 245, 0.2);
+    color: #a39bff;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .print-settings-print-btn:hover {
+    background: rgba(97, 85, 245, 0.3);
+    border-color: rgba(97, 85, 245, 0.6);
+    color: #c4bfff;
+  }
+
+  /* ====== Print Preview Active (live typography) ====== */
+  .print-preview-active {
+    font-size: var(--print-font-size, 11px) !important;
+    line-height: var(--print-line-height, 1.4) !important;
+    font-family: var(--print-font-family, "Inter", sans-serif) !important;
+  }
+  /* Override rem-based font-sizes in code blocks so they scale with parent */
+  .print-preview-active pre,
+  .print-preview-active pre code,
+  .print-preview-active pre span {
+    font-size: 0.875em !important;
+    line-height: var(--print-line-height, 1.4) !important;
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace !important;
+  }
+  /* Override rem-based table cell font-sizes */
+  .print-preview-active th,
+  .print-preview-active td {
+    font-size: inherit !important;
+    line-height: inherit !important;
+    font-family: inherit !important;
+  }
+  /* Inline code inherits font-size */
+  .print-preview-active :not(pre) > code {
+    font-size: 0.9em !important;
+  }
+  /* Paragraphs and list items inherit everything */
+  .print-preview-active p,
+  .print-preview-active li,
+  .print-preview-active blockquote {
+    font-size: inherit !important;
+    line-height: inherit !important;
+    font-family: inherit !important;
+  }
+
+  /* ====== Print / PDF Export ====== */
+  @media print {
+    @page {
+      size: A4;
+      margin: 15mm;
+    }
+
+    /* Hide everything except the markdown content */
+    body * {
+      visibility: hidden;
+    }
+    .markdown-print-content,
+    .markdown-print-content * {
+      visibility: visible;
+    }
+    .markdown-print-content {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      background: #ffffff !important;
+      color: #1a1a1a !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      /* Typography from CSS custom properties set by print toolbar */
+      font-size: var(--print-font-size, 11px) !important;
+      line-height: var(--print-line-height, 1.4) !important;
+      font-family: var(--print-font-family, "Inter", sans-serif) !important;
+    }
+
+    /* Propagate font settings to all children */
+    .markdown-print-content p,
+    .markdown-print-content li,
+    .markdown-print-content td,
+    .markdown-print-content th,
+    .markdown-print-content blockquote {
+      font-family: inherit !important;
+      font-size: inherit !important;
+      line-height: inherit !important;
+    }
+
+    /* Code blocks keep monospace but scale with parent */
+    .markdown-print-content pre,
+    .markdown-print-content pre code,
+    .markdown-print-content pre span {
+      font-size: 0.875em !important;
+      line-height: var(--print-line-height, 1.4) !important;
+    }
+
+    /* Base text */
+    .markdown-print-content p,
+    .markdown-print-content li,
+    .markdown-print-content span,
+    .markdown-print-content div {
+      color: #1a1a1a !important;
+    }
+
+    /* Headings */
+    .markdown-print-content h1,
+    .markdown-print-content h2,
+    .markdown-print-content h3,
+    .markdown-print-content h4,
+    .markdown-print-content h5,
+    .markdown-print-content h6 {
+      color: #111111 !important;
+    }
+
+    /* Code blocks */
+    .markdown-print-content pre {
+      background-color: #f5f5f5 !important;
+      border: 1px solid #e0e0e0 !important;
+      color: #1a1a1a !important;
+      page-break-inside: avoid;
+    }
+    .markdown-print-content pre code,
+    .markdown-print-content pre span {
+      color: #1a1a1a !important;
+      background: transparent !important;
+    }
+
+    /* Inline code */
+    .markdown-print-content code {
+      background-color: #f3f4f6 !important;
+      color: #1f2937 !important;
+      border: 1px solid #e5e7eb !important;
+    }
+
+    /* Tables */
+    .markdown-print-content table {
+      border-collapse: collapse !important;
+    }
+    .markdown-print-content th,
+    .markdown-print-content td {
+      border: 1px solid #d1d5db !important;
+      color: #1a1a1a !important;
+      padding: 6px 12px !important;
+    }
+    .markdown-print-content th {
+      background-color: #f3f4f6 !important;
+      font-weight: 600 !important;
+    }
+    .markdown-print-content tr:nth-child(even) {
+      background-color: #f9fafb !important;
+    }
+
+    /* Links */
+    .markdown-print-content a {
+      color: #4338ca !important;
+      text-decoration: underline !important;
+    }
+
+    /* Blockquotes */
+    .markdown-print-content blockquote {
+      border-left: 3px solid #4338ca !important;
+      color: #4b5563 !important;
+      background: transparent !important;
+    }
+
+    /* Strong, em, del */
+    .markdown-print-content strong {
+      color: #111111 !important;
+    }
+    .markdown-print-content em {
+      color: #1a1a1a !important;
+    }
+    .markdown-print-content del {
+      color: #6b7280 !important;
+    }
+
+    /* Lists */
+    .markdown-print-content ul,
+    .markdown-print-content ol {
+      color: #1a1a1a !important;
+    }
+
+    /* Horizontal rules */
+    .markdown-print-content hr {
+      border-color: #d1d5db !important;
+    }
+  }

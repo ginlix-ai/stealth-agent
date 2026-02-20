@@ -28,6 +28,7 @@
     "react-pdf": "^10.3.0",
     "react-router-dom": "^6.21.0",
     "react-syntax-highlighter": "^16.1.0",
+    "react-to-print": "^3.2.0",
     "recharts": "^3.7.0",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.0",
