@@ -56,6 +56,16 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
   const [files, setFiles] = useState(() => cache?.current?.[workspaceId]?.files || []);
   const isDraggingRef = useRef(false);
 
+  // Infinite scroll pagination state
+  const [totalThreads, setTotalThreads] = useState(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const scrollContainerRef = useRef(null);
+  // Refs to avoid stale closures in IntersectionObserver callback
+  const isLoadingMoreRef = useRef(false);
+  const hasMoreRef = useRef(false);
+  const threadsLengthRef = useRef(0);
+
   // Shared workspace files for the FilePanel (skip for flash workspaces — no sandbox)
   const {
     files: panelFiles,
@@ -120,6 +130,10 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
     if (cached?.threads) {
       setThreads(cached.threads);
       if (cached.workspaceName) setWorkspaceName(cached.workspaceName);
+      if (cached.total != null) {
+        setTotalThreads(cached.total);
+        setHasMore(cached.threads.length < cached.total);
+      }
       setIsLoading(false);
     }
 
@@ -150,7 +164,10 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
       const [threadsData, workspaceData] = await Promise.all(promises);
 
       const freshThreads = threadsData.threads || [];
+      const total = threadsData.total ?? freshThreads.length;
       setThreads(freshThreads);
+      setTotalThreads(total);
+      setHasMore(freshThreads.length < total);
 
       const freshName = workspaceData?.name || workspaceName || 'Workspace';
       if (needsName && workspaceData?.name) {
@@ -168,6 +185,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
         cache.current[workspaceId] = {
           ...cache.current[workspaceId],
           threads: freshThreads,
+          total,
           workspaceName: freshName,
           fetchedAt: Date.now(),
         };
@@ -179,6 +197,72 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
       setIsLoading(false);
     }
   };
+
+  // Keep refs in sync with state for IntersectionObserver callback
+  useEffect(() => { isLoadingMoreRef.current = isLoadingMore; }, [isLoadingMore]);
+  useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
+  useEffect(() => { threadsLengthRef.current = threads.length; }, [threads.length]);
+
+  /**
+   * Load more threads for infinite scroll.
+   * Uses refs to avoid stale closures — safe to call from IntersectionObserver.
+   */
+  const loadMoreThreads = useCallback(async () => {
+    if (isLoadingMoreRef.current || !hasMoreRef.current) return;
+    isLoadingMoreRef.current = true;
+    setIsLoadingMore(true);
+    try {
+      const offset = threadsLengthRef.current;
+      const moreData = await getWorkspaceThreads(workspaceId, 20, offset);
+      const moreThreads = moreData.threads || [];
+      const updatedTotal = moreData.total ?? 0;
+      setThreads((prev) => {
+        const merged = [...prev, ...moreThreads];
+        // Update cache with merged list
+        if (cache?.current?.[workspaceId]) {
+          cache.current[workspaceId].threads = merged;
+          cache.current[workspaceId].total = updatedTotal;
+        }
+        return merged;
+      });
+      setTotalThreads(updatedTotal);
+      const newHasMore = offset + moreThreads.length < updatedTotal;
+      setHasMore(newHasMore);
+    } catch (err) {
+      console.error('Error loading more threads:', err);
+    } finally {
+      isLoadingMoreRef.current = false;
+      setIsLoadingMore(false);
+    }
+  }, [workspaceId, cache]);
+
+  // Scroll-based infinite loading: trigger when near bottom of scroll container
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      if (isLoadingMoreRef.current || !hasMoreRef.current) return;
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      if (scrollHeight - scrollTop - clientHeight < 300) {
+        loadMoreThreads();
+      }
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [loadMoreThreads]);
+
+  // Auto-fill: if content doesn't overflow the container, keep loading until it does
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el || !hasMore || isLoadingMore) return;
+    // Use rAF to ensure layout is computed after render
+    const raf = requestAnimationFrame(() => {
+      if (el.scrollHeight <= el.clientHeight) {
+        loadMoreThreads();
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [hasMore, isLoadingMore, threads.length, loadMoreThreads]);
 
   /**
    * Handles thread selection
@@ -229,10 +313,11 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
         }
       }
 
-      // Remove thread from list
+      // Remove thread from list and adjust total
       setThreads((prev) =>
         prev.filter((t) => t.thread_id !== threadId)
       );
+      setTotalThreads((prev) => (prev != null ? prev - 1 : prev));
 
       // If the deleted thread is currently active, navigate back to thread gallery
       if (currentThreadId === threadId) {
@@ -436,7 +521,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
 
   return (
     <div
-      className="h-full flex overflow-hidden"
+      className="h-screen flex overflow-hidden"
       style={{
         backgroundColor: 'var(--color-bg-page)',
         backgroundImage: 'radial-gradient(circle at center, var(--color-dot-grid) 0.75px, transparent 0.75px)',
@@ -459,7 +544,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
         </div>
 
         {/* Main Content - Centered with max width */}
-        <div className="flex-1 flex flex-col min-h-0 w-full px-4 overflow-auto">
+        <div ref={scrollContainerRef} className="flex-1 flex flex-col min-h-0 w-full px-4 overflow-auto">
           <div className="w-full max-w-[768px] mx-auto flex flex-col gap-8">
 
             {/* Workspace Header */}
@@ -483,7 +568,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
               <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: '#FFFFFF', opacity: 0.5 }}>
                 <span>Workspace</span>
                 <div className="size-[3px] rounded-full bg-current opacity-50"></div>
-                <span>{threads.length} {threads.length === 1 ? 'thread' : 'threads'}</span>
+                <span>{totalThreads ?? threads.length} {(totalThreads ?? threads.length) === 1 ? 'thread' : 'threads'}</span>
               </div>
             </div>
 
@@ -571,6 +656,12 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
                       onRename={handleRenameClick}
                     />
                   ))}
+                  {/* Loading spinner for infinite scroll */}
+                  {isLoadingMore && (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="h-5 w-5 animate-spin" style={{ color: '#6155F5' }} />
+                    </div>
+                  )}
                 </div>
               )}
             </div>

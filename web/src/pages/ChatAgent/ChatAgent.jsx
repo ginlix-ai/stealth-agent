@@ -79,6 +79,7 @@ function ChatAgent() {
       const data = await getWorkspaceThreads(wsId);
       workspaceCacheRef.current[wsId] = {
         threads: data.threads || [],
+        total: data.total,
         fetchedAt: Date.now(),
       };
     } catch {
@@ -88,7 +89,10 @@ function ChatAgent() {
 
   // If both workspaceId and threadId are provided, show chat view
   if (workspaceId && threadId) {
-    return <ChatView workspaceId={workspaceId} threadId={threadId} onBack={handleBackToThreadGallery} />;
+    const cachedWorkspaceName = workspaceCacheRef.current[workspaceId]?.workspaceName
+      || location.state?.workspaceName
+      || '';
+    return <ChatView workspaceId={workspaceId} threadId={threadId} onBack={handleBackToThreadGallery} workspaceName={cachedWorkspaceName} />;
   }
 
   // If only workspaceId is provided, show thread gallery

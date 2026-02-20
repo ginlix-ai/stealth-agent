@@ -1,13 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Loader2, Search, ArrowDownUp, MoreHorizontal, Zap } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import CreateWorkspaceModal from './CreateWorkspaceModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
+import MorphingPageDots from '../../../components/ui/morphing-page-dots';
 import { getWorkspaces, createWorkspace, deleteWorkspace } from '../utils/api';
 import { DEFAULT_WORKSPACE_NAME } from '../../Dashboard/utils/workspace';
 import { removeStoredThreadId } from '../hooks/useChatMessages';
 import { clearChatSession } from '../hooks/utils/chatSessionRestore';
 import '../../Dashboard/Dashboard.css';
+
+const PAGE_SIZE = 20;
 
 /**
  * WorkspaceGallery Component
@@ -31,9 +34,14 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
   const [deleteError, setDeleteError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('activity'); // 'activity' or 'name'
+  const [totalWorkspaces, setTotalWorkspaces] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
   const navigate = useNavigate();
   const { workspaceId: currentWorkspaceId } = useParams();
   const loadingRef = useRef(false);
+  const searchTimerRef = useRef(null);
+  const isSearching = searchQuery.length > 0;
+  const totalPages = Math.ceil(totalWorkspaces / PAGE_SIZE);
 
   // Clear saved chat session so tab-switching returns to workspace gallery
   useEffect(() => {
@@ -50,34 +58,53 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
     // Show cached data instantly (stale-while-revalidate)
     if (cache?.current?.workspaces) {
       setWorkspaces(cache.current.workspaces);
+      if (cache.current.total != null) {
+        setTotalWorkspaces(cache.current.total);
+      }
       setIsLoading(false);
     }
 
     loadingRef.current = true;
-    loadWorkspaces().finally(() => {
+    loadWorkspaces(0).finally(() => {
       loadingRef.current = false;
     });
   }, []);
 
+  // Re-fetch when page changes (skip initial mount which is handled above)
+  const initialMountRef = useRef(true);
+  useEffect(() => {
+    if (initialMountRef.current) {
+      initialMountRef.current = false;
+      return;
+    }
+    if (!isSearching) {
+      loadWorkspaces(currentPage);
+    }
+  }, [currentPage]);
+
   /**
-   * Fetches all workspaces from the API
-   * Filters out '__flash__' workspaces (created by TradingCenter)
+   * Fetches workspaces from the API with pagination.
+   * Filters out '__flash__' workspaces (created by TradingCenter).
+   * @param {number} page - 0-indexed page number
    */
-  const loadWorkspaces = async () => {
+  const loadWorkspaces = async (page = currentPage) => {
     try {
       const hasCached = cache?.current?.workspaces;
       if (!hasCached) setIsLoading(true);
       setError(null);
-      const data = await getWorkspaces();
+      const data = await getWorkspaces(PAGE_SIZE, page * PAGE_SIZE);
       // Filter out '__flash__' workspaces
       const filteredWorkspaces = (data.workspaces || []).filter(
         (ws) => ws.name !== '__flash__'
       );
+      const total = data.total ?? filteredWorkspaces.length;
       setWorkspaces(filteredWorkspaces);
+      setTotalWorkspaces(total);
 
       // Update cache
       if (cache?.current) {
         cache.current.workspaces = filteredWorkspaces;
+        cache.current.total = total;
         cache.current.fetchedAt = Date.now();
       }
     } catch (err) {
@@ -87,6 +114,38 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
       setIsLoading(false);
     }
   };
+
+  /**
+   * Debounced search: fetch all workspaces matching query
+   */
+  const handleSearchChange = useCallback((value) => {
+    setSearchQuery(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+
+    if (value.length > 0) {
+      searchTimerRef.current = setTimeout(async () => {
+        try {
+          const data = await getWorkspaces(100, 0);
+          const filtered = (data.workspaces || []).filter(
+            (ws) => ws.name !== '__flash__'
+          );
+          setWorkspaces(filtered);
+        } catch (err) {
+          console.error('Error searching workspaces:', err);
+        }
+      }, 300);
+    } else {
+      // Search cleared — return to paginated view
+      loadWorkspaces(currentPage);
+    }
+  }, [currentPage]);
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, []);
 
   /**
    * Handles workspace creation
@@ -155,10 +214,16 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
       // Clean up localStorage: remove thread ID for deleted workspace
       removeStoredThreadId(workspaceId);
 
-      // Remove workspace from list
-      setWorkspaces((prev) =>
-        prev.filter((ws) => ws.workspace_id !== workspaceId)
-      );
+      // Remove workspace from list and adjust total
+      setWorkspaces((prev) => {
+        const updated = prev.filter((ws) => ws.workspace_id !== workspaceId);
+        // If page is now empty, go to previous page
+        if (updated.length === 0 && currentPage > 0) {
+          setCurrentPage((p) => p - 1);
+        }
+        return updated;
+      });
+      setTotalWorkspaces((prev) => Math.max(0, prev - 1));
 
       // If the deleted workspace is currently active, navigate back to gallery
       if (currentWorkspaceId === workspaceId) {
@@ -296,7 +361,7 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
                   style={{ color: '#FFFFFF' }}
                   placeholder="Search workspaces..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => handleSearchChange(e.target.value)}
                 />
               </div>
             </div>
@@ -400,6 +465,15 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
                 </div>
               ))}
             </div>
+          )}
+
+          {/* Pagination dots — hidden during search */}
+          {!isSearching && totalPages > 1 && (
+            <MorphingPageDots
+              totalPages={totalPages}
+              activeIndex={currentPage}
+              onChange={setCurrentPage}
+            />
           )}
         </div>
       </main>

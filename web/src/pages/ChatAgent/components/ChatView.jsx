@@ -95,7 +95,7 @@ function SubagentStatusIndicator({ status, currentTool, toolCalls = 0, messages 
  * @param {string} threadId - The thread ID to chat in
  * @param {Function} onBack - Callback to navigate back to thread gallery
  */
-function ChatView({ workspaceId, threadId, onBack }) {
+function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspaceName }) {
   const scrollAreaRef = useRef(null);
   const subagentScrollAreaRef = useRef(null);
   const location = useLocation();
@@ -105,6 +105,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
   // Determine agent mode: flash workspaces use flash mode, otherwise ptc
   const [agentMode, setAgentMode] = useState(location.state?.agentMode || 'ptc');
   const isFlashMode = agentMode === 'flash' || location.state?.workspaceStatus === 'flash';
+  const [workspaceName, setWorkspaceName] = useState(initialWorkspaceName || '');
   const [filePanelTargetFile, setFilePanelTargetFile] = useState(null);
   const [filePanelTargetDir, setFilePanelTargetDir] = useState(null);
   const isDraggingRef = useRef(false);
@@ -186,17 +187,19 @@ function ChatView({ workspaceId, threadId, onBack }) {
     scrollPositionsRef.current = {}; // Clear saved positions for new thread
   }, [threadId]);
 
-  // Direct URL navigation fallback: detect flash workspace from API
+  // Direct URL navigation fallback: detect flash workspace and resolve name from API
   useEffect(() => {
-    if (location.state?.agentMode || !workspaceId) return;
+    if (!workspaceId) return;
+    // Skip API call if we already have both pieces of info
+    if (location.state?.agentMode && workspaceName) return;
     let cancelled = false;
     getWorkspace(workspaceId).then((ws) => {
-      if (!cancelled && ws?.status === 'flash') {
-        setAgentMode('flash');
-      }
+      if (cancelled) return;
+      if (ws?.status === 'flash') setAgentMode('flash');
+      if (ws?.name && !workspaceName) setWorkspaceName(ws.name);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [workspaceId, location.state?.agentMode]);
+  }, [workspaceId, location.state?.agentMode, workspaceName]);
 
   // Floating cards management - extracted to custom hook for better encapsulation
   // Must be called before useChatMessages since updateTodoListCard and updateSubagentCard are passed to it
@@ -801,8 +804,8 @@ function ChatView({ workspaceId, threadId, onBack }) {
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <h1 className="text-base font-semibold whitespace-nowrap dashboard-title-font" style={{ color: '#FFFFFF' }}>
-              LangAlpha
+            <h1 className="text-base font-semibold whitespace-nowrap dashboard-title-font truncate" style={{ color: '#FFFFFF' }}>
+              {workspaceName || 'Workspace'}
             </h1>
             {isLoadingHistory ? (
               <span className="text-xs whitespace-nowrap" style={{ color: '#FFFFFF', opacity: 0.5 }}>
