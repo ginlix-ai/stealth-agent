@@ -241,8 +241,8 @@ class SessionState:
         self.soft_interrupted: bool = False  # True if workflow was soft-interrupted
         self.soft_interrupt_result: dict | None = None  # Result from soft interrupt API
 
-        # Subagent status stream tracking (status-only SSE)
-        self.status_stream_task: Task | None = None
+        # Per-task watcher group (replaces aggregate status stream)
+        self.task_watcher_group: Task | None = None
         self.status_stream_thread_id: str | None = None
 
         # HITL pending response (for resuming after interrupt)

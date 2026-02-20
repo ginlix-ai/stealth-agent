@@ -295,7 +295,7 @@ async def execute_task(
     event_count = 0  # Track events for periodic state saving
     state_manager = ReconnectStateManager()
 
-    _cancel_status_stream(session_state)
+    _cancel_task_watchers(session_state)
 
     # Clear soft_interrupted flag when starting new task (seamless continuation)
     if hasattr(session_state, "soft_interrupted"):
@@ -492,7 +492,7 @@ async def execute_task(
             )
 
         if not flash_mode:
-            _maybe_start_status_stream(client, session_state)
+            _maybe_start_task_watchers(client, session_state)
 
     except asyncio.CancelledError:
         # ESC interrupt
@@ -531,7 +531,7 @@ async def execute_task(
                         "active_subagents": active_subagents,
                         "completed_subagents": soft_interrupt_result.get("completed_subagents", []),
                     }
-                    _maybe_start_status_stream(client, session_state)
+                    _maybe_start_task_watchers(client, session_state)
                 else:
                     console.print("\n[yellow]Interrupted (Esc)[/yellow]")
             else:
@@ -681,7 +681,7 @@ async def reconnect_to_workflow(
         console.print("[yellow]No active workflow thread to reconnect to[/yellow]")
         return
 
-    _cancel_status_stream(session_state)
+    _cancel_task_watchers(session_state)
 
     todo_state: dict[str, list | None] = {"todos": None}
     tool_name_by_id: dict[str, str] = {}
@@ -771,7 +771,7 @@ async def reconnect_to_workflow(
         console.print()
         console.print("[green]Workflow stream ended[/green]")
 
-        _maybe_start_status_stream(client, session_state)
+        _maybe_start_task_watchers(client, session_state)
 
     except asyncio.CancelledError:
         if getattr(session_state, "esc_interrupt_requested", False):
@@ -987,60 +987,95 @@ def _apply_subagent_status(session_state: "SessionState", event_data: dict[str, 
     return len(active_tasks) if active_tasks is not None else len(active_subagents)
 
 
-def _cancel_status_stream(session_state: "SessionState") -> None:
-    status_task = getattr(session_state, "status_stream_task", None)
-    if status_task and not status_task.done():
-        status_task.cancel()
-    session_state.status_stream_task = None
+def _cancel_task_watchers(session_state: "SessionState") -> None:
+    watcher = getattr(session_state, "task_watcher_group", None)
+    if watcher and not watcher.done():
+        watcher.cancel()
+    session_state.task_watcher_group = None
     session_state.status_stream_thread_id = None
 
 
-def _maybe_start_status_stream(client: SSEStreamClient, session_state: "SessionState") -> None:
+def _maybe_start_task_watchers(client: SSEStreamClient, session_state: "SessionState") -> None:
+    """Open per-task SSE streams for each active background task."""
     bg_status = getattr(session_state, "background_status", None) or {}
-    active_count = len(bg_status.get("active_tasks") or bg_status.get("active_subagents") or [])
-    if active_count == 0:
+    active_tasks = bg_status.get("active_tasks") or []
+    if not active_tasks:
         return
 
     thread_id = session_state.thread_id
     if not thread_id:
         return
 
-    status_task = getattr(session_state, "status_stream_task", None)
-    if status_task and not status_task.done() and session_state.status_stream_thread_id == thread_id:
+    # Don't restart if already watching the same thread
+    existing = getattr(session_state, "task_watcher_group", None)
+    if existing and not existing.done() and session_state.status_stream_thread_id == thread_id:
         return
 
-    if status_task and not status_task.done():
-        status_task.cancel()
+    # Cancel any existing watcher
+    if existing and not existing.done():
+        existing.cancel()
+
+    task_ids = [t.get("id") for t in active_tasks if t.get("id")]
+    if not task_ids:
+        return
 
     session_state.status_stream_thread_id = thread_id
-    session_state.status_stream_task = asyncio.create_task(
-        _stream_subagent_status(client, session_state, thread_id)
-    )
+
+    async def _watch_all() -> None:
+        watchers: list[asyncio.Task] = []
+        try:
+            watchers = [
+                asyncio.create_task(_watch_subagent_task(client, session_state, thread_id, tid))
+                for tid in task_ids
+            ]
+            # As each watcher completes (stream closes), update background_status
+            for coro in asyncio.as_completed(watchers):
+                finished_task_id = await coro
+                bg = getattr(session_state, "background_status", None) or {}
+                active = bg.get("active_tasks") or []
+                completed = bg.get("completed_tasks") or []
+                # Find the actual task that finished by its id
+                done_task = None
+                for i, t in enumerate(active):
+                    if isinstance(t, dict) and t.get("id") == finished_task_id:
+                        done_task = active.pop(i)
+                        break
+                if done_task is not None:
+                    completed.append(done_task)
+                session_state.background_status = {
+                    **bg,
+                    "active_tasks": active,
+                    "completed_tasks": completed,
+                    "active_subagents": [t.get("id") for t in active if t.get("id")],
+                    "completed_subagents": [
+                        t.get("id") if isinstance(t, dict) else t for t in completed
+                    ],
+                }
+        except asyncio.CancelledError:
+            for w in watchers:
+                w.cancel()
+        finally:
+            session_state.task_watcher_group = None
+            session_state.status_stream_thread_id = None
+
+    session_state.task_watcher_group = asyncio.create_task(_watch_all())
 
 
-def _format_status_error(error: Exception) -> str:
-    return f"{type(error).__name__}: {error}"
-
-
-async def _stream_subagent_status(
+async def _watch_subagent_task(
     client: SSEStreamClient,
     session_state: "SessionState",
     thread_id: str,
-) -> None:
-    try:
-        async for event_type, event_data in client.stream_subagent_status(thread_id):
-            if event_type != "subagent_status":
-                continue
+    task_id: str,
+) -> str:
+    """Watch a single subagent task stream. Stream close = task completed.
 
-            active_count = _apply_subagent_status(session_state, event_data)
-            if active_count == 0:
-                break
+    Returns the task_id so callers can identify which task finished.
+    """
+    try:
+        async for _event_type, _event_data in client.stream_subagent_task(thread_id, task_id):
+            pass  # CLI doesn't display per-task content; just wait for stream close
     except asyncio.CancelledError:
         pass
-    except httpx.HTTPStatusError as e:
-        logger.debug("subagent_status stream failed", error=_format_status_error(e))
     except Exception as e:
-        logger.debug("subagent_status stream error", error=_format_status_error(e))
-    finally:
-        session_state.status_stream_task = None
-        session_state.status_stream_thread_id = None
+        logger.debug("subagent task stream error", task_id=task_id, error=f"{type(e).__name__}: {e}")
+    return task_id

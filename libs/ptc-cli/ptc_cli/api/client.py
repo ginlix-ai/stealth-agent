@@ -483,22 +483,43 @@ class SSEStreamClient:
             ):
                 yield event_type, event_data
 
-    async def stream_subagent_status(
+    async def stream_subagent_task(
         self,
         thread_id: str,
+        task_id: str,
+        last_event_id: int | None = None,
     ) -> AsyncGenerator[tuple[str, Dict[str, Any]], None]:
-        """Stream subagent status updates for a thread."""
-        url = urljoin(self.base_url, f"/api/v1/threads/{thread_id}/subagents")
-
+        """Stream a single subagent's content events (message_chunk, tool_calls, etc.)."""
+        url = urljoin(self.base_url, f"/api/v1/threads/{thread_id}/tasks/{task_id}")
+        params = {}
+        if last_event_id is not None:
+            params["last_event_id"] = last_event_id
         async with self.client.stream(
             "GET",
             url,
             headers=self._make_headers(accept="text/event-stream"),
+            params=params,
             timeout=self.timeout,
         ) as response:
             response.raise_for_status()
             async for event_type, event_data in self._stream_sse_events(response):
                 yield event_type, event_data
+
+    async def send_subagent_message(
+        self,
+        thread_id: str,
+        task_id: str,
+        content: str,
+    ) -> Dict[str, Any]:
+        """Send a message/instruction to a running background subagent."""
+        url = urljoin(self.base_url, f"/api/v1/threads/{thread_id}/tasks/{task_id}/messages")
+        response = await self.client.post(
+            url,
+            json={"content": content},
+            headers=self._make_headers(),
+        )
+        response.raise_for_status()
+        return response.json()
 
     # =========================================================================
     # Workflow Control
