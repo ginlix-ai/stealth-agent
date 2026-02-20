@@ -140,10 +140,15 @@ async def lifespan(app: FastAPI):
         logger.info("PTC Agent configuration loaded successfully")
 
         # Initialize session service
+        # Derive idle timeout from Daytona auto-stop so the server cleans up
+        # *before* Daytona kills the sandbox (10-min buffer, 5-min floor).
+        daytona_auto_stop = agent_config.daytona.auto_stop_interval  # seconds
+        server_idle_timeout = max(daytona_auto_stop - 600, 300)
+
         from src.server.services.session_manager import SessionService
         session_service = SessionService.get_instance(
             config=agent_config,
-            idle_timeout=1800,  # 30 minutes
+            idle_timeout=server_idle_timeout,
             cleanup_interval=300,  # 5 minutes
         )
         await session_service.start_cleanup_task()
@@ -153,7 +158,7 @@ async def lifespan(app: FastAPI):
         from src.server.services.workspace_manager import WorkspaceManager
         workspace_manager = WorkspaceManager.get_instance(
             config=agent_config,
-            idle_timeout=1800,  # 30 minutes
+            idle_timeout=server_idle_timeout,
             cleanup_interval=300,  # 5 minutes
         )
         await workspace_manager.start_cleanup_task()

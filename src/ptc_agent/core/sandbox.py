@@ -432,7 +432,12 @@ class PTCSandbox:
             try:
                 self.sandbox = await self._daytona_call(
                     self.daytona_client.create,
-                    CreateSandboxFromSnapshotParams(snapshot=snapshot_name),
+                    CreateSandboxFromSnapshotParams(
+                        snapshot=snapshot_name,
+                        auto_stop_interval=self.config.daytona.auto_stop_interval // 60,
+                        auto_archive_interval=self.config.daytona.auto_archive_interval // 60,
+                        auto_delete_interval=self.config.daytona.auto_delete_interval // 60,
+                    ),
                     retry_policy=_DaytonaRetryPolicy.SAFE,
                     allow_reconnect=False,
                 )
@@ -451,6 +456,11 @@ class PTCSandbox:
             logger.info("Creating sandbox from default image")
             self.sandbox = await self._daytona_call(
                 self.daytona_client.create,
+                CreateSandboxFromSnapshotParams(
+                    auto_stop_interval=self.config.daytona.auto_stop_interval // 60,
+                    auto_archive_interval=self.config.daytona.auto_archive_interval // 60,
+                    auto_delete_interval=self.config.daytona.auto_delete_interval // 60,
+                ),
                 retry_policy=_DaytonaRetryPolicy.SAFE,
                 allow_reconnect=False,
             )
@@ -622,17 +632,26 @@ class PTCSandbox:
                     retry_policy=_DaytonaRetryPolicy.SAFE,
                 )
             elif state_value == "stopping":
-                # Wait for sandbox to finish stopping, then start it
+                # Wait for sandbox to finish stopping, then start it.
+                # Re-fetch from Daytona API each iteration (cached object is stale).
                 logger.info(
                     "Sandbox is stopping, waiting before start",
                     sandbox_id=sandbox_id,
                 )
                 for _ in range(20):  # Max ~10 seconds
                     await asyncio.sleep(0.5)
+                    sandbox = await self._daytona_call(
+                        self.daytona_client.get,
+                        sandbox_id,
+                        retry_policy=_DaytonaRetryPolicy.SAFE,
+                        allow_reconnect=False,
+                    )
                     state = getattr(sandbox, "state", None)
                     state_value = state.value if hasattr(state, "value") else str(state)
-                    if state_value in ("stopped",):
+                    if state_value == "stopped":
                         break
+                # Update to fresh object
+                self.sandbox = sandbox
                 if state_value == "stopped":
                     logger.info(
                         "Sandbox finished stopping, starting it",

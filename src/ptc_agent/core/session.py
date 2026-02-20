@@ -59,10 +59,21 @@ class Session:
             self.sandbox = PTCSandbox(self.config, None)
 
             # Run both operations in parallel
-            await asyncio.gather(
-                self.mcp_registry.connect_all(),
-                self.sandbox.reconnect(sandbox_id),
-            )
+            try:
+                await asyncio.gather(
+                    self.mcp_registry.connect_all(),
+                    self.sandbox.reconnect(sandbox_id),
+                )
+            except Exception:
+                # Clean up MCP connections to avoid leaks
+                if self.mcp_registry:
+                    try:
+                        await self.mcp_registry.disconnect_all()
+                    except Exception:
+                        pass
+                    self.mcp_registry = None
+                self.sandbox = None
+                raise
 
             self.sandbox.mcp_registry = self.mcp_registry
 
@@ -75,10 +86,20 @@ class Session:
             # NEW SANDBOX MODE: Run workspace setup and MCP connect concurrently
             self.sandbox = PTCSandbox(self.config, None)
 
-            snapshot_name, _ = await asyncio.gather(
-                self.sandbox.setup_sandbox_workspace(),
-                self.mcp_registry.connect_all(),
-            )
+            try:
+                snapshot_name, _ = await asyncio.gather(
+                    self.sandbox.setup_sandbox_workspace(),
+                    self.mcp_registry.connect_all(),
+                )
+            except Exception:
+                if self.mcp_registry:
+                    try:
+                        await self.mcp_registry.disconnect_all()
+                    except Exception:
+                        pass
+                    self.mcp_registry = None
+                self.sandbox = None
+                raise
 
             self.sandbox.mcp_registry = self.mcp_registry
 
@@ -253,6 +274,17 @@ class SessionManager:
             logger.debug("Returning existing session", conversation_id=conversation_id)
 
         return cls._sessions[conversation_id]
+
+    @classmethod
+    def remove_session(cls, conversation_id: str) -> None:
+        """Remove a session from cache without stopping it.
+
+        Used to evict broken sessions so the next request creates a fresh one.
+
+        Args:
+            conversation_id: Conversation identifier
+        """
+        cls._sessions.pop(conversation_id, None)
 
     @classmethod
     async def cleanup_session(cls, conversation_id: str) -> None:

@@ -464,10 +464,16 @@ class WorkspaceManager:
                         try:
                             await session.initialize(sandbox_id=sandbox_id)
                         except RuntimeError as e:
-                            if "Failed to find sandbox" in str(e) or "deleted" in str(e):
+                            SessionManager.remove_session(workspace_id)
+                            err_msg = str(e)
+                            if (
+                                "Failed to find sandbox" in err_msg
+                                or "deleted" in err_msg
+                                or "still in state" in err_msg
+                            ):
                                 logger.warning(
-                                    f"Sandbox {sandbox_id} gone for workspace "
-                                    f"{workspace_id}. Creating fresh sandbox."
+                                    f"Sandbox {sandbox_id} unavailable for workspace "
+                                    f"{workspace_id} ({err_msg}). Creating fresh sandbox."
                                 )
                                 return await self._recover_sandbox(
                                     workspace_id, workspace_user_id, core_config
@@ -609,11 +615,17 @@ class WorkspaceManager:
                     await session.initialize(sandbox_id=sandbox_id)
                     logger.info(f"Session initialized for workspace {workspace_id}")
             except RuntimeError as e:
-                if "Failed to find sandbox" in str(e) or "deleted" in str(e):
+                err_msg = str(e)
+                if (
+                    "Failed to find sandbox" in err_msg
+                    or "deleted" in err_msg
+                    or "still in state" in err_msg
+                ):
                     sandbox_gone = True
+                    SessionManager.remove_session(workspace_id)
                     logger.warning(
-                        f"Sandbox {sandbox_id} no longer exists for workspace "
-                        f"{workspace_id}. Creating fresh sandbox."
+                        f"Sandbox {sandbox_id} unavailable for workspace "
+                        f"{workspace_id} ({err_msg}). Creating fresh sandbox."
                     )
                 else:
                     raise

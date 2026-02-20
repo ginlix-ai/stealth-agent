@@ -49,7 +49,7 @@ def _load_storage_provider() -> str:
         3. Default: "s3"
     """
     # Try loading from agent_config.yaml first
-    config_path = Path(__file__).parent.parent.parent.parent / "agent_config.yaml"
+    config_path = Path(__file__).parent.parent.parent.parent.parent / "agent_config.yaml"
     if config_path.exists():
         try:
             with config_path.open() as f:
