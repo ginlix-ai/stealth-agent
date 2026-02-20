@@ -2,7 +2,8 @@
 Supabase JWT verification.
 
 Decodes asymmetric JWTs (RS256/ES256) using JWKS public keys fetched from the
-Supabase project endpoint. Returns the user UUID from the `sub` claim.
+Supabase project endpoint. Returns the user UUID from the `sub` claim and
+optionally the ``auth_provider`` from ``app_metadata.provider``.
 
 When ``SUPABASE_URL`` is **not set**, authentication is bypassed and all
 requests are attributed to a default local-dev identity.  This lets
@@ -10,6 +11,7 @@ contributors run the stack locally without a Supabase project.
 """
 
 import os
+from dataclasses import dataclass
 
 import jwt
 from jwt import PyJWKClient
@@ -24,6 +26,13 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 _jwks_client: PyJWKClient | None = None
 
 
+@dataclass(frozen=True)
+class AuthInfo:
+    """Decoded JWT fields needed by the auth-sync flow."""
+    user_id: str
+    auth_provider: str | None = None
+
+
 def _get_jwks_client() -> PyJWKClient:
     global _jwks_client
     if _jwks_client is None:
@@ -35,8 +44,8 @@ def _get_jwks_client() -> PyJWKClient:
     return _jwks_client
 
 
-def _decode_token(token: str) -> str:
-    """Decode a Supabase JWT using JWKS public key and return the user UUID."""
+def _decode_token(token: str) -> AuthInfo:
+    """Decode a Supabase JWT and return user UUID + auth provider."""
     try:
         client = _get_jwks_client()
         signing_key = client.get_signing_key_from_jwt(token)
@@ -49,7 +58,8 @@ def _decode_token(token: str) -> str:
         user_id: str = payload.get("sub", "")
         if not user_id:
             raise HTTPException(status_code=401, detail="Token missing sub claim")
-        return user_id
+        auth_provider = payload.get("app_metadata", {}).get("provider")
+        return AuthInfo(user_id=user_id, auth_provider=auth_provider)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
@@ -69,6 +79,20 @@ async def verify_jwt_token(
     """
     if not _AUTH_ENABLED:
         return LOCAL_DEV_USER_ID
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+    return _decode_token(credentials.credentials).user_id
+
+
+async def get_current_auth_info(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> AuthInfo:
+    """FastAPI dependency — returns both ``user_id`` and ``auth_provider``.
+
+    Used by the auth-sync endpoint to persist the provider on first login.
+    """
+    if not _AUTH_ENABLED:
+        return AuthInfo(user_id=LOCAL_DEV_USER_ID)
     if credentials is None:
         raise HTTPException(status_code=401, detail="Missing Bearer token")
     return _decode_token(credentials.credentials)

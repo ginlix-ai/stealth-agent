@@ -47,7 +47,22 @@ function SupabaseAuthProvider({ children }) {
     );
   }, []);
 
-  /** Sync Supabase user to our backend and store the profile locally. */
+  /** Fetch user profile from backend (read-only, no side-effects). */
+  const fetchUser = useCallback(async (token) => {
+    try {
+      const res = await fetch(`${baseURL}/api/v1/users/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLocalUser(data.user ?? data);
+      }
+    } catch (err) {
+      console.error('[auth] fetchUser failed:', err);
+    }
+  }, []);
+
+  /** Sync user on actual sign-in: create/migrate + backfill fields. */
   const syncUser = useCallback(async (sess) => {
     if (!sess) return;
     try {
@@ -63,6 +78,8 @@ function SupabaseAuthProvider({ children }) {
           email: sess.user?.email,
           name: meta.name || meta.full_name || null,
           avatar_url: meta.avatar_url || null,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+          locale: navigator.language || null,
         }),
       });
       if (res.ok) {
@@ -79,19 +96,25 @@ function SupabaseAuthProvider({ children }) {
     supabase.auth.getSession().then(({ data: { session: sess } }) => {
       setSession(sess);
       if (sess) {
-        wireTokenGetter();  // Set token getter BEFORE React re-renders
-        syncUser(sess);
+        wireTokenGetter();
+        fetchUser(sess.access_token);  // Read-only profile load
       }
       setIsInitialized(true);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, sess) => {
+    } = supabase.auth.onAuthStateChange((event, sess) => {
       setSession(sess);
       if (sess) {
         wireTokenGetter();
-        syncUser(sess);
+        if (event === 'SIGNED_IN') {
+          syncUser(sess);  // Full sync only on actual login
+        } else if (event === 'TOKEN_REFRESHED') {
+          // Token refreshed — no backend call needed
+        } else {
+          fetchUser(sess.access_token);
+        }
       } else {
         setLocalUser(null);
         setTokenGetter(null);
@@ -99,7 +122,7 @@ function SupabaseAuthProvider({ children }) {
     });
 
     return () => subscription.unsubscribe();
-  }, [wireTokenGetter, syncUser]);
+  }, [wireTokenGetter, fetchUser, syncUser]);
 
   const loginWithEmail = useCallback(
     (email, password) => supabase.auth.signInWithPassword({ email, password }),
@@ -123,9 +146,10 @@ function SupabaseAuthProvider({ children }) {
 
   const logout = useCallback(() => supabase.auth.signOut(), []);
 
-  const refreshUser = useCallback(() => {
-    if (session) syncUser(session);
-  }, [session, syncUser]);
+  const refreshUser = useCallback(async () => {
+    const { data: { session: sess } } = await supabase.auth.getSession();
+    if (sess) fetchUser(sess.access_token);
+  }, [fetchUser]);
 
   const value = {
     userId: session?.user?.id ?? null,

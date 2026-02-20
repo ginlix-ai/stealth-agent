@@ -37,7 +37,7 @@ async def get_current_user_id(
     if credentials is None:
         raise HTTPException(status_code=401, detail="Missing authentication")
 
-    return _decode_token(credentials.credentials)
+    return _decode_token(credentials.credentials).user_id
 
 
 # Annotated type for cleaner endpoint signatures

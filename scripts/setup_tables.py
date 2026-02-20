@@ -215,6 +215,7 @@ async def setup_tables_async():
                             membership_id INT NOT NULL DEFAULT 1
                                 REFERENCES memberships(membership_id),
                             byok_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                            auth_provider VARCHAR(50),
                             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                             last_login_at TIMESTAMPTZ

@@ -218,6 +218,9 @@ class UserResponse(UserBase):
         default=False, description="Whether onboarding is completed"
     )
     membership: MembershipResponse = Field(description="User membership details")
+    auth_provider: Optional[str] = Field(
+        None, description="Authentication provider (e.g. google, github, email)"
+    )
     created_at: datetime = Field(description="Creation timestamp")
     updated_at: datetime = Field(description="Last update timestamp")
     last_login_at: Optional[datetime] = Field(None, description="Last login timestamp")

@@ -13,6 +13,7 @@ Endpoints:
 """
 
 import logging
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -20,7 +21,7 @@ from fastapi import File, UploadFile
 from pydantic import BaseModel
 from src.ptc_agent.utils.storage.r2_uploader import upload_bytes, get_public_url
 
-from src.server.auth.jwt_bearer import verify_jwt_token
+from src.server.auth.jwt_bearer import get_current_auth_info, AuthInfo
 from src.server.database.user import (
     create_user as db_create_user,
     create_user_from_auth,
@@ -72,30 +73,53 @@ class AuthSyncRequest(BaseModel):
     email: Optional[str] = None
     name: Optional[str] = None
     avatar_url: Optional[str] = None
+    timezone: Optional[str] = None
+    locale: Optional[str] = None
 
 
 @router.post("/auth/sync", response_model=UserWithPreferencesResponse)
 @handle_api_exceptions("sync user", logger)
 async def sync_user(
     body: AuthSyncRequest,
-    user_id: str = Depends(verify_jwt_token),
+    auth_info: AuthInfo = Depends(get_current_auth_info),
 ):
     """
     Sync Supabase user to backend after OAuth/email login.
 
     Called by frontend immediately after Supabase auth succeeds.
-    Uses its own JWT extraction (does not use CurrentUserId) so it
-    can handle first-time users who don't yet exist in the DB.
+    Uses ``get_current_auth_info`` to extract both ``user_id`` and
+    ``auth_provider`` from the JWT so the provider can be persisted.
 
     Logic:
-      1. user_id already exists -> return profile
+      1. user_id already exists -> lazy-backfill auth_provider if NULL, return profile
       2. email matches a legacy user -> migrate PK to UUID, return profile
-      3. No match -> create new user, return profile
+      3. No match -> create new user with auth_provider, return profile
     """
+    user_id = auth_info.user_id
+    auth_provider = auth_info.auth_provider
 
     # 1. Already exists by UUID?
     existing = await db_get_user(user_id)
     if existing:
+        updates = {}
+
+        # Lazy-backfill NULL fields
+        if auth_provider and not existing.get("auth_provider"):
+            updates["auth_provider"] = auth_provider
+        if body.timezone and not existing.get("timezone"):
+            updates["timezone"] = body.timezone
+        if body.locale and not existing.get("locale"):
+            updates["locale"] = body.locale
+
+        # Throttle last_login_at writes — only update if stale (>1 hour)
+        last_login = existing.get("last_login_at")
+        now = datetime.now(tz=last_login.tzinfo if last_login else None)
+        if not last_login or (now - last_login).total_seconds() > 3600:
+            updates["last_login_at"] = now
+
+        if updates:
+            await db_update_user(user_id=user_id, **updates)
+
         result = await get_user_with_preferences(user_id)
         if not result:
             raise_not_found("User")
@@ -127,6 +151,9 @@ async def sync_user(
         email=body.email,
         name=body.name,
         avatar_url=body.avatar_url,
+        auth_provider=auth_provider,
+        timezone=body.timezone,
+        locale=body.locale,
     )
     user_resp = UserResponse.model_validate(await enrich_user_with_membership(user))
     return UserWithPreferencesResponse(user=user_resp, preferences=None)
