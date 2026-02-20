@@ -17,6 +17,7 @@ import DetailPanel from './DetailPanel';
 import MessageList, { normalizeSubagentText } from './MessageList';
 import Markdown from './Markdown';
 import AgentSidebar from './AgentSidebar';
+import { WorkspaceProvider } from '../contexts/WorkspaceContext';
 import SubagentStatusBar from './SubagentStatusBar';
 import TodoDrawer from './TodoDrawer';
 import { parseErrorMessage } from '../utils/parseErrorMessage';
@@ -780,6 +781,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
   }
 
   return (
+    <WorkspaceProvider workspaceId={workspaceId}>
     <div
       className="flex h-screen w-full overflow-hidden"
       style={{
@@ -1020,6 +1022,7 @@ function ChatView({ workspaceId, threadId, onBack }) {
       )}
 
     </div>
+    </WorkspaceProvider>
   );
 }
 

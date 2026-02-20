@@ -5,6 +5,7 @@ import rehypeRaw from 'rehype-raw';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Copy, Check } from 'lucide-react';
+import WorkspaceImage from './WorkspaceImage';
 
 // --- CodeBlock component ---
 function CodeBlock({ language, code, compact = false }) {
@@ -95,9 +96,7 @@ const input = ({ node, type, checked, ...props }) => {
   }
   return <input {...props} />;
 };
-const img = ({ node, ...props }) => (
-  <img className="rounded-lg my-2" style={{ maxWidth: '100%', height: 'auto' }} {...props} />
-);
+const img = ({ node, ...props }) => <WorkspaceImage {...props} />;
 const ul = ({ node, ...props }) => (
   <ul className="list-disc ml-4 my-1" style={{ color: '#FFFFFF' }} {...props} />
 );
