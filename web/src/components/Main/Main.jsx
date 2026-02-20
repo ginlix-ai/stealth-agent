@@ -4,6 +4,7 @@ import Dashboard from '../../pages/Dashboard/Dashboard';
 import ChatAgent from '../../pages/ChatAgent/ChatAgent';
 import TradingCenter from '../../pages/TradingCenter/TradingCenter';
 import DetailPage from '../../pages/Detail/DetailPage';
+import Automations from '../../pages/Automations/Automations';
 
 function Main() {
   return (
@@ -14,6 +15,7 @@ function Main() {
         <Route path="/chat/:workspaceId/:threadId" element={<ChatAgent />} />
         <Route path="/chat/:workspaceId" element={<ChatAgent />} />
         <Route path="/trading" element={<TradingCenter />} />
+        <Route path="/automations" element={<Automations />} />
         <Route path="/detail/:indexNumber" element={<DetailPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

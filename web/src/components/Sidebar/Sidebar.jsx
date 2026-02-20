@@ -1,4 +1,4 @@
-import { ChartCandlestick, LayoutDashboard, MessageSquareText } from 'lucide-react';
+import { ChartCandlestick, LayoutDashboard, MessageSquareText, Timer } from 'lucide-react';
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import logo from '../../assets/img/logo.svg';
@@ -24,6 +24,11 @@ function Sidebar() {
       key: '/trading',
       icon: ChartCandlestick,
       label: 'Trading Center',
+    },
+    {
+      key: '/automations',
+      icon: Timer,
+      label: 'Automations',
     },
   ];
 
