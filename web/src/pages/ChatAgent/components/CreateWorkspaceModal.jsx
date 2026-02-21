@@ -295,15 +295,12 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
             )}
 
             {/* Done summary */}
-            {creationStep === 'done' && (
+            {creationStep === 'done' && queuedFiles.length > 0 && (
               <div className="cwm-done-summary">
-                <div className="cwm-done-title">Workspace created</div>
-                {queuedFiles.length > 0 && (
-                  <div className="cwm-done-subtitle">
-                    {doneCount} file{doneCount !== 1 ? 's' : ''} uploaded
-                    {failedCount > 0 && ` · ${failedCount} failed`}
-                  </div>
-                )}
+                <div className="cwm-done-subtitle">
+                  {doneCount} file{doneCount !== 1 ? 's' : ''} uploaded
+                  {failedCount > 0 && ` · ${failedCount} failed`}
+                </div>
               </div>
             )}
 
