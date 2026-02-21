@@ -666,11 +666,29 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
         const additionalContext = [
           {
             type: "skills",
-            name: "user-profile",
-            instruction: "Help the user with first time onboarding. Reference the skills/user-profile/onboarding.md for details. You should use load_skill tool to load the user-profile skill before calling any of the tools."
+            name: "onboarding",
+            instruction: "Help the user with first-time onboarding to set up their investment profile.",
           }
         ];
         handleSendMessage(onboardingMessage, false, additionalContext);
+      }, 100);
+      return;
+    }
+
+    // Handle modify preferences flow (from settings panel)
+    if (location.state?.isModifyingPreferences && !initialMessageSentRef.current && !isLoading && !isLoadingHistory) {
+      initialMessageSentRef.current = true;
+      navigate(location.pathname, { replace: true, state: {} });
+      setTimeout(() => {
+        const modifyMessage = "I'd like to review and update my preferences.";
+        const additionalContext = [
+          {
+            type: "skills",
+            name: "user-profile",
+            instruction: "The user wants to review and update their existing preferences. Start by fetching their current preferences with get_user_data(entity='preferences'), show them what's currently set, then ask what they'd like to change. Use AskUserQuestion to offer options. Only update the fields they want to change.",
+          }
+        ];
+        handleSendMessage(modifyMessage, false, additionalContext);
       }, 100);
       return;
     }

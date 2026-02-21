@@ -846,28 +846,23 @@ async def handle_command(
                 console.print("[dim]Start a task first, then use ESC to soft-interrupt.[/dim]")
 
     elif cmd_lower == "/onboarding":
-        # Guard sandbox command in flash mode
-        if getattr(session_state, "flash_mode", False):
-            console.print("[yellow]This command is not available in Flash mode (no sandbox)[/yellow]")
-            console.print()
-            return "handled"
-
-        # Start user onboarding flow with user-profile skill
+        # Start user onboarding flow
         console.print()
 
-        # Ensure we have a workspace first
-        if not client.workspace_id:
-            console.print("[yellow]No workspace selected.[/yellow]")
-            workspace_id = await _select_or_create_workspace_interactive(client)
-            if not workspace_id:
-                console.print("[dim]Cancelled[/dim]")
+        # Ensure we have a workspace first (skip in flash mode — no sandbox needed)
+        if not getattr(session_state, "flash_mode", False):
+            if not client.workspace_id:
+                console.print("[yellow]No workspace selected.[/yellow]")
+                workspace_id = await _select_or_create_workspace_interactive(client)
+                if not workspace_id:
+                    console.print("[dim]Cancelled[/dim]")
+                    console.print()
+                    return "handled"
+                client.workspace_id = workspace_id
+
+            if not await _ensure_workspace_available(client):
                 console.print()
                 return "handled"
-            client.workspace_id = workspace_id
-
-        if not await _ensure_workspace_available(client):
-            console.print()
-            return "handled"
 
         # Start a fresh conversation thread for onboarding
         session_state.reset_thread()
@@ -877,14 +872,12 @@ async def handle_command(
         console.print(f"[dim]Thread: {client.thread_id}[/dim]")
         console.print()
 
-        # Build skill context for user-profile onboarding
+        # Build skill context for onboarding
         additional_context = [
             {
                 "type": "skills",
-                "name": "user-profile",
-                "instruction": """Help the user with first time onboarding. referecen the skills/user-profile/onboarding.md for more details.
-                You should use LoadSkill tool to load the user-profile skill before calling any of the tools.
-                """
+                "name": "onboarding",
+                "instruction": "Help the user with first-time onboarding to set up their investment profile.",
             }
         ]
 
