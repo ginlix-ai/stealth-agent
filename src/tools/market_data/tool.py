@@ -14,6 +14,7 @@ from .implementations import (
     fetch_market_indices,
     fetch_sector_performance,
     fetch_stock_daily_prices,
+    fetch_stock_screener,
 )
 
 
@@ -221,4 +222,85 @@ async def get_sector_performance(
             print(f"Best sector: {best['sector']} at {best['changesPercentage']}")
     """
     content, artifact = await fetch_sector_performance(date)
+    return content, artifact
+
+
+@tool(response_format="content_and_artifact")
+async def screen_stocks(
+    market_cap_more_than: Optional[float] = None,
+    market_cap_lower_than: Optional[float] = None,
+    price_more_than: Optional[float] = None,
+    price_lower_than: Optional[float] = None,
+    volume_more_than: Optional[float] = None,
+    volume_lower_than: Optional[float] = None,
+    beta_more_than: Optional[float] = None,
+    beta_lower_than: Optional[float] = None,
+    dividend_more_than: Optional[float] = None,
+    dividend_lower_than: Optional[float] = None,
+    sector: Optional[str] = None,
+    industry: Optional[str] = None,
+    exchange: Optional[str] = None,
+    country: Optional[str] = None,
+    is_etf: Optional[bool] = None,
+    is_fund: Optional[bool] = None,
+    is_actively_trading: Optional[bool] = None,
+    limit: int = 50,
+) -> Tuple[Union[str, List[Dict[str, Any]]], Dict[str, Any]]:
+    """
+    Screen stocks by market cap, price, volume, beta, sector, industry, exchange, and more.
+    Uses the FMP Company Screener to filter stocks matching specified criteria.
+
+    Args:
+        market_cap_more_than: Minimum market capitalization (e.g., 1000000000 for $1B)
+        market_cap_lower_than: Maximum market capitalization
+        price_more_than: Minimum stock price
+        price_lower_than: Maximum stock price
+        volume_more_than: Minimum daily trading volume
+        volume_lower_than: Maximum daily trading volume
+        beta_more_than: Minimum beta value
+        beta_lower_than: Maximum beta value
+        dividend_more_than: Minimum dividend yield
+        dividend_lower_than: Maximum dividend yield
+        sector: Filter by sector (e.g., "Technology", "Healthcare", "Financial Services")
+        industry: Filter by industry (e.g., "Software", "Biotechnology")
+        exchange: Filter by exchange (e.g., "NASDAQ", "NYSE", "AMEX")
+        country: Filter by country (e.g., "US", "CN", "GB")
+        is_etf: Filter for ETFs only (True) or exclude ETFs (False)
+        is_fund: Filter for funds only (True) or exclude funds (False)
+        is_actively_trading: Filter for actively trading stocks only
+        limit: Maximum number of results to return (default 50)
+
+    Returns:
+        Formatted markdown table with screener results and artifact for visualization.
+
+    Example:
+        # Find large-cap tech stocks
+        screen_stocks(sector="Technology", market_cap_more_than=10000000000)
+
+        # Find high-dividend stocks on NYSE
+        screen_stocks(exchange="NYSE", dividend_more_than=4.0, limit=20)
+
+        # Find low-beta value stocks
+        screen_stocks(beta_lower_than=0.5, price_more_than=10, is_actively_trading=True)
+    """
+    content, artifact = await fetch_stock_screener(
+        market_cap_more_than=market_cap_more_than,
+        market_cap_lower_than=market_cap_lower_than,
+        price_more_than=price_more_than,
+        price_lower_than=price_lower_than,
+        volume_more_than=volume_more_than,
+        volume_lower_than=volume_lower_than,
+        beta_more_than=beta_more_than,
+        beta_lower_than=beta_lower_than,
+        dividend_more_than=dividend_more_than,
+        dividend_lower_than=dividend_lower_than,
+        sector=sector,
+        industry=industry,
+        exchange=exchange,
+        country=country,
+        is_etf=is_etf,
+        is_fund=is_fund,
+        is_actively_trading=is_actively_trading,
+        limit=limit,
+    )
     return content, artifact

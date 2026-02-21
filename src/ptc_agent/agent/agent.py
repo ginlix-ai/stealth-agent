@@ -68,6 +68,7 @@ from src.tools.market_data.tool import (
     get_company_overview,
     get_market_indices,
     get_sector_performance,
+    screen_stocks,
 )
 from ptc_agent.config import AgentConfig
 from ptc_agent.core.mcp_registry import MCPRegistry
@@ -327,6 +328,7 @@ class PTCAgent:
             get_company_overview,  # Company investment analysis (includes real-time quote)
             get_market_indices,  # Market indices data
             get_sector_performance,  # Sector performance metrics
+            screen_stocks,  # Stock screener with filters
         ]
         tools.extend(finance_tools)
         logger.info("Finance tools enabled", tool_count=len(finance_tools))

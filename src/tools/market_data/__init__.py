@@ -10,6 +10,7 @@ Available tools:
 - get_company_overview: Comprehensive investment intelligence overview (includes real-time quote)
 - get_market_indices: Market indices data (S&P 500, NASDAQ, Dow Jones)
 - get_sector_performance: Sector performance metrics
+- screen_stocks: Stock screener with filters for market cap, price, sector, etc.
 """
 
 from .tool import (
@@ -17,6 +18,7 @@ from .tool import (
     get_company_overview,
     get_market_indices,
     get_sector_performance,
+    screen_stocks,
 )
 
 __all__ = [
@@ -24,4 +26,5 @@ __all__ = [
     "get_company_overview",
     "get_market_indices",
     "get_sector_performance",
+    "screen_stocks",
 ]

@@ -845,6 +845,12 @@ class FMPClient:
         result = await self._make_request("biggest-gainers", version="stable")
         return result[:limit] if isinstance(result, list) else result
 
+    # Company Screener
+    async def get_company_screener(self, **filters) -> List[Dict]:
+        """Screen stocks using FMP company screener"""
+        params = {k: v for k, v in filters.items() if v is not None}
+        return await self._make_request("company-screener", params=params, version="stable")
+
     # Technical Indicators
     async def get_sma(self,
                       symbol: str,
