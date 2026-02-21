@@ -108,6 +108,7 @@ class LLM:
         self.model = model_info["model_id"]  # Use model_id for API calls
         self.provider = model_info["provider"]
         self.parameters = model_info.get("parameters", {}).copy()
+        self.extra_body = model_info.get("extra_body", {}).copy()
 
         # Override with any provided parameters
         self.parameters.update(override_params)
@@ -123,8 +124,12 @@ class LLM:
         self.env_key = self.provider_info.get("env_key")
         self.base_url = self.provider_info.get("base_url")
 
-        # Store response API flag for OpenAI SDK
+        # Store response API flags for OpenAI SDK
         self.use_response_api = self.provider_info.get("use_response_api", False) if self.sdk == "openai" else False
+        self.use_previous_response_id = self.provider_info.get("use_previous_response_id", False) if self.sdk == "openai" else False
+
+        # Optional default headers from provider config
+        self.default_headers = self.provider_info.get("default_headers")
 
     def get_llm(self):
         """
@@ -184,16 +189,23 @@ class LLM:
         }
         params.update(self._resolve_base_url("base_url"))
 
+        if self.default_headers:
+            params["default_headers"] = self.default_headers
+
         # Handle Response API if configured
         if self.use_response_api:
             params["output_version"] = "responses/v1"
 
-        # Auto-enable use_previous_response_id for responses API models
-        if self.use_response_api or "reasoning" in self.parameters:
+        # Enable use_previous_response_id if configured in provider
+        if self.use_previous_response_id:
             params["use_previous_response_id"] = True
 
         # Add all parameters from llm_config
         params.update(self.parameters)
+
+        # Pass extra_body for provider-specific fields (e.g. caching, thinking)
+        if self.extra_body:
+            params["extra_body"] = self.extra_body
 
         return ChatOpenAI(**params)
 
@@ -211,6 +223,9 @@ class LLM:
         # Add all parameters from llm_config
         params.update(self.parameters)
 
+        if self.extra_body:
+            params["extra_body"] = self.extra_body
+
         return ChatDeepSeek(**params)
 
     def _get_qwq_llm(self):
@@ -226,6 +241,9 @@ class LLM:
 
         # Add all parameters from llm_config
         params.update(self.parameters)
+
+        if self.extra_body:
+            params["extra_body"] = self.extra_body
 
         return ChatQwen(**params)
 
@@ -250,11 +268,16 @@ class LLM:
         if self.base_url:
             params["base_url"] = self.base_url
 
+        if self.default_headers:
+            params["default_headers"] = self.default_headers
 
         # Add all parameters from llm_config, excluding enable_caching
         # (enable_caching is not a ChatAnthropic parameter, it's used by our caching logic)
         filtered_params = {k: v for k, v in self.parameters.items() if k != "enable_caching"}
         params.update(filtered_params)
+
+        if self.extra_body:
+            params["extra_body"] = self.extra_body
 
         return ChatAnthropic(**params)
 
@@ -274,9 +297,15 @@ class LLM:
         if not params["api_key"]:
             raise ValueError(f"{self.env_key or 'GEMINI_API_KEY'} environment variable is not set")
 
+        # Set base URL from provider configuration if available
+        if self.base_url:
+            params["base_url"] = self.base_url
 
         # Add all parameters from llm_config
         params.update(self.parameters)
+
+        if self.extra_body:
+            params["extra_body"] = self.extra_body
 
         return ChatGoogleGenerativeAI(**params)
 
