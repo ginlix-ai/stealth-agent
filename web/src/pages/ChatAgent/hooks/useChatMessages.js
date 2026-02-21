@@ -1578,6 +1578,11 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     // message chunks from the post-injection model call).
     let queuedAtOrder = null;
 
+    // FIFO queue for matching Task tool call IDs to artifact 'spawned' events.
+    // Populated by the tool_calls handler, drained by the artifact/spawned handler.
+    // This ensures toolCallIdToTaskIdMapRef is populated before tool_call_result.
+    const pendingTaskToolCallIds = [];
+
     const processEvent = (event) => {
       const eventType = event.event || 'message_chunk';
 
@@ -1903,6 +1908,12 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           const agentId = `task:${task_id}`;
 
           if (action === 'spawned') {
+            // Drain pending Task tool call ID to establish toolCallId → agentId mapping
+            // immediately, so clicking the inline card before tool_call_result resolves correctly
+            if (pendingTaskToolCallIds.length > 0) {
+              const toolCallId = pendingTaskToolCallIds.shift();
+              toolCallIdToTaskIdMapRef.current.set(toolCallId, agentId);
+            }
             const alreadyCompleted = completedTaskIdsRef.current.has(task_id);
             if (updateSubagentCard) {
               updateSubagentCard(agentId, {
@@ -2003,6 +2014,14 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           refs,
           setMessages,
         });
+        // Queue new Task tool call IDs for matching with upcoming artifact 'spawned' events
+        if (event.tool_calls) {
+          for (const tc of event.tool_calls) {
+            if ((tc.name === 'task' || tc.name === 'Task') && tc.id && !tc.args?.task_id) {
+              pendingTaskToolCallIds.push(tc.id);
+            }
+          }
+        }
       } else if (eventType === 'tool_call_result') {
         const toolCallId = event.tool_call_id;
 
