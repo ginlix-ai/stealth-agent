@@ -1183,6 +1183,14 @@ class PTCSandbox:
         self, local_skill_roots: list[str]
     ) -> dict[str, Any]:
         def build() -> dict[str, Any]:
+            from ptc_agent.agent.skills import get_sandbox_skill_names, SKILL_REGISTRY
+
+            # Skills eligible for sandbox upload (exposure "ptc" or "both")
+            sandbox_skill_names = get_sandbox_skill_names()
+            # All names known in the registry (so we can distinguish flash-only
+            # from user-created skill dirs that aren't in the registry at all)
+            all_registry_names = set(SKILL_REGISTRY.keys())
+
             files: dict[str, dict[str, int]] = {}
             seen_skill_names: set[str] = set()
 
@@ -1198,9 +1206,13 @@ class PTCSandbox:
                     if not (skill_dir / "SKILL.md").exists():
                         continue
 
+                    # Skip flash-only skills (not needed in sandbox)
+                    skill_name = skill_dir.name
+                    if skill_name not in sandbox_skill_names and skill_name in all_registry_names:
+                        continue
+
                     # Later sources override earlier ones; mirror the sandbox upload behavior
                     # by clearing all files from the overridden skill directory.
-                    skill_name = skill_dir.name
                     if skill_name in seen_skill_names:
                         prefix = f"{skill_name}/"
                         for key in list(files.keys()):
@@ -1233,6 +1245,11 @@ class PTCSandbox:
         self, local_skill_roots: list[str]
     ) -> set[str]:
         def build() -> set[str]:
+            from ptc_agent.agent.skills import get_sandbox_skill_names, SKILL_REGISTRY
+
+            sandbox_skill_names = get_sandbox_skill_names()
+            all_registry_names = set(SKILL_REGISTRY.keys())
+
             names: set[str] = set()
             for root_str in local_skill_roots:
                 root = Path(root_str).expanduser()
@@ -1243,7 +1260,11 @@ class PTCSandbox:
                         continue
                     if not (skill_dir / "SKILL.md").exists():
                         continue
-                    names.add(skill_dir.name)
+                    skill_name = skill_dir.name
+                    # Skip flash-only skills so they get pruned from sandbox
+                    if skill_name not in sandbox_skill_names and skill_name in all_registry_names:
+                        continue
+                    names.add(skill_name)
             return names
 
         return await asyncio.to_thread(build)
@@ -1404,6 +1425,12 @@ class PTCSandbox:
                     retry_policy=_DaytonaRetryPolicy.SAFE,
                 )
 
+        # Skills eligible for sandbox upload (exposure "ptc" or "both")
+        from ptc_agent.agent.skills import get_sandbox_skill_names, SKILL_REGISTRY
+
+        sandbox_skill_names = get_sandbox_skill_names()
+        all_registry_names = set(SKILL_REGISTRY.keys())
+
         total_skills_uploaded = 0
 
         for local_dir, sandbox_dir in local_skills_dirs:
@@ -1423,6 +1450,12 @@ class PTCSandbox:
             for skill_dir in await list_skill_dirs(local_path):
                 skill_name = skill_dir.name
                 if skill_name in ("", ".", ".."):
+                    continue
+
+                # Skip flash-only skills (not needed in sandbox).
+                # Only skip skills explicitly marked as flash-only in the registry;
+                # skill dirs not in the registry at all are still uploaded.
+                if skill_name not in sandbox_skill_names and skill_name in all_registry_names:
                     continue
 
                 sandbox_skill_dir = f"{sandbox_dir.rstrip('/')}/{skill_name}"
