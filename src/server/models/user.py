@@ -41,51 +41,6 @@ def normalize_symbol(symbol: str) -> str:
 # =============================================================================
 
 
-class RiskTolerance(str, Enum):
-    """Risk tolerance levels."""
-
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    LONG_TERM_FOCUS = "long_term_focus"
-
-
-class CompanyInterest(str, Enum):
-    """Company interest types."""
-
-    GROWTH = "growth"
-    STABLE = "stable"
-    VALUE = "value"
-    ESG = "esg"
-
-
-class HoldingPeriod(str, Enum):
-    """Investment holding period preferences."""
-
-    SHORT_TERM = "short_term"
-    MID_TERM = "mid_term"
-    LONG_TERM = "long_term"
-    FLEXIBLE = "flexible"
-
-
-class AnalysisFocus(str, Enum):
-    """Analysis focus areas."""
-
-    GROWTH = "growth"
-    VALUATION = "valuation"
-    MOAT = "moat"
-    RISK = "risk"
-
-
-class OutputStyle(str, Enum):
-    """Agent output style preferences."""
-
-    SUMMARY = "summary"
-    DATA = "data"
-    DEEP_DIVE = "deep_dive"
-    QUICK = "quick"
-
-
 class InstrumentType(str, Enum):
     """Supported instrument types for watchlist and portfolio."""
 
@@ -106,8 +61,8 @@ class InstrumentType(str, Enum):
 class RiskPreference(BaseModel):
     """Risk preference settings stored in JSONB."""
 
-    risk_tolerance: Optional[RiskTolerance] = Field(
-        None, description="Risk tolerance level"
+    risk_tolerance: Optional[str] = Field(
+        None, description="Risk tolerance description"
     )
 
     class Config:
@@ -117,13 +72,13 @@ class RiskPreference(BaseModel):
 class InvestmentPreference(BaseModel):
     """Investment preference settings stored in JSONB."""
 
-    company_interest: Optional[CompanyInterest] = Field(
+    company_interest: Optional[str] = Field(
         None, description="Type of companies interested in"
     )
-    holding_period: Optional[HoldingPeriod] = Field(
+    holding_period: Optional[str] = Field(
         None, description="Preferred holding period"
     )
-    analysis_focus: Optional[AnalysisFocus] = Field(
+    analysis_focus: Optional[str] = Field(
         None, description="Primary analysis focus area"
     )
 
@@ -134,7 +89,7 @@ class InvestmentPreference(BaseModel):
 class AgentPreference(BaseModel):
     """AI agent behavior preferences stored in JSONB."""
 
-    output_style: Optional[OutputStyle] = Field(
+    output_style: Optional[str] = Field(
         None, description="Preferred output style"
     )
 

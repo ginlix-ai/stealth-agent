@@ -1,6 +1,6 @@
 ---
 name: user-profile
-description: Manage user profile including watchlists, portfolio, and preferences. Also contains onboarding instructions.
+description: Manage user profile including watchlists, portfolio, and preferences.
 ---
 
 # User Profile Skill
@@ -10,11 +10,7 @@ This skill provides 3 unified tools for managing user data:
 - `update_user_data` - Create or update user data
 - `remove_user_data` - Delete user data
 
-The tools are hidden by default and will be available to you after loading the skill.
-To load the skill, use the `LoadSkill` tool with the skill name "user-profile".
-You should call the tools being loaded directly instead of using ExecuteCode tool.
-
-For first-time user setup, see [onboarding.md](./onboarding.md).
+You should call these tools directly instead of using ExecuteCode tool.
 
 ---
 
@@ -83,14 +79,19 @@ All preference entities (`risk_preference`, `investment_preference`, `agent_pref
 |-----------|------|-------------|
 | `replace` | bool | If `True`, completely replace the preference instead of merging with existing data |
 
-The `data` dict also accepts extra fields like `notes`, `instruction`, `avoid_sectors`, etc.
+The `data` dict accepts any fields. Extra fields like `notes`, `instruction`, `avoid_sectors` are stored alongside named fields.
 
 ```python
 # Merge with existing (default behavior)
-update_user_data(entity="agent_preference", data={"output_style": "quick", "notes": "User prefers brevity"})
+update_user_data(entity="agent_preference", data={
+    "output_style": "Balanced summary with key numbers highlighted",
+    "notes": "User prefers brevity"
+})
 
 # Replace entire preference (delete all existing fields, set only new ones)
-update_user_data(entity="agent_preference", data={"output_style": "deep_dive"}, replace=True)
+update_user_data(entity="agent_preference", data={
+    "output_style": "In-depth deep dive with full analysis"
+}, replace=True)
 ```
 
 ### Entity: profile
@@ -114,83 +115,68 @@ update_user_data(entity="profile", data={"onboarding_completed": True})
 
 ### Entity: risk_preference
 
-Set risk tolerance settings.
+Set risk tolerance settings. All fields accept any descriptive string.
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `risk_tolerance` | str | **Yes** | "low", "medium", "high", "long_term_focus" |
+| Field | Type | Description |
+|-------|------|-------------|
+| `risk_tolerance` | str | Risk tolerance description (any text) |
+| *(extra fields)* | any | Additional context (notes, constraints, etc.) |
 
 ```python
-# Set risk preference
+# Descriptive risk preference
 update_user_data(
     entity="risk_preference",
-    data={"risk_tolerance": "medium"}
-)
-
-# Long-term investor comfortable with volatility
-update_user_data(
-    entity="risk_preference",
-    data={"risk_tolerance": "long_term_focus"}
+    data={
+        "risk_tolerance": "Moderate - comfortable with market swings but avoids concentrated bets",
+        "notes": "Prefers diversification after 2022 tech losses"
+    }
 )
 ```
 
 ### Entity: investment_preference
 
-Set investment style settings. At least one field is required.
+Set investment style settings. All fields accept any descriptive string. At least one field is required.
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `company_interest` | str | No* | "growth", "stable", "value", "esg" |
-| `holding_period` | str | No* | "short_term", "mid_term", "long_term", "flexible" |
-| `analysis_focus` | str | No* | "growth", "valuation", "moat", "risk" |
-
-*At least one field must be provided.
+| Field | Type | Description |
+|-------|------|-------------|
+| `company_interest` | str | Type of companies interested in (any text) |
+| `holding_period` | str | Preferred holding period (any text) |
+| `analysis_focus` | str | Primary analysis focus area (any text) |
+| *(extra fields)* | any | Additional context (avoid_sectors, focus_sectors, notes, etc.) |
 
 ```python
-# Set company interest type
-update_user_data(
-    entity="investment_preference",
-    data={"company_interest": "growth"}
-)
-
-# Full investment profile
+# Full investment profile with rich descriptions
 update_user_data(
     entity="investment_preference",
     data={
-        "company_interest": "value",
-        "holding_period": "long_term",
-        "analysis_focus": "moat"
+        "company_interest": "Dividend-paying blue chips and REITs for income",
+        "holding_period": "Long-term (5+ years), rarely sells",
+        "analysis_focus": "Dividend sustainability and balance sheet strength",
+        "avoid_sectors": "Crypto, speculative biotech"
     }
 )
 ```
 
 ### Entity: agent_preference
 
-Set agent behavior settings.
+Set agent behavior settings. All fields accept any descriptive string.
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `output_style` | str | **Yes** | "summary", "data", "deep_dive", "quick" |
-| `enable_charts` | str | No | "always", "auto", "prefer_not", "never" |
-| `proactive_questions` | str | No | "always", "auto", "prefer_not", "never" |
+| Field | Type | Description |
+|-------|------|-------------|
+| `output_style` | str | Preferred output style (any text) |
+| `data_visualization` | str | Chart/visualization preferences (any text) |
+| `proactive_questions` | str | When to ask clarifying questions (any text) |
+| *(extra fields)* | any | Additional context (instruction, notes, etc.) |
 
 ```python
-# Quick summaries for busy user
+# Rich agent preferences
 update_user_data(
     entity="agent_preference",
-    data={"output_style": "quick"}
-)
-
-# Detailed analysis with data focus
-update_user_data(
-    entity="agent_preference",
-    data={"output_style": "deep_dive"}
-)
-
-# Enable charts when useful, always ask clarifying questions
-update_user_data(
-    entity="agent_preference",
-    data={"enable_charts": "auto", "proactive_questions": "always"}
+    data={
+        "output_style": "Balanced summary with key numbers highlighted",
+        "data_visualization": "Include charts when comparing multiple stocks",
+        "proactive_questions": "Use your judgment, only ask when critical"
+    }
 )
 ```
 
@@ -376,57 +362,6 @@ remove_user_data(
     identifier={"symbol": "MSFT", "account_name": "Robinhood"}
 )
 ```
-
----
-
-## Using AskUserQuestion
-
-**You MUST use the `AskUserQuestion` tool** instead of plain text whenever the user needs to choose from a known set of options. This gives users a structured UI with clickable buttons rather than requiring them to type.
-
-**Use AskUserQuestion for:**
-- Risk tolerance (Conservative / Moderate / Aggressive)
-- Investment style (Growth / Value / Income / Balanced)
-- Output style (Quick summaries / Balanced analysis / Thorough deep-dives)
-- Charts preference (Always / When useful / Prefer not to / Never)
-- Proactive questions preference (Always / When unclear / Prefer not to / Never)
-- Holding period (Short-term / Mid-term / Long-term / Flexible)
-- Any other question where the answer is one of a small fixed set of choices
-
-**Use normal conversation for:**
-- Open-ended input: stock symbols, share quantities, cost basis, account names, notes
-- Follow-up clarifications where the answer is free-form text
-
-**Correct — use the tool:**
-```
-Call AskUserQuestion(question="How comfortable are you with investment risk?", options=["Conservative", "Moderate", "Aggressive"])
-```
-
-**Incorrect — do NOT list options as plain text:**
-```
-"How comfortable are you with investment risk? Would you say:
-- Conservative
-- Moderate
-- Aggressive"
-```
-Never list options as plain text when `AskUserQuestion` can present them as selectable buttons.
-
----
-
-## Conversation Tips
-
-1. **Be conversational** - Don't ask all questions at once. Let the conversation flow naturally.
-
-2. **Use AskUserQuestion for choices** - Whenever the user picks from predefined options, use the tool. Only use plain text for open-ended questions (stock names, quantities, notes).
-
-3. **Handle partial info** - If user mentions "I own some AAPL", ask follow-up:
-   - "How many shares do you have?"
-   - "What's your average cost per share?"
-   - "Which brokerage account is it in?"
-
-4. **Confirm entries** - After saving, confirm what was added:
-   - "Added AAPL (50 shares @ $175) to your portfolio."
-
-5. **Use defaults** - If user doesn't have a watchlist, items go to the default one automatically.
 
 ---
 

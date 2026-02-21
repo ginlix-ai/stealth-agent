@@ -88,26 +88,6 @@ def _schedule_sync(entity: str, config: RunnableConfig) -> None:
     asyncio.create_task(_sync_user_file_async(entity, user_id, workspace_id))
 
 
-def validate_enum_field(
-    value: str | None, valid_values: list[str], field_name: str
-) -> str | dict[str, str]:
-    """Validate and normalize an enum field value.
-
-    Args:
-        value: The value to validate (may be None)
-        valid_values: List of valid lowercase values
-        field_name: Name of the field for error messages
-
-    Returns:
-        Normalized lowercase value if valid, or error dict if invalid
-    """
-    if not value:
-        return {"error": f"{field_name} is required"}
-    normalized = value.lower()
-    if normalized not in valid_values:
-        return {"error": f"Invalid {field_name}. Must be one of: {', '.join(valid_values)}"}
-    return normalized
-
 
 # ==================== GET Handlers ====================
 
@@ -226,25 +206,7 @@ async def _update_risk_preference(config: RunnableConfig, data: dict[str, Any], 
     """Set risk tolerance settings."""
     user_id = _get_user_id(config)
 
-    risk_pref: dict[str, Any] = {}
-
-    # Validate risk_tolerance if provided
-    risk_tolerance = data.get("risk_tolerance")
-    if risk_tolerance:
-        valid_values = ["low", "medium", "high", "long_term_focus"]
-        result = validate_enum_field(risk_tolerance, valid_values, "risk_tolerance")
-        if isinstance(result, dict):
-            return result
-        risk_pref["risk_tolerance"] = result
-
-    # Add any extra fields
-    for key, value in data.items():
-        if key != "risk_tolerance" and value is not None:
-            risk_pref[key] = value
-
-    # When replacing, require the main field
-    if replace and "risk_tolerance" not in risk_pref:
-        return {"error": "risk_tolerance is required when replace=True"}
+    risk_pref = {k: v for k, v in data.items() if v is not None}
 
     if not risk_pref:
         return {"error": "At least one field is required"}
@@ -260,38 +222,7 @@ async def _update_investment_preference(config: RunnableConfig, data: dict[str, 
     """Set investment style settings."""
     user_id = _get_user_id(config)
 
-    investment_pref: dict[str, Any] = {}
-    enum_fields = {"company_interest", "holding_period", "analysis_focus"}
-
-    # Validate enum fields if provided
-    company_interest = data.get("company_interest")
-    if company_interest:
-        valid_values = ["growth", "stable", "value", "esg"]
-        result = validate_enum_field(company_interest, valid_values, "company_interest")
-        if isinstance(result, dict):
-            return result
-        investment_pref["company_interest"] = result
-
-    holding_period = data.get("holding_period")
-    if holding_period:
-        valid_values = ["short_term", "mid_term", "long_term", "flexible"]
-        result = validate_enum_field(holding_period, valid_values, "holding_period")
-        if isinstance(result, dict):
-            return result
-        investment_pref["holding_period"] = result
-
-    analysis_focus = data.get("analysis_focus")
-    if analysis_focus:
-        valid_values = ["growth", "valuation", "moat", "risk"]
-        result = validate_enum_field(analysis_focus, valid_values, "analysis_focus")
-        if isinstance(result, dict):
-            return result
-        investment_pref["analysis_focus"] = result
-
-    # Add any extra fields (notes, avoid_sectors, focus_sectors, etc.)
-    for key, value in data.items():
-        if key not in enum_fields and value is not None:
-            investment_pref[key] = value
+    investment_pref = {k: v for k, v in data.items() if v is not None}
 
     if not investment_pref:
         return {"error": "At least one field is required"}
@@ -306,25 +237,7 @@ async def _update_agent_preference(config: RunnableConfig, data: dict[str, Any],
     """Set agent behavior settings."""
     user_id = _get_user_id(config)
 
-    agent_pref: dict[str, Any] = {}
-
-    # Validate output_style if provided
-    output_style = data.get("output_style")
-    if output_style:
-        valid_values = ["summary", "data", "deep_dive", "quick"]
-        result = validate_enum_field(output_style, valid_values, "output_style")
-        if isinstance(result, dict):
-            return result
-        agent_pref["output_style"] = result
-
-    # Add any extra fields (notes, instruction, data_visualization, etc.)
-    for key, value in data.items():
-        if key != "output_style" and value is not None:
-            agent_pref[key] = value
-
-    # When replacing, require the main field
-    if replace and "output_style" not in agent_pref:
-        return {"error": "output_style is required when replace=True"}
+    agent_pref = {k: v for k, v in data.items() if v is not None}
 
     if not agent_pref:
         return {"error": "At least one field is required"}

@@ -118,11 +118,8 @@ def format_preferences_md(data: dict[str, Any]) -> str:
     risk_pref = preferences.get("risk_preference")
     if risk_pref:
         lines.append("## Risk Tolerance")
-        risk_tolerance = risk_pref.get("risk_tolerance", "not set")
-        lines.append(f"- Level: {risk_tolerance}")
-        # Add any extra fields
         for key, value in risk_pref.items():
-            if key != "risk_tolerance" and value:
+            if value:
                 lines.append(f"- {key.replace('_', ' ').title()}: {value}")
         lines.append("")
 
