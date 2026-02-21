@@ -9,6 +9,8 @@ of tools that are pre-registered but hidden until the skill is loaded.
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from src.tools.automation import AUTOMATION_TOOLS
+from src.tools.onboarding import ONBOARDING_TOOLS
 from src.tools.user_profile import USER_PROFILE_TOOLS
 
 # Type alias for agent modes that can use skills
@@ -26,6 +28,7 @@ class SkillDefinition:
         skill_md_path: Optional path to SKILL.md with detailed instructions
         exposure: Which agent mode(s) can use this skill ("ptc", "flash", or "both")
     """
+
     name: str
     description: str
     tools: list[Any]
@@ -34,10 +37,7 @@ class SkillDefinition:
 
     def get_tool_names(self) -> list[str]:
         """Get list of tool names in this skill."""
-        return [
-            getattr(t, "name", str(t))
-            for t in self.tools
-        ]
+        return [getattr(t, "name", str(t)) for t in self.tools]
 
     def format_tool_descriptions(self, max_desc_len: int = 200) -> str:
         """Format tool descriptions for display.
@@ -85,9 +85,16 @@ SKILL_REGISTRY: dict[str, SkillDefinition] = {
     "onboarding": SkillDefinition(
         name="onboarding",
         description="First-time user onboarding: collect stocks, risk tolerance, and preferences",
-        tools=USER_PROFILE_TOOLS,
+        tools=ONBOARDING_TOOLS,
         skill_md_path="skills/onboarding/SKILL.md",
         exposure="hidden",
+    ),
+    "automation": SkillDefinition(
+        name="automation",
+        description="Create and manage scheduled automations (cron jobs, one-time tasks)",
+        tools=AUTOMATION_TOOLS,
+        skill_md_path="skills/automation/SKILL.md",
+        exposure="both",
     ),
 }
 

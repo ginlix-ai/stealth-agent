@@ -9,10 +9,12 @@ description: First-time user onboarding to set up investment profile, watchlists
 
 Help new users set up their investment profile through a natural, conversational flow. The agent gathers preferences and stores them as rich, descriptive text that future conversations can reference for personalized advice.
 
-This skill provides 3 unified tools for managing user data:
+This skill provides 5 tools:
 - `get_user_data` - Read user data
 - `update_user_data` - Create or update user data
 - `remove_user_data` - Delete user data
+- `create_workspace` - Create the user's first workspace (HITL — requires user approval)
+- `start_question` - Start a personalized question in a workspace (HITL — requires user approval)
 
 You should call these tools directly instead of using ExecuteCode tool.
 
@@ -74,6 +76,41 @@ Delete user data by entity type.
 | `watchlist` | `watchlist_id` or `name` |
 | `watchlist_item` | `symbol` (+ optional `watchlist_id`) |
 | `portfolio_holding` | `symbol` (+ optional `account_name`) |
+
+### Tool 4: create_workspace
+
+Create the user's first workspace. This is a HITL tool — the user sees a card and must approve before the workspace is created.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Name for the workspace (e.g. "My Portfolio Analysis") |
+| `description` | string | Brief description of the workspace purpose |
+
+```python
+# Create a workspace tailored to the user's interests
+create_workspace(name="My Portfolio Analysis", description="Track and analyze my stock portfolio with personalized insights")
+```
+
+Returns `{ success: true, workspace_id: "...", workspace_name: "..." }` on approval, or `"User declined workspace creation."` on rejection.
+
+### Tool 5: start_question
+
+Start a personalized question in a workspace. This is a HITL tool — the user sees the question and must approve. On approval, the frontend navigates to the workspace and auto-sends the question.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `workspace_id` | string | The workspace ID (from `create_workspace` result) |
+| `question` | string | An actionable question related to the user's interests |
+
+```python
+# Use the workspace_id returned by create_workspace
+start_question(
+    workspace_id="abc-123",
+    question="Analyze my NVDA position — what's the current technical setup and any upcoming catalysts I should watch for?"
+)
+```
+
+Returns `{ success: true, workspace_id: "...", question: "...", action: "navigate_to_workspace" }` on approval, or `"User declined starting the question."` on rejection.
 
 ---
 
@@ -208,6 +245,7 @@ update_user_data(entity="risk_preference", data={
 4. **Agent Preferences** - Optional. Ask about output style, visualization, proactive questions.
 5. **Open-ended** - "Anything else I should know about how you like to work?"
 6. **Complete** - Summarize what was set up, mark onboarding complete.
+7. **Workspace & Question** - After completing onboarding, create a workspace using `create_workspace` with a name and description that fits the user's interests. Then use `start_question` with the returned `workspace_id` to suggest an actionable starter question based on the user's stocks or interests. The question should be specific and immediately useful (e.g. "Analyze my NVDA position — what are the key technical levels and upcoming catalysts?" rather than "Tell me about stocks").
 
 Don't ask all questions at once. Let the conversation flow naturally. If the user wants to skip optional topics, respect that.
 
