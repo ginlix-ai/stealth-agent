@@ -24,7 +24,7 @@ export default [
         process: 'readonly',
       },
     },
-    settings: { react: { version: '18.2' } },
+    settings: { react: { version: 'detect' } },
     plugins: { 'react-refresh': reactRefresh },
     rules: {
       'react/prop-types': 'off',
