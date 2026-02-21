@@ -9,6 +9,7 @@ They allow the agent to create, inspect, and manage automations during conversat
 - manage_automation: Update, pause, resume, trigger, or delete automations
 """
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Annotated, Any
@@ -89,21 +90,21 @@ def _serialize(obj: Any) -> Any:
 # ==================== Tools ====================
 
 
-@tool
+@tool(response_format="content_and_artifact")
 async def check_automations(
     config: RunnableConfig,
     automation_id: Annotated[
         str | None,
         "Automation ID to inspect. Omit to list all automations.",
     ] = None,
-) -> dict[str, Any]:
+) -> tuple[str, dict]:
     """Check automations. Without an ID, lists all automations. With an ID, returns full details and recent execution history."""
     try:
         user_id = _get_user_id(config)
 
         if automation_id is None:
             automations, total = await auto_db.list_automations(user_id)
-            return _serialize(
+            result = _serialize(
                 {
                     "automations": [
                         {
@@ -124,17 +125,44 @@ async def check_automations(
                     "total": total,
                 }
             )
+            artifact = _serialize(
+                {
+                    "type": "automations",
+                    "mode": "list",
+                    "automations": [
+                        {
+                            "automation_id": a["automation_id"],
+                            "name": a["name"],
+                            "status": a["status"],
+                            "agent_mode": a["agent_mode"],
+                            "schedule": a.get("cron_expression")
+                            or (
+                                a["next_run_at"].isoformat()
+                                if a.get("next_run_at")
+                                else None
+                            ),
+                            "next_run_at": a.get("next_run_at"),
+                            "trigger_type": "cron"
+                            if a.get("cron_expression")
+                            else "once",
+                        }
+                        for a in automations
+                    ],
+                    "total": total,
+                }
+            )
+            return json.dumps(result), artifact
 
         # Get details + last 5 executions
         automation = await auto_db.get_automation(automation_id, user_id)
         if not automation:
-            return {"error": f"Automation '{automation_id}' not found."}
+            return json.dumps({"error": f"Automation '{automation_id}' not found."}), {}
 
         executions, exec_total = await auto_db.list_executions(
             automation_id, user_id, limit=5
         )
 
-        return _serialize(
+        result = _serialize(
             {
                 "automation": {
                     "automation_id": automation["automation_id"],
@@ -168,13 +196,21 @@ async def check_automations(
                 "total_executions": exec_total,
             }
         )
+        artifact = {
+            "type": "automations",
+            "mode": "detail",
+            "automation": result["automation"],
+            "executions": result["executions"],
+            "total_executions": exec_total,
+        }
+        return json.dumps(result), artifact
 
     except Exception as e:
         logger.exception("[automation_tools] check_automations error")
-        return {"error": str(e)}
+        return json.dumps({"error": str(e)}), {}
 
 
-@tool
+@tool(response_format="content_and_artifact")
 async def create_automation(
     name: Annotated[str, "Short name for the automation"],
     instruction: Annotated[str, "The prompt the agent will execute on each run"],
@@ -188,7 +224,7 @@ async def create_automation(
     agent_mode: Annotated[
         str, "'flash' (fast, default) or 'ptc' (full sandbox)"
     ] = "flash",
-) -> dict[str, Any]:
+) -> tuple[str, dict]:
     """Create a new scheduled automation."""
     try:
         user_id = _get_user_id(config)
@@ -213,7 +249,7 @@ async def create_automation(
 
         automation = await auto_handler.create_automation(user_id, data)
 
-        return _serialize(
+        result = _serialize(
             {
                 "success": True,
                 "automation_id": automation["automation_id"],
@@ -229,12 +265,23 @@ async def create_automation(
                 "next_run_at": automation.get("next_run_at"),
             }
         )
+        artifact = {
+            "type": "automations",
+            "mode": "created",
+            "automation_id": result["automation_id"],
+            "name": result["name"],
+            "status": result["status"],
+            "trigger_type": result["trigger_type"],
+            "schedule": result["schedule"],
+            "next_run_at": result["next_run_at"],
+        }
+        return json.dumps(result), artifact
 
     except ValueError as e:
-        return {"error": str(e)}
+        return json.dumps({"error": str(e)}), {}
     except Exception as e:
         logger.exception("[automation_tools] create_automation error")
-        return {"error": str(e)}
+        return json.dumps({"error": str(e)}), {}
 
 
 @tool
