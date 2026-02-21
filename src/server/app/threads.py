@@ -208,6 +208,8 @@ async def _handle_send_message(request: ChatRequest, auth: ChatRateLimited, thre
     )
     from src.server.database.workspace import get_or_create_flash_workspace
 
+    from src.server.database.workspace import get_workspace
+
     user_id = auth.user_id
     byok_active = auth.byok_active
     agent_mode = request.agent_mode or "ptc"
@@ -231,6 +233,18 @@ async def _handle_send_message(request: ChatRequest, auth: ChatRateLimited, thre
     if agent_mode == "flash" and not workspace_id:
         flash_ws = await get_or_create_flash_workspace(user_id)
         workspace_id = str(flash_ws["workspace_id"])
+
+    # Auto-detect flash workspaces: if the workspace is flash, override agent_mode
+    # so follow-up messages (HITL responses, etc.) route correctly even if
+    # the client doesn't send agent_mode='flash'
+    if agent_mode != "flash" and workspace_id:
+        ws = await get_workspace(workspace_id)
+        if ws and ws.get("status") == "flash":
+            agent_mode = "flash"
+            logger.info(
+                f"[CHAT] Auto-detected flash workspace {workspace_id}, "
+                f"overriding agent_mode to 'flash'"
+            )
 
     # Extract user input
     user_input = ""
