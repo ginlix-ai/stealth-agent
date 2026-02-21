@@ -894,6 +894,157 @@ export function MarketIndicesChart({ data }) {
   );
 }
 
+// ─── StockScreenerTable ──────────────────────────────────────────────
+
+export function StockScreenerTable({ data }) {
+  const { results = [], filters = {}, count = 0 } = data || {};
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('desc');
+
+  const handleSort = useCallback((key) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortKey(key);
+      setSortDir('desc');
+    }
+  }, [sortKey]);
+
+  const sortedResults = useMemo(() => {
+    if (!sortKey) return results;
+    return [...results].sort((a, b) => {
+      const aVal = a[sortKey];
+      const bVal = b[sortKey];
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      if (typeof aVal === 'string') return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+  }, [results, sortKey, sortDir]);
+
+  if (!results.length) {
+    return <div style={{ color: TEXT_COLOR, padding: 16 }}>No screener results available</div>;
+  }
+
+  const filterTags = Object.entries(filters).map(([k, v]) => `${k}: ${v}`);
+
+  const columns = [
+    { key: 'symbol', label: 'Symbol', width: 70 },
+    { key: 'companyName', label: 'Company', width: 160 },
+    { key: 'price', label: 'Price', width: 70, format: (v) => v != null ? `$${v.toFixed(2)}` : 'N/A' },
+    { key: 'marketCap', label: 'Mkt Cap', width: 80, format: formatNumber },
+    { key: 'sector', label: 'Sector', width: 110 },
+    { key: 'industry', label: 'Industry', width: 120 },
+    { key: 'beta', label: 'Beta', width: 55, format: (v) => v != null ? v.toFixed(2) : 'N/A' },
+    { key: 'volume', label: 'Volume', width: 75, format: (v) => v != null ? formatNumber(v).replace('$', '') : 'N/A' },
+    { key: 'lastAnnualDividend', label: 'Dividend', width: 65, format: (v) => v != null ? `$${v.toFixed(2)}` : 'N/A' },
+    { key: 'exchangeShortName', label: 'Exchange', width: 70 },
+    { key: 'country', label: 'Country', width: 55 },
+    { key: 'changes', label: 'Change%', width: 70, format: (v) => v != null ? formatPct(v) : 'N/A', color: (v) => v != null ? (v >= 0 ? GREEN : RED) : TEXT_COLOR },
+  ];
+
+  const SortArrow = ({ col }) => {
+    if (sortKey !== col) return null;
+    return <span style={{ marginLeft: 2, fontSize: 10 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>;
+  };
+
+  return (
+    <div>
+      <h4 style={{ color: '#fff', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+        Stock Screener — {count} result{count !== 1 ? 's' : ''}
+      </h4>
+
+      {/* Filter summary */}
+      {filterTags.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+          {filterTags.map((tag, i) => (
+            <span
+              key={i}
+              style={{
+                fontSize: 11,
+                padding: '2px 8px',
+                borderRadius: 12,
+                backgroundColor: 'rgba(97, 85, 245, 0.12)',
+                color: 'rgba(255,255,255,0.7)',
+                border: '1px solid rgba(97, 85, 245, 0.2)',
+              }}
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Scrollable table */}
+      <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '70vh' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr>
+              {columns.map((col) => (
+                <th
+                  key={col.key}
+                  onClick={() => handleSort(col.key)}
+                  style={{
+                    position: 'sticky',
+                    top: 0,
+                    background: CHART_BG,
+                    color: TEXT_COLOR,
+                    fontWeight: 500,
+                    padding: '6px 8px',
+                    textAlign: 'left',
+                    borderBottom: '1px solid rgba(255,255,255,0.1)',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    minWidth: col.width,
+                    userSelect: 'none',
+                  }}
+                >
+                  {col.label}<SortArrow col={col.key} />
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sortedResults.map((stock, i) => (
+              <tr
+                key={stock.symbol || i}
+                style={{
+                  borderBottom: '1px solid rgba(255,255,255,0.04)',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                {columns.map((col) => {
+                  const raw = stock[col.key];
+                  const display = col.format ? col.format(raw) : (raw ?? 'N/A');
+                  const cellColor = col.color ? col.color(raw) : (col.key === 'symbol' ? '#fff' : TEXT_COLOR);
+                  return (
+                    <td
+                      key={col.key}
+                      style={{
+                        padding: '5px 8px',
+                        color: cellColor,
+                        fontWeight: col.key === 'symbol' ? 600 : 400,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        maxWidth: col.key === 'companyName' ? 160 : col.key === 'industry' ? 120 : undefined,
+                      }}
+                    >
+                      {display}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function MiniCandlestick({ ohlcv, height = 180 }) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);

@@ -10,6 +10,7 @@ export const TOOL_DISPLAY_CONFIG = {
   get_company_overview:     { displayName: 'Company Overview',     icon: Building2 },
   get_market_indices:       { displayName: 'Market Indices',       icon: BarChart3 },
   get_sector_performance:   { displayName: 'Sector Performance',   icon: PieChart },
+  screen_stocks:            { displayName: 'Stock Screener',       icon: Search },
   // SEC
   get_sec_filing:           { displayName: 'SEC Filing',           icon: FileBarChart },
   // News (MCP tickertick)
@@ -70,6 +71,8 @@ export function getInProgressText(rawToolName, toolCall) {
       return 'fetching market indices...';
     case 'get_sector_performance':
       return 'fetching sector data...';
+    case 'screen_stocks':
+      return 'screening stocks...';
     case 'get_sec_filing':
       return args?.symbol ? `fetching ${args.symbol} filing...` : 'fetching filing...';
     case 'Grep': {

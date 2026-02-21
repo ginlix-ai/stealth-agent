@@ -18,6 +18,7 @@ export const INLINE_ARTIFACT_TOOLS = new Set([
   'get_market_indices',
   'get_sector_performance',
   'get_sec_filing',
+  'screen_stocks',
   'check_automations',
   'create_automation',
 ]);
@@ -369,6 +370,122 @@ export function InlineSectorPerformanceCard({ artifact, onClick }) {
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ─── InlineStockScreenerCard ──────────────────────────────────────
+
+export function InlineStockScreenerCard({ artifact, onClick }) {
+  const { results = [], filters = {}, count = 0 } = artifact || {};
+  if (!results.length) return null;
+
+  const top5 = results.slice(0, 5);
+  const remaining = count - top5.length;
+
+  // Build compact filter tags
+  const filterTags = Object.entries(filters).map(([k, v]) => `${k}: ${v}`);
+
+  return (
+    <div
+      style={cardStyle}
+      onClick={onClick}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
+    >
+      {/* Header: title + count badge */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <span style={{ fontWeight: 600, color: '#fff', fontSize: 13 }}>
+          Stock Screener
+        </span>
+        <span
+          style={{
+            fontSize: 11,
+            color: TEXT_COLOR,
+            backgroundColor: 'rgba(255,255,255,0.06)',
+            padding: '1px 6px',
+            borderRadius: 10,
+          }}
+        >
+          {count} result{count !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      {/* Filter tags */}
+      {filterTags.length > 0 && (
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+          {filterTags.slice(0, 4).map((tag, i) => (
+            <span
+              key={i}
+              style={{
+                fontSize: 10,
+                padding: '1px 6px',
+                borderRadius: 10,
+                backgroundColor: 'rgba(97, 85, 245, 0.12)',
+                color: 'rgba(255,255,255,0.7)',
+                border: '1px solid rgba(97, 85, 245, 0.2)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {tag}
+            </span>
+          ))}
+          {filterTags.length > 4 && (
+            <span style={{ fontSize: 10, color: TEXT_COLOR }}>+{filterTags.length - 4}</span>
+          )}
+        </div>
+      )}
+
+      {/* Top 5 results */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {top5.map((stock, i) => {
+          const change = stock.changes;
+          const changeColor = change != null ? (change >= 0 ? GREEN : RED) : TEXT_COLOR;
+          return (
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: 12,
+                padding: '2px 0',
+              }}
+            >
+              <span style={{ color: '#fff', fontWeight: 600, minWidth: 50, flexShrink: 0 }}>
+                {stock.symbol}
+              </span>
+              <span
+                style={{
+                  color: TEXT_COLOR,
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {stock.companyName}
+              </span>
+              <span style={{ color: '#fff', fontWeight: 500, flexShrink: 0 }}>
+                {stock.price != null ? `$${stock.price.toFixed(2)}` : 'N/A'}
+              </span>
+              <span style={{ color: TEXT_COLOR, fontSize: 11, flexShrink: 0, minWidth: 42, textAlign: 'right' }}>
+                {stock.marketCap != null ? formatCompactNumber(stock.marketCap) : ''}
+              </span>
+              <span style={{ color: changeColor, fontWeight: 500, flexShrink: 0, minWidth: 55, textAlign: 'right' }}>
+                {change != null ? formatPct(change) : ''}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* +N more */}
+      {remaining > 0 && (
+        <div style={{ marginTop: 4, fontSize: 11, color: TEXT_COLOR }}>
+          +{remaining} more stock{remaining > 1 ? 's' : ''}
+        </div>
+      )}
     </div>
   );
 }

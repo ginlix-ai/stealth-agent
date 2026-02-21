@@ -10,6 +10,7 @@ import {
   InlineMarketIndicesCard,
   InlineSectorPerformanceCard,
   InlineSecFilingCard,
+  InlineStockScreenerCard,
 } from './charts/InlineMarketCharts';
 import { InlineAutomationCard } from './charts/InlineAutomationCards';
 import { extractFilePaths, FileMentionCards } from './FileCard';
@@ -76,6 +77,7 @@ const INLINE_ARTIFACT_MAP = {
   market_indices: InlineMarketIndicesCard,
   sector_performance: InlineSectorPerformanceCard,
   sec_filing: InlineSecFilingCard,
+  stock_screener: InlineStockScreenerCard,
   automations: InlineAutomationCard,
 };
 

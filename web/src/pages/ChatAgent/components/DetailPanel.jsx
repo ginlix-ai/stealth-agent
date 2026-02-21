@@ -5,6 +5,7 @@ import {
   CompanyOverviewCard,
   MarketIndicesChart,
   SectorPerformanceChart,
+  StockScreenerTable,
 } from './charts/MarketDataCharts';
 import SecFilingViewer from './charts/SecFilingViewer';
 import AutomationDetailPanel from './charts/AutomationDetailPanel';
@@ -262,6 +263,8 @@ function ArtifactOrMarkdown({ artifact, content, toolName, toolCallProcess, onOp
         return <MarketIndicesChart data={artifact} />;
       case 'sector_performance':
         return <SectorPerformanceChart data={artifact} />;
+      case 'stock_screener':
+        return <StockScreenerTable data={artifact} />;
       case 'sec_filing':
         return <SecFilingViewer data={artifact} />;
       case 'automations':
