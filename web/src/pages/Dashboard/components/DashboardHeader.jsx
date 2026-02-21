@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
 import './DashboardHeader.css';
 
-const DashboardHeader = ({ title = 'LangAlpha', onStockSearch, onModifyPreferences }) => {
+const DashboardHeader = ({ title = 'LangAlpha', onStockSearch, onModifyPreferences, onStartOnboarding }) => {
   const navigate = useNavigate();
   const { isLoggedIn } = useAuth();
   const [isUserPanelOpen, setIsUserPanelOpen] = useState(false);
@@ -258,6 +258,7 @@ const DashboardHeader = ({ title = 'LangAlpha', onStockSearch, onModifyPreferenc
         isOpen={isUserPanelOpen}
         onClose={handlePanelClose}
         onModifyPreferences={onModifyPreferences}
+        onStartOnboarding={onStartOnboarding}
       />
     </>
   );

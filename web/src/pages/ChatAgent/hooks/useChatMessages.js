@@ -71,7 +71,7 @@ function isOnboardingRelatedToolSuccess(resultContent) {
   return !!(parsed.risk_preference || parsed.watchlist_item || parsed.portfolio_holding);
 }
 
-export function useChatMessages(workspaceId, initialThreadId = null, updateTodoListCard = null, updateSubagentCard = null, inactivateAllSubagents = null, completePendingTodos = null, onOnboardingRelatedToolComplete = null, onFileArtifact = null, agentMode = 'ptc', clearSubagentCards = null) {
+export function useChatMessages(workspaceId, initialThreadId = null, updateTodoListCard = null, updateSubagentCard = null, inactivateAllSubagents = null, completePendingTodos = null, onOnboardingRelatedToolComplete = null, onFileArtifact = null, agentMode = 'ptc', clearSubagentCards = null, onWorkspaceCreated = null) {
   // State
   const [messages, setMessages] = useState([]);
   const [threadId, setThreadId] = useState(() => {
@@ -708,6 +708,37 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             setMessages,
           });
 
+          // Resolve pending create_workspace or start_question interrupt from tool_call_result
+          if ((pendingHistoryInterrupt?.type === 'create_workspace' || pendingHistoryInterrupt?.type === 'start_question') && typeof event.content === 'string') {
+            const content = event.content;
+            const { assistantMessageId: intMsgId, proposalId, type: intType } = pendingHistoryInterrupt;
+            const dataKey = intType === 'create_workspace' ? 'workspaceProposals' : 'questionProposals';
+
+            let resolvedStatus = 'approved';
+            if (content === 'User declined workspace creation.' || content === 'User declined starting the question.') {
+              resolvedStatus = 'rejected';
+            } else {
+              try {
+                const parsed = JSON.parse(content);
+                if (parsed?.success === false) resolvedStatus = 'rejected';
+              } catch { /* non-JSON → treat as approved */ }
+            }
+
+            setMessages((prev) =>
+              updateMessage(prev, intMsgId, (msg) => ({
+                ...msg,
+                [dataKey]: {
+                  ...(msg[dataKey] || {}),
+                  [proposalId]: {
+                    ...(msg[dataKey]?.[proposalId] || {}),
+                    status: resolvedStatus,
+                  },
+                },
+              }))
+            );
+            pendingHistoryInterrupt = null;
+          }
+
           // Resolve pending user question interrupt from the tool_call_result content.
           // This is where the answer text lives (e.g. "User answered: Redis").
           if (pendingHistoryInterrupt?.type === 'ask_user_question' && typeof event.content === 'string') {
@@ -803,6 +834,70 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 interruptId: event.interrupt_id,
                 answer: null,
               };
+            } else if (actionType === 'create_workspace') {
+              // --- Create workspace interrupt (history) ---
+              const proposalId = event.interrupt_id || `workspace-history-${Date.now()}`;
+              const proposalData = event.action_requests[0];
+              pairState.contentOrderCounter++;
+              const order = pairState.contentOrderCounter;
+
+              setMessages((prev) =>
+                updateMessage(prev, interruptAssistantId, (msg) => ({
+                  ...msg,
+                  contentSegments: [
+                    ...(msg.contentSegments || []),
+                    { type: 'create_workspace', proposalId, order },
+                  ],
+                  workspaceProposals: {
+                    ...(msg.workspaceProposals || {}),
+                    [proposalId]: {
+                      workspace_name: proposalData.workspace_name,
+                      workspace_description: proposalData.workspace_description,
+                      interruptId: event.interrupt_id,
+                      status: 'pending',
+                    },
+                  },
+                }))
+              );
+
+              pendingHistoryInterrupt = {
+                type: 'create_workspace',
+                assistantMessageId: interruptAssistantId,
+                proposalId,
+                interruptId: event.interrupt_id,
+              };
+            } else if (actionType === 'start_question') {
+              // --- Start question interrupt (history) ---
+              const proposalId = event.interrupt_id || `question-start-history-${Date.now()}`;
+              const proposalData = event.action_requests[0];
+              pairState.contentOrderCounter++;
+              const order = pairState.contentOrderCounter;
+
+              setMessages((prev) =>
+                updateMessage(prev, interruptAssistantId, (msg) => ({
+                  ...msg,
+                  contentSegments: [
+                    ...(msg.contentSegments || []),
+                    { type: 'start_question', proposalId, order },
+                  ],
+                  questionProposals: {
+                    ...(msg.questionProposals || {}),
+                    [proposalId]: {
+                      workspace_id: proposalData.workspace_id,
+                      question: proposalData.question,
+                      interruptId: event.interrupt_id,
+                      status: 'pending',
+                    },
+                  },
+                }))
+              );
+
+              pendingHistoryInterrupt = {
+                type: 'start_question',
+                assistantMessageId: interruptAssistantId,
+                proposalId,
+                interruptId: event.interrupt_id,
+              };
             } else {
               // --- Plan approval interrupt (existing) ---
               const planApprovalId = event.interrupt_id || `plan-history-${Date.now()}`;
@@ -889,6 +984,20 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               interruptId: pendingHistoryInterrupt.interruptId,
               assistantMessageId: pendingHistoryInterrupt.assistantMessageId,
               questionId: pendingHistoryInterrupt.questionId,
+            });
+          } else if (intType === 'create_workspace') {
+            setPendingInterrupt({
+              type: 'create_workspace',
+              interruptId: pendingHistoryInterrupt.interruptId,
+              assistantMessageId: pendingHistoryInterrupt.assistantMessageId,
+              proposalId: pendingHistoryInterrupt.proposalId,
+            });
+          } else if (intType === 'start_question') {
+            setPendingInterrupt({
+              type: 'start_question',
+              interruptId: pendingHistoryInterrupt.interruptId,
+              assistantMessageId: pendingHistoryInterrupt.assistantMessageId,
+              proposalId: pendingHistoryInterrupt.proposalId,
             });
           } else {
             // plan_approval
@@ -2007,6 +2116,16 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         if (onOnboardingRelatedToolComplete && isOnboardingRelatedToolSuccess(event.content)) {
           onOnboardingRelatedToolComplete();
         }
+
+        // Detect navigate_to_workspace action from start_question tool result
+        if (onWorkspaceCreated && typeof event.content === 'string') {
+          try {
+            const parsed = JSON.parse(event.content);
+            if (parsed?.success && parsed?.action === 'navigate_to_workspace') {
+              onWorkspaceCreated({ workspaceId: parsed.workspace_id, question: parsed.question });
+            }
+          } catch { /* not JSON, ignore */ }
+        }
       } else if (eventType === 'interrupt') {
         const actionType = event.action_requests?.[0]?.type;
 
@@ -2043,6 +2162,70 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             interruptId: event.interrupt_id,
             assistantMessageId,
             questionId,
+          });
+        } else if (actionType === 'create_workspace') {
+          // --- Create workspace interrupt ---
+          const proposalId = event.interrupt_id || `workspace-${Date.now()}`;
+          const proposalData = event.action_requests[0];
+          const order = refs.contentOrderCounterRef.current++;
+
+          setMessages((prev) =>
+            updateMessage(prev, assistantMessageId, (msg) => ({
+              ...msg,
+              contentSegments: [
+                ...(msg.contentSegments || []),
+                { type: 'create_workspace', proposalId, order },
+              ],
+              workspaceProposals: {
+                ...(msg.workspaceProposals || {}),
+                [proposalId]: {
+                  workspace_name: proposalData.workspace_name,
+                  workspace_description: proposalData.workspace_description,
+                  interruptId: event.interrupt_id,
+                  status: 'pending',
+                },
+              },
+              isStreaming: false,
+            }))
+          );
+
+          setPendingInterrupt({
+            type: 'create_workspace',
+            interruptId: event.interrupt_id,
+            assistantMessageId,
+            proposalId,
+          });
+        } else if (actionType === 'start_question') {
+          // --- Start question interrupt ---
+          const proposalId = event.interrupt_id || `question-start-${Date.now()}`;
+          const proposalData = event.action_requests[0];
+          const order = refs.contentOrderCounterRef.current++;
+
+          setMessages((prev) =>
+            updateMessage(prev, assistantMessageId, (msg) => ({
+              ...msg,
+              contentSegments: [
+                ...(msg.contentSegments || []),
+                { type: 'start_question', proposalId, order },
+              ],
+              questionProposals: {
+                ...(msg.questionProposals || {}),
+                [proposalId]: {
+                  workspace_id: proposalData.workspace_id,
+                  question: proposalData.question,
+                  interruptId: event.interrupt_id,
+                  status: 'pending',
+                },
+              },
+              isStreaming: false,
+            }))
+          );
+
+          setPendingInterrupt({
+            type: 'start_question',
+            interruptId: event.interrupt_id,
+            assistantMessageId,
+            proposalId,
           });
         } else {
           // --- Plan approval interrupt (existing) ---
@@ -2470,6 +2653,110 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     resumeWithHitlResponse(hitlResponse, false);
   }, [pendingInterrupt, resumeWithHitlResponse]);
 
+  const handleApproveCreateWorkspace = useCallback(() => {
+    if (!pendingInterrupt || pendingInterrupt.type !== 'create_workspace') return;
+    const { interruptId, proposalId } = pendingInterrupt;
+
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (!msg.workspaceProposals?.[proposalId]) return msg;
+        return {
+          ...msg,
+          workspaceProposals: {
+            ...msg.workspaceProposals,
+            [proposalId]: {
+              ...msg.workspaceProposals[proposalId],
+              status: 'approved',
+            },
+          },
+        };
+      })
+    );
+
+    const hitlResponse = {
+      [interruptId]: { decisions: [{ type: 'approve' }] },
+    };
+    resumeWithHitlResponse(hitlResponse, false);
+  }, [pendingInterrupt, resumeWithHitlResponse]);
+
+  const handleRejectCreateWorkspace = useCallback(() => {
+    if (!pendingInterrupt || pendingInterrupt.type !== 'create_workspace') return;
+    const { interruptId, proposalId } = pendingInterrupt;
+
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (!msg.workspaceProposals?.[proposalId]) return msg;
+        return {
+          ...msg,
+          workspaceProposals: {
+            ...msg.workspaceProposals,
+            [proposalId]: {
+              ...msg.workspaceProposals[proposalId],
+              status: 'rejected',
+            },
+          },
+        };
+      })
+    );
+
+    const hitlResponse = {
+      [interruptId]: { decisions: [{ type: 'reject' }] },
+    };
+    resumeWithHitlResponse(hitlResponse, false);
+  }, [pendingInterrupt, resumeWithHitlResponse]);
+
+  const handleApproveStartQuestion = useCallback(() => {
+    if (!pendingInterrupt || pendingInterrupt.type !== 'start_question') return;
+    const { interruptId, proposalId } = pendingInterrupt;
+
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (!msg.questionProposals?.[proposalId]) return msg;
+        return {
+          ...msg,
+          questionProposals: {
+            ...msg.questionProposals,
+            [proposalId]: {
+              ...msg.questionProposals[proposalId],
+              status: 'approved',
+            },
+          },
+        };
+      })
+    );
+
+    const hitlResponse = {
+      [interruptId]: { decisions: [{ type: 'approve' }] },
+    };
+    resumeWithHitlResponse(hitlResponse, false);
+  }, [pendingInterrupt, resumeWithHitlResponse]);
+
+  const handleRejectStartQuestion = useCallback(() => {
+    if (!pendingInterrupt || pendingInterrupt.type !== 'start_question') return;
+    const { interruptId, proposalId } = pendingInterrupt;
+
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (!msg.questionProposals?.[proposalId]) return msg;
+        return {
+          ...msg,
+          questionProposals: {
+            ...msg.questionProposals,
+            [proposalId]: {
+              ...msg.questionProposals[proposalId],
+              status: 'rejected',
+            },
+          },
+        };
+      })
+    );
+
+    const hitlResponse = {
+      [interruptId]: { decisions: [{ type: 'reject' }] },
+    };
+    resumeWithHitlResponse(hitlResponse, false);
+  }, [pendingInterrupt, resumeWithHitlResponse]);
+
   return {
     messages,
     threadId,
@@ -2485,6 +2772,10 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     handleRejectInterrupt,
     handleAnswerQuestion,
     handleSkipQuestion,
+    handleApproveCreateWorkspace,
+    handleRejectCreateWorkspace,
+    handleApproveStartQuestion,
+    handleRejectStartQuestion,
     tokenUsage,
     // Resolve subagentId (e.g. toolCallId from segment) to stable agent_id for card operations.
     resolveSubagentIdToAgentId: (subagentId) =>

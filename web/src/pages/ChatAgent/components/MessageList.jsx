@@ -16,6 +16,8 @@ import { useAuth } from '../../../contexts/AuthContext';
 import ReasoningMessageContent from './ReasoningMessageContent';
 import PlanApprovalCard from './PlanApprovalCard';
 import UserQuestionCard from './UserQuestionCard';
+import CreateWorkspaceCard from './CreateWorkspaceCard';
+import StartQuestionCard from './StartQuestionCard';
 import SubagentTaskMessageContent from './SubagentTaskMessageContent';
 import TextMessageContent from './TextMessageContent';
 import ToolCallMessageContent from './ToolCallMessageContent';
@@ -148,7 +150,7 @@ function AttachmentCard({ attachment }) {
  * - Streaming indicators
  * - Error state styling
  */
-function MessageList({ messages, hideAvatar, compactToolCalls, isSubagentView, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion }) {
+function MessageList({ messages, hideAvatar, compactToolCalls, isSubagentView, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion, onApproveCreateWorkspace, onRejectCreateWorkspace, onApproveStartQuestion, onRejectStartQuestion }) {
   // Empty state - show when no messages exist (hidden in subagent view)
   if (messages.length === 0) {
     if (isSubagentView) return null;
@@ -181,6 +183,10 @@ function MessageList({ messages, hideAvatar, compactToolCalls, isSubagentView, o
           onPlanDetailClick={onPlanDetailClick}
           onAnswerQuestion={onAnswerQuestion}
           onSkipQuestion={onSkipQuestion}
+          onApproveCreateWorkspace={onApproveCreateWorkspace}
+          onRejectCreateWorkspace={onRejectCreateWorkspace}
+          onApproveStartQuestion={onApproveStartQuestion}
+          onRejectStartQuestion={onRejectStartQuestion}
         />
       ))}
     </div>
@@ -193,7 +199,7 @@ function MessageList({ messages, hideAvatar, compactToolCalls, isSubagentView, o
  * Renders a single message bubble with appropriate styling
  * based on role (user/assistant) and state (streaming/error)
  */
-function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion }) {
+function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion, onApproveCreateWorkspace, onRejectCreateWorkspace, onApproveStartQuestion, onRejectStartQuestion }) {
   const { user } = useAuth();
   const avatarUrl = user?.avatar_url;
   const isUser = message.role === 'user';
@@ -249,6 +255,8 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, 
               subagentTasks={message.subagentTasks || {}}
               planApprovals={message.planApprovals || {}}
               userQuestions={message.userQuestions || {}}
+              workspaceProposals={message.workspaceProposals || {}}
+              questionProposals={message.questionProposals || {}}
               pendingToolCallChunks={message.pendingToolCallChunks || {}}
               isStreaming={message.isStreaming}
               hasError={message.error}
@@ -264,6 +272,10 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, 
               onPlanDetailClick={onPlanDetailClick}
               onAnswerQuestion={onAnswerQuestion}
               onSkipQuestion={onSkipQuestion}
+              onApproveCreateWorkspace={onApproveCreateWorkspace}
+              onRejectCreateWorkspace={onRejectCreateWorkspace}
+              onApproveStartQuestion={onApproveStartQuestion}
+              onRejectStartQuestion={onRejectStartQuestion}
               textOnly={true}
             />
           ) : (
@@ -337,7 +349,7 @@ const MAX_IN_PROGRESS_MS = 15000; // max time a tool call can stay in-progress i
 /** Tools that should stay in the live zone for their entire duration (no MAX_IN_PROGRESS_MS cap) */
 const ALWAYS_LIVE_TOOLS = new Set(['Wait']);
 
-function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, todoListProcesses, subagentTasks, planApprovals = {}, userQuestions = {}, pendingToolCallChunks = {}, isStreaming, hasError, isAssistant = false, compactToolCalls = false, isSubagentView = false, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion, textOnly = false }) {
+function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, todoListProcesses, subagentTasks, planApprovals = {}, userQuestions = {}, workspaceProposals = {}, questionProposals = {}, pendingToolCallChunks = {}, isStreaming, hasError, isAssistant = false, compactToolCalls = false, isSubagentView = false, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion, onApproveCreateWorkspace, onRejectCreateWorkspace, onApproveStartQuestion, onRejectStartQuestion, textOnly = false }) {
   // Force re-render timer for recently-completed tool calls that need minimum exposure
   const [, setTick] = useState(0);
   const expiryTimerRef = useRef(null);
@@ -408,6 +420,12 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
     } else if (segment.type === 'user_question') {
       currentTextGroup = null;
       groupedSegments.push(segment);
+    } else if (segment.type === 'create_workspace') {
+      currentTextGroup = null;
+      groupedSegments.push(segment);
+    } else if (segment.type === 'start_question') {
+      currentTextGroup = null;
+      groupedSegments.push(segment);
     }
   }
 
@@ -418,11 +436,14 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
       if (s.type === 'subagent_task') return true;
       if (s.type === 'plan_approval') return true;
       if (s.type === 'user_question') return true;
+      if (s.type === 'create_workspace') return true;
+      if (s.type === 'start_question') return true;
       if (s.type === 'tool_call') {
         const toolName = toolCallProcesses[s.toolCallId]?.toolName;
         if (toolName === 'TodoWrite') return false;
         if (toolName === 'task' || toolName === 'Task') return false;
         if (toolName === 'SubmitPlan' || toolName === 'AskUserQuestion') return false;
+        if (toolName === 'create_workspace' || toolName === 'start_question') return false;
         return true;
       }
       return false;
@@ -565,6 +586,12 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
       } else if (seg.type === 'user_question') {
         flushActivity();
         renderBlocks.push({ type: 'user_question', key: `question-${seg.questionId}`, segment: seg });
+      } else if (seg.type === 'create_workspace') {
+        flushActivity();
+        renderBlocks.push({ type: 'create_workspace', key: `workspace-${seg.proposalId}`, segment: seg });
+      } else if (seg.type === 'start_question') {
+        flushActivity();
+        renderBlocks.push({ type: 'start_question', key: `start-question-${seg.proposalId}`, segment: seg });
       } else if (seg.type === 'text') {
         flushActivity();
         renderBlocks.push({ type: 'text', key: `text-${seg.order}`, segment: seg });
@@ -731,6 +758,32 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
             );
           }
 
+          if (block.type === 'create_workspace') {
+            const wd = workspaceProposals[block.segment.proposalId];
+            if (!wd) return null;
+            return (
+              <CreateWorkspaceCard
+                key={block.key}
+                proposalData={wd}
+                onApprove={onApproveCreateWorkspace}
+                onReject={onRejectCreateWorkspace}
+              />
+            );
+          }
+
+          if (block.type === 'start_question') {
+            const sqd = questionProposals[block.segment.proposalId];
+            if (!sqd) return null;
+            return (
+              <StartQuestionCard
+                key={block.key}
+                proposalData={sqd}
+                onApprove={onApproveStartQuestion}
+                onReject={onRejectStartQuestion}
+              />
+            );
+          }
+
           return null;
         })}
         {/* Standalone preparingToolCall when no activity blocks exist yet */}
@@ -853,6 +906,32 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
                 questionData={qd}
                 onAnswer={onAnswerQuestion}
                 onSkip={onSkipQuestion}
+              />
+            );
+          }
+          return null;
+        } else if (segment.type === 'create_workspace') {
+          const wd = workspaceProposals[segment.proposalId];
+          if (wd) {
+            return (
+              <CreateWorkspaceCard
+                key={`workspace-${segment.proposalId}`}
+                proposalData={wd}
+                onApprove={onApproveCreateWorkspace}
+                onReject={onRejectCreateWorkspace}
+              />
+            );
+          }
+          return null;
+        } else if (segment.type === 'start_question') {
+          const sqd = questionProposals[segment.proposalId];
+          if (sqd) {
+            return (
+              <StartQuestionCard
+                key={`start-question-${segment.proposalId}`}
+                proposalData={sqd}
+                onApprove={onApproveStartQuestion}
+                onReject={onRejectStartQuestion}
               />
             );
           }

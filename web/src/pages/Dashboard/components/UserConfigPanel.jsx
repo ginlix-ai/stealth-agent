@@ -13,7 +13,7 @@ import ConfirmDialog from './ConfirmDialog';
  * @param {boolean} isOpen - Whether the panel is open
  * @param {Function} onClose - Callback to close the panel
  */
-function UserConfigPanel({ isOpen, onClose, onModifyPreferences }) {
+function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboarding }) {
   const { user: authUser, logout, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState('userInfo');
   const [avatarUrl, setAvatarUrl] = useState(null);
@@ -257,6 +257,11 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences }) {
   const handleModifyPreferences = () => {
     onClose();
     if (onModifyPreferences) onModifyPreferences();
+  };
+
+  const handleStartOnboarding = () => {
+    onClose();
+    if (onStartOnboarding) onStartOnboarding();
   };
 
   const handleLogoutConfirm = () => {
@@ -633,6 +638,36 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences }) {
 
               {!isLoading && activeTab === 'preferences' && (
                 <div className="space-y-5">
+                  {authUser?.onboarding_completed !== true && onStartOnboarding && (
+                    <div
+                      className="rounded-lg px-4 py-4 flex items-center justify-between gap-3"
+                      style={{
+                        backgroundColor: 'rgba(97, 85, 245, 0.08)',
+                        border: '1px solid rgba(97, 85, 245, 0.2)',
+                      }}
+                    >
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                          Complete your profile setup
+                        </p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
+                          Set up your stocks, risk tolerance, and preferences through a quick conversation.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleStartOnboarding}
+                        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium"
+                        style={{
+                          backgroundColor: 'var(--color-accent-primary)',
+                          color: 'var(--color-text-on-accent)',
+                        }}
+                      >
+                        Start Onboarding
+                      </button>
+                    </div>
+                  )}
+
                   <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                     Preferences are managed through conversation with the agent. Use the button below to update them.
                   </p>

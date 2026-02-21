@@ -382,7 +382,7 @@ function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      <DashboardHeader onModifyPreferences={navigateToModifyPreferences} />
+      <DashboardHeader onModifyPreferences={navigateToModifyPreferences} onStartOnboarding={navigateToOnboarding} />
 
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         <div className="w-full flex-1 min-h-0 flex justify-center">

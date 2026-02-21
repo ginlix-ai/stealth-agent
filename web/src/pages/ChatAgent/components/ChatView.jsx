@@ -222,6 +222,14 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     }
   }, [refreshUser]);
 
+  // Navigate to a newly created workspace with an optional starter question
+  const handleWorkspaceCreated = useCallback(({ workspaceId: newWsId, question }) => {
+    if (!newWsId) return;
+    const path = `/chat/${newWsId}/__default__`;
+    const state = question ? { initialMessage: question } : {};
+    navigate(path, { state });
+  }, [navigate]);
+
   // Workspace files - shared between FilePanel and ChatInput
   // Must be declared before useChatMessages so refreshFiles can be passed as onFileArtifact
   // Skip for flash mode — no sandbox
@@ -247,11 +255,15 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     handleRejectInterrupt,
     handleAnswerQuestion,
     handleSkipQuestion,
+    handleApproveCreateWorkspace,
+    handleRejectCreateWorkspace,
+    handleApproveStartQuestion,
+    handleRejectStartQuestion,
     tokenUsage,
     threadId: currentThreadId,
     getSubagentHistory,
     resolveSubagentIdToAgentId,
-  } = useChatMessages(workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, completePendingTodos, handleOnboardingRelatedToolComplete, refreshFiles, agentMode, clearSubagentCards);
+  } = useChatMessages(workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, completePendingTodos, handleOnboardingRelatedToolComplete, refreshFiles, agentMode, clearSubagentCards, handleWorkspaceCreated);
 
   // Ref to avoid stale closure in unmount cleanup
   const currentThreadIdRef = useRef(currentThreadId);
@@ -891,6 +903,10 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                         onPlanDetailClick={handlePlanDetailClick}
                         onAnswerQuestion={handleAnswerQuestion}
                         onSkipQuestion={handleSkipQuestion}
+                        onApproveCreateWorkspace={handleApproveCreateWorkspace}
+                        onRejectCreateWorkspace={handleRejectCreateWorkspace}
+                        onApproveStartQuestion={handleApproveStartQuestion}
+                        onRejectStartQuestion={handleRejectStartQuestion}
                       />
                     </div>
                   </div>
