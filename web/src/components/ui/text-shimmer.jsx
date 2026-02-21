@@ -9,7 +9,7 @@ export function TextShimmer({
   duration = 2,
   spread = 2,
 }) {
-  const MotionComponent = motion(Component);
+  const MotionComponent = motion.create(Component);
 
   const dynamicSpread = useMemo(() => {
     return children.length * spread;
