@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -353,15 +353,93 @@ const VARIANTS = {
 
 export { CodeBlock };
 
+/**
+ * Fix malformed GFM tables so remark-gfm can parse them.
+ *
+ * Common LLM mistakes:
+ *  - Separator row has fewer columns than the header row
+ *  - Data rows have fewer/more columns than the header
+ *  - Merged/mangled cells like "|---|------ 1 | ..."
+ *
+ * Strategy: detect table blocks (consecutive lines starting/ending with |),
+ * count header columns, then rebuild the separator and pad/trim data rows.
+ */
+function fixMarkdownTables(content) {
+  if (!content || typeof content !== 'string') return content;
+
+  const lines = content.split('\n');
+  const result = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Detect a potential table header: must have at least 2 pipes and look like "| ... | ... |"
+    if (trimmed.startsWith('|') && trimmed.endsWith('|') && (trimmed.match(/\|/g) || []).length >= 3) {
+      const headerCols = trimmed.split('|').slice(1, -1); // cells between outer pipes
+      const colCount = headerCols.length;
+
+      // Check if next line is a separator (pipes + dashes/colons/spaces only)
+      if (i + 1 < lines.length && /^\|[\s\-:|]+\|$/.test(lines[i + 1].trim())) {
+        const sepCols = lines[i + 1].trim().split('|').slice(1, -1).length;
+
+        // If separator column count doesn't match header, rebuild it
+        if (sepCols !== colCount) {
+          result.push(line);
+          result.push('|' + Array(colCount).fill('---').join('|') + '|');
+          i += 2;
+        } else {
+          // Separator is fine, push both
+          result.push(line);
+          result.push(lines[i + 1]);
+          i += 2;
+        }
+
+        // Now process data rows: pad or trim cells to match colCount
+        while (i < lines.length) {
+          const row = lines[i].trim();
+          if (!row.startsWith('|')) break; // end of table
+
+          const cells = row.split('|');
+          // Split gives ['', cell1, cell2, ..., ''] for "|a|b|"
+          // Handle malformed rows that don't end with |
+          const hasTrailingPipe = row.endsWith('|');
+          const inner = hasTrailingPipe ? cells.slice(1, -1) : cells.slice(1);
+
+          if (inner.length === colCount) {
+            result.push(lines[i]); // row is fine
+          } else if (inner.length < colCount) {
+            // Pad with empty cells
+            const padded = [...inner, ...Array(colCount - inner.length).fill(' ')];
+            result.push('|' + padded.join('|') + '|');
+          } else {
+            // Too many cells — trim to colCount
+            result.push('|' + inner.slice(0, colCount).join('|') + '|');
+          }
+          i++;
+        }
+        continue;
+      }
+    }
+
+    result.push(line);
+    i++;
+  }
+
+  return result.join('\n');
+}
+
 function Markdown({ content, variant = 'panel', className = '', style }) {
   const config = VARIANTS[variant];
+  const fixed = useMemo(() => fixMarkdownTables(content), [content]);
   return (
     <div
       className={`${config.className} ${className}`.trim()}
       style={{ ...config.style, ...style }}
     >
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={config.components}>
-        {content}
+        {fixed}
       </ReactMarkdown>
     </div>
   );
