@@ -1,4 +1,4 @@
-"""Utility functions for middleware."""
+"""Shared utility functions for middleware."""
 
 from langchain_core.messages import SystemMessage
 

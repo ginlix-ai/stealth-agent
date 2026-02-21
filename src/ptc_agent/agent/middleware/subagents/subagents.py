@@ -24,7 +24,7 @@ from ptc_agent.agent.middleware.background.middleware import (
     current_background_tool_call_id,
 )
 from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
-from ptc_agent.agent.middleware.subagents._utils import append_to_system_message
+from ptc_agent.agent.middleware._utils import append_to_system_message
 
 logger = structlog.get_logger(__name__)
 
