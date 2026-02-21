@@ -45,7 +45,6 @@ from ptc_agent.agent.middleware import (
     # Subagent message queue middleware
     SubagentMessageQueueMiddleware,
 )
-from ptc_agent.agent.skills import SKILL_REGISTRY
 from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
 from ptc_agent.agent.prompts import (
     format_subagent_summary,
@@ -70,6 +69,7 @@ from src.tools.market_data.tool import (
     get_market_indices,
     get_sector_performance,
 )
+from src.tools.automation import AUTOMATION_TOOLS
 from ptc_agent.config import AgentConfig
 from ptc_agent.core.mcp_registry import MCPRegistry
 from ptc_agent.core.sandbox import ExecutionResult, PTCSandbox
@@ -332,6 +332,10 @@ class PTCAgent:
         tools.extend(finance_tools)
         logger.info("Finance tools enabled", tool_count=len(finance_tools))
 
+        # Add automation tools (check, create, manage automations)
+        tools.extend(AUTOMATION_TOOLS)
+        logger.info("Automation tools enabled", tool_count=len(AUTOMATION_TOOLS))
+
         # Default to subagents from config if none specified
         if subagent_names is None:
             subagent_names = self.config.subagents_enabled
@@ -368,7 +372,7 @@ class PTCAgent:
 
         # Add dynamic skill loader middleware for user onboarding etc.
         skill_loader_middleware = DynamicSkillLoaderMiddleware(
-            skill_registry=SKILL_REGISTRY
+            mode="ptc",
         )
         shared_middleware.append(skill_loader_middleware)
         # Add load_skill tool
@@ -377,7 +381,7 @@ class PTCAgent:
         tools.extend(skill_loader_middleware.get_all_skill_tools())
         logger.info(
             "Dynamic skill loader enabled",
-            skill_count=len(SKILL_REGISTRY),
+            skill_count=len(skill_loader_middleware.skill_registry),
             skill_tool_count=len(skill_loader_middleware.get_all_skill_tools()),
         )
 

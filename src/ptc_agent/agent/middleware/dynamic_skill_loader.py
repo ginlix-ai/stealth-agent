@@ -1,26 +1,24 @@
 """Dynamic skill loader middleware.
 
-This middleware provides a `LoadSkill` tool that dynamically makes skill tools
-available to the agent. Skills are pre-registered at agent creation, but the
-`wrap_model_call` hook filters tools before each model turn.
+This middleware dynamically makes skill tools available to the agent. Behavior
+differs by agent mode:
 
-Key insight: Middleware's `wrap_model_call` hook can dynamically modify
-`ModelRequest.tools` before each turn. Tools must be pre-registered at agent
-creation for ToolNode execution, but visibility is controlled per-turn.
+- **PTC mode**: No `LoadSkill` tool. Auto-detects when the agent reads a
+  skill's SKILL.md via the `Read` tool and silently loads the skill's tools.
+- **Flash mode**: Exposes `LoadSkill` tool. Embeds SKILL.md content inline
+  (Flash has no filesystem). Injects a skill manifest into the system message.
 
 Architecture:
 - Tools from all skills are pre-registered with ToolNode at agent creation
-- The `LoadSkill` tool is intercepted by middleware to update state["loaded_skills"]
 - Before each model call, `awrap_model_call` filters tools based on loaded skills
-- Result: Model only sees tools from loaded skills (+ LoadSkill itself)
+- PTC: Reading a SKILL.md triggers auto-load via Command state update
+- Flash: `LoadSkill` tool call triggers load + inline SKILL.md content
 
 Usage:
     from ptc_agent.agent.middleware.dynamic_skill_loader import DynamicSkillLoaderMiddleware
-    from ptc_agent.agent.skills import SKILL_REGISTRY
 
-    middleware = DynamicSkillLoaderMiddleware(skill_registry=SKILL_REGISTRY)
-    # middleware.tools contains [LoadSkill]
-    # middleware.get_all_skill_tools() returns all skill tools for ToolNode
+    middleware = DynamicSkillLoaderMiddleware(mode="ptc")   # no LoadSkill tool
+    middleware = DynamicSkillLoaderMiddleware(mode="flash")  # LoadSkill + manifest
 """
 
 from collections.abc import Awaitable, Callable
@@ -34,7 +32,15 @@ from langchain_core.tools import tool
 from langgraph.types import Command
 from typing_extensions import NotRequired
 
-from ptc_agent.agent.skills import SkillDefinition, SKILL_REGISTRY, get_skill, list_skills
+from ptc_agent.agent.middleware._utils import append_to_system_message
+from ptc_agent.agent.skills import (
+    SkillDefinition,
+    SkillMode,
+    get_skill,
+    get_skill_registry,
+    list_skills,
+)
+from src.server.utils.skill_context import load_skill_content
 
 logger = structlog.get_logger(__name__)
 
@@ -50,22 +56,22 @@ class LoadedSkillsState(AgentState):
 class DynamicSkillLoaderMiddleware(AgentMiddleware):
     """Middleware that provides dynamic skill loading with tool filtering.
 
-    This middleware:
-    1. Provides a `LoadSkill` tool for the agent to request skill capabilities
-    2. Intercepts `LoadSkill` calls to update state["loaded_skills"] via Command
-    3. Filters tools in `awrap_model_call` based on state["loaded_skills"]
-    4. Pre-registers all skill tools for ToolNode availability (but hidden until loaded)
-
-    The middleware works with LangGraph state to track loaded skills:
-    - state["loaded_skills"]: List of skill names that have been loaded
+    Behavior varies by mode:
+    - PTC: Auto-loads skills when agent reads a SKILL.md file. No LoadSkill tool.
+    - Flash: Exposes LoadSkill tool with inline SKILL.md. Injects skill manifest
+      into system message so the agent knows what skills are available.
 
     Attributes:
         skill_registry: Mapping of skill names to SkillDefinition objects
-        tools: List containing the LoadSkill tool
+        tools: List containing the LoadSkill tool (Flash) or empty (PTC)
     """
 
-    # Tool name to intercept
+    # Tool name to intercept (Flash mode only)
     TOOL_NAME = "LoadSkill"
+
+    # Tool name and filename used for PTC auto-load detection
+    _READ_TOOL_NAME = "Read"
+    _SKILL_MD_FILENAME = "SKILL.md"
 
     # State schema for LangGraph
     state_schema = LoadedSkillsState
@@ -73,37 +79,56 @@ class DynamicSkillLoaderMiddleware(AgentMiddleware):
     def __init__(
         self,
         skill_registry: dict[str, SkillDefinition] | None = None,
+        mode: SkillMode | None = None,
     ) -> None:
         """Initialize the middleware.
 
         Args:
-            skill_registry: Optional custom skill registry. Defaults to SKILL_REGISTRY.
+            skill_registry: Optional custom skill registry. Defaults to SKILL_REGISTRY
+                filtered by mode.
+            mode: Agent mode. Determines behavior:
+                - "ptc": No LoadSkill tool, auto-load on Read of SKILL.md
+                - "flash": LoadSkill tool exposed, skill manifest in system message
         """
         super().__init__()
-        self.skill_registry = skill_registry or SKILL_REGISTRY
+        self._mode = mode
+        self.skill_registry = skill_registry or get_skill_registry(mode)
 
-        # Build mapping of tool names to their skill
-        self._tool_to_skill: dict[str, str] = {}
-        for skill_name, skill in self.skill_registry.items():
-            for t in skill.tools:
+        # Build mapping of tool names → skill names (a tool can belong to multiple skills)
+        self._tool_to_skills: dict[str, set[str]] = {}
+        for skill_name, skill_def in self.skill_registry.items():
+            for t in skill_def.tools:
                 tool_name = getattr(t, "name", str(t))
-                self._tool_to_skill[tool_name] = skill_name
+                self._tool_to_skills.setdefault(tool_name, set()).add(skill_name)
 
-        # Create the load_skill tool
-        self.tools = [self._create_load_skill_tool()]
+        # Build mapping of SKILL.md paths → skill names (for PTC auto-load)
+        self._skill_md_to_name: dict[str, str] = {}
+        for skill_name, skill_def in self.skill_registry.items():
+            if skill_def.skill_md_path:
+                self._skill_md_to_name[skill_def.skill_md_path] = skill_name
+
+        # PTC mode: no LoadSkill tool (auto-loads on Read)
+        # Flash mode: expose LoadSkill tool + cache skill manifest for system message
+        if mode == "ptc":
+            self.tools: list[Any] = []
+            self._skill_manifest: str | None = None
+        else:
+            self.tools = [self._create_load_skill_tool()]
+            self._skill_manifest = self._build_skill_manifest()
 
         logger.info(
             "DynamicSkillLoaderMiddleware initialized",
+            mode=mode,
             skill_count=len(self.skill_registry),
             skills=list(self.skill_registry.keys()),
-            skill_tools=len(self._tool_to_skill),
+            skill_tools=len(self._tool_to_skills),
+            has_load_skill_tool=len(self.tools) > 0,
         )
 
     def _create_load_skill_tool(self) -> Any:
-        """Create the LoadSkill tool.
+        """Create the LoadSkill tool (Flash mode only).
 
         The actual state update happens in awrap_tool_call, not in the tool itself.
-        The tool just returns a simple acknowledgment.
 
         Returns:
             A LangChain tool for loading skills
@@ -122,11 +147,59 @@ class DynamicSkillLoaderMiddleware(AgentMiddleware):
             Returns:
                 The tool will be available for you to call *directly*
             """
-            # This is a placeholder - the middleware intercepts this
-            # and handles state updates + returns proper instructions
+            # Placeholder - middleware intercepts and handles state updates
             return f"Loading skill: {skill_name}"
 
         return load_skill
+
+    def _build_skill_manifest(self) -> str | None:
+        """Build a skill manifest for the system message (Flash mode).
+
+        Lists all available skills so the agent knows what can be loaded.
+
+        Returns:
+            Formatted manifest string, or None if no skills registered
+        """
+        if not self.skill_registry:
+            return None
+        lines = [
+            "## Available Skills",
+            "Call `LoadSkill` with the skill name to activate its tools.",
+            "",
+        ]
+        for skill_def in self.skill_registry.values():
+            if skill_def.exposure == "hidden":
+                continue  # Hidden skills are not discoverable via LoadSkill
+            tool_names = ", ".join(skill_def.get_tool_names())
+            lines.append(f"- **{skill_def.name}**: {skill_def.description} (tools: {tool_names})")
+        if len(lines) <= 3:
+            return None  # No visible skills to list
+        return "\n".join(lines)
+
+    def _match_skill_from_read(self, tool_name: str, tool_args: dict) -> str | None:
+        """Check if a Read tool call targets a registered skill's SKILL.md.
+
+        Uses a two-stage filter for efficiency:
+        1. O(1) fast-path reject if not reading any SKILL.md
+        2. O(n) match against registered skill paths (n = skill count, typically < 10)
+
+        Args:
+            tool_name: Name of the tool being called
+            tool_args: Arguments passed to the tool
+
+        Returns:
+            Skill name if matched, None otherwise
+        """
+        if tool_name != self._READ_TOOL_NAME:
+            return None
+        file_path: str = tool_args.get("file_path", "")
+        if not file_path.endswith(self._SKILL_MD_FILENAME):
+            return None  # Fast path: not reading any SKILL.md
+        # Only reach here when reading *some* SKILL.md — check if it's registered
+        for md_path, skill_name in self._skill_md_to_name.items():
+            if file_path.endswith(md_path):
+                return skill_name
+        return None
 
     def _build_skill_result(self, skill: SkillDefinition) -> str:
         """Build the result message for a loaded skill.
@@ -137,32 +210,29 @@ class DynamicSkillLoaderMiddleware(AgentMiddleware):
         Returns:
             Formatted instructions string
         """
-        # Build tool descriptions
-        tool_descriptions = []
-        for t in skill.tools:
-            name = getattr(t, "name", str(t))
-            desc = getattr(t, "description", "No description")
-            # Truncate long descriptions
-            if len(desc) > 200:
-                desc = desc[:200] + "..."
-            tool_descriptions.append(f"  - **{name}**: {desc}")
+        tools_text = skill.format_tool_descriptions()
 
-        tools_text = "\n".join(tool_descriptions)
-
-        # Build instruction to read SKILL.md
-        skill_md_instruction = ""
+        # Build SKILL.md section based on mode
+        skill_md_section = ""
         if skill.skill_md_path:
-            skill_md_instruction = (
-                f"\n\n**IMPORTANT**: Read the skill documentation for detailed usage examples:\n"
-                f"  Path: `{skill.skill_md_path}`\n"
-                f"  Use the file read tool to read this file before using the skill tools."
-            )
+            if self._mode != "ptc":
+                # Flash mode: embed content directly (no filesystem access)
+                content = load_skill_content(skill.name, mode=self._mode)
+                if content:
+                    skill_md_section = f"\n\n**Skill Documentation:**\n{content}"
+            else:
+                # PTC mode: point to sandbox path (agent has filesystem)
+                skill_md_section = (
+                    f"\n\n**IMPORTANT**: Read the skill documentation for detailed usage examples:\n"
+                    f"  Path: `{skill.skill_md_path}`\n"
+                    f"  Use the file read tool to read this file before using the skill tools."
+                )
 
         return (
             f"# Skill Loaded: {skill.name}\n\n"
             f"{skill.description}\n\n"
             f"**Available tools:**\n{tools_text}"
-            f"{skill_md_instruction}\n\n"
+            f"{skill_md_section}\n\n"
             f"You can now use these tools to help the user."
         )
 
@@ -190,22 +260,44 @@ class DynamicSkillLoaderMiddleware(AgentMiddleware):
         request: Any,
         handler: Callable[[Any], Awaitable[Any]],
     ) -> Any:
-        """Intercept load_skill calls to update state via Command.
+        """Intercept tool calls for skill loading.
+
+        - PTC mode: Auto-load skill when agent reads a SKILL.md
+        - Flash mode: Handle LoadSkill tool calls
 
         Args:
             request: Tool call request
             handler: Next handler in chain
 
         Returns:
-            Command with state update and ToolMessage, or pass through for other tools
+            Command with state update and ToolMessage, or pass through
         """
         tool_call = request.tool_call
         tool_name = tool_call.get("name")
 
         # Pass through non-target tools
         if tool_name != self.TOOL_NAME:
-            return await handler(request)
+            result = await handler(request)
 
+            # PTC mode: auto-load skill when agent reads a SKILL.md
+            if self._mode == "ptc" and self._skill_md_to_name:
+                tool_args = tool_call.get("args", {})
+                matched_skill = self._match_skill_from_read(tool_name, tool_args)
+                if matched_skill and isinstance(result, ToolMessage):
+                    logger.info(
+                        "Auto-loading skill from SKILL.md read",
+                        skill_name=matched_skill,
+                    )
+                    return Command(
+                        update={
+                            LOADED_SKILLS_KEY: [matched_skill],
+                            "messages": [result],  # preserve original Read result
+                        },
+                    )
+
+            return result
+
+        # --- Flash mode: handle LoadSkill tool call ---
         tool_call_id = tool_call.get("id", "unknown")
         tool_args = tool_call.get("args", {})
         skill_name = tool_args.get("skill_name", "")
@@ -216,11 +308,16 @@ class DynamicSkillLoaderMiddleware(AgentMiddleware):
             skill_name=skill_name,
         )
 
-        # Look up the skill
-        skill = get_skill(skill_name)
+        # Look up the skill (filtered by mode if set)
+        skill = get_skill(skill_name, mode=self._mode)
+
+        # Block hidden skills from being loaded via LoadSkill
+        # (they can only be activated via additionalContext)
+        if skill and skill.exposure == "hidden":
+            skill = None
 
         if not skill:
-            available = list_skills()
+            available = list_skills(mode=self._mode)
             skill_names = [s["name"] for s in available]
             error_msg = (
                 f"Error: Skill '{skill_name}' not found.\n\n"
@@ -243,10 +340,9 @@ class DynamicSkillLoaderMiddleware(AgentMiddleware):
         )
 
         # Return Command to update state with loaded skill
-        # Use a list since sets aren't JSON serializable
         return Command(
             update={
-                LOADED_SKILLS_KEY: [skill_name],  # Will be merged/appended
+                LOADED_SKILLS_KEY: [skill_name],
                 "messages": [
                     ToolMessage(
                         content=result_message,
@@ -273,9 +369,6 @@ class DynamicSkillLoaderMiddleware(AgentMiddleware):
     ) -> ModelResponse:
         """Filter tools before each model call based on loaded skills.
 
-        This is where the magic happens: before the model sees the tools,
-        we filter out tools from skills that haven't been loaded yet.
-
         Args:
             request: ModelRequest containing tools list and state
             handler: Next handler in middleware chain
@@ -289,17 +382,18 @@ class DynamicSkillLoaderMiddleware(AgentMiddleware):
     def _filter_tools(self, request: ModelRequest) -> ModelRequest:
         """Filter tools based on which skills are loaded.
 
+        Also injects the skill manifest into the system message (Flash mode).
+
         Args:
             request: Original ModelRequest
 
         Returns:
-            ModelRequest with filtered tools list
+            ModelRequest with filtered tools list (and possibly updated system message)
         """
         # Get loaded skills from state
         state = request.state
         loaded_skills: set[str] = set()
 
-        # Debug: log state structure
         logger.debug(
             "Filtering tools - checking state",
             state_type=type(state).__name__,
@@ -319,7 +413,7 @@ class DynamicSkillLoaderMiddleware(AgentMiddleware):
             else:
                 loaded_skills = {raw_skills}
 
-            logger.info(
+            logger.debug(
                 "Found loaded skills in state",
                 loaded_skills=list(loaded_skills),
             )
@@ -331,36 +425,38 @@ class DynamicSkillLoaderMiddleware(AgentMiddleware):
         for t in original_tools:
             tool_name = getattr(t, "name", None) or (t.get("name") if isinstance(t, dict) else str(t))
 
-            # Check if this tool belongs to a skill
-            skill_name = self._tool_to_skill.get(tool_name)
+            # Check if this tool belongs to any skill(s)
+            skill_names = self._tool_to_skills.get(tool_name)
 
-            if skill_name is None:
-                # Not a skill tool - always include (e.g., load_skill, execute_code, etc.)
+            if skill_names is None:
+                # Not a skill tool - always include
                 filtered_tools.append(t)
-            elif skill_name in loaded_skills:
-                # Skill tool and skill is loaded - include
+            elif skill_names & loaded_skills:
+                # Skill tool and at least one owning skill is loaded - include
                 filtered_tools.append(t)
-            # else: skill tool but skill not loaded - exclude
+            # else: skill tool but no owning skill loaded - exclude
 
         hidden_count = len(original_tools) - len(filtered_tools)
         if hidden_count > 0:
-            logger.info(
-                "Filtered skill tools from model request",
-                original_count=len(original_tools),
-                filtered_count=len(filtered_tools),
+            logger.debug(
+                "Skill tools hidden from model request",
                 hidden_count=hidden_count,
-                loaded_skills=list(loaded_skills),
             )
 
-        # Return modified request with filtered tools
-        return request.override(tools=filtered_tools)
+        # Build filtered request
+        filtered = request.override(tools=filtered_tools)
+
+        # Flash mode: inject skill manifest into system message
+        if self._mode != "ptc" and self._skill_manifest:
+            new_sys = append_to_system_message(filtered.system_message, self._skill_manifest)
+            filtered = filtered.override(system_message=new_sys)
+
+        return filtered
 
     def get_all_skill_tools(self) -> list[Any]:
         """Get all tools from all registered skills.
 
         Use this to pre-register all skill tools with ToolNode at agent creation.
-        This ensures tools are available when needed, even though the agent
-        learns about them only when loading the skill.
 
         Returns:
             Flat list of all tools from all skills
@@ -376,4 +472,4 @@ class DynamicSkillLoaderMiddleware(AgentMiddleware):
         Returns:
             Set of tool names
         """
-        return set(self._tool_to_skill.keys())
+        return set(self._tool_to_skills.keys())

@@ -16,6 +16,8 @@ from ptc_agent.agent.middleware import (
     ToolErrorHandlingMiddleware,
     ToolResultNormalizationMiddleware,
     SummarizationMiddleware,
+    DynamicSkillLoaderMiddleware,
+    AskUserMiddleware,
 )
 from ptc_agent.agent.prompts import get_loader
 from ptc_agent.config import AgentConfig
@@ -157,8 +159,27 @@ class FlashAgent:
             ToolResultNormalizationMiddleware(),
         ]
 
+        # Add dynamic skill loader middleware (Flash mode: inline SKILL.md)
+        skill_loader_middleware = DynamicSkillLoaderMiddleware(
+            mode="flash",
+        )
+        shared_middleware.append(skill_loader_middleware)
+        tools.extend(skill_loader_middleware.tools)  # LoadSkill tool
+        tools.extend(skill_loader_middleware.get_all_skill_tools())  # Pre-register skill tools
+        logger.info(
+            "Flash skill loader enabled",
+            skill_count=len(skill_loader_middleware.skill_registry),
+            skill_tool_count=len(skill_loader_middleware.get_all_skill_tools()),
+        )
+
         # Main middleware stack (minimal)
         main_middleware: list[Any] = []
+
+        # AskUserQuestion middleware (needed for onboarding and preference updates)
+        ask_user_middleware = AskUserMiddleware()
+        main_middleware.append(ask_user_middleware)
+        tools.extend(ask_user_middleware.tools)
+        logger.info("AskUserQuestion tool enabled for Flash agent")
 
         # Optional summarization (shares config with main agent)
         from src.config.settings import get_summarization_config
