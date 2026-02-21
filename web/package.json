@@ -46,14 +46,9 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.26",
     "globals": "^16.5.0",
-    "msw": "^2.12.7",
+
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19",
     "vite": "^5.0.8"
-  },
-  "msw": {
-    "workerDirectory": [
-      "public"
-    ]
   }
 }
