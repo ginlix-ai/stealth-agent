@@ -69,7 +69,6 @@ from src.tools.market_data.tool import (
     get_market_indices,
     get_sector_performance,
 )
-from src.tools.automation import AUTOMATION_TOOLS
 from ptc_agent.config import AgentConfig
 from ptc_agent.core.mcp_registry import MCPRegistry
 from ptc_agent.core.sandbox import ExecutionResult, PTCSandbox
@@ -331,10 +330,6 @@ class PTCAgent:
         ]
         tools.extend(finance_tools)
         logger.info("Finance tools enabled", tool_count=len(finance_tools))
-
-        # Add automation tools (check, create, manage automations)
-        tools.extend(AUTOMATION_TOOLS)
-        logger.info("Automation tools enabled", tool_count=len(AUTOMATION_TOOLS))
 
         # Default to subagents from config if none specified
         if subagent_names is None:
