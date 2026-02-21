@@ -129,8 +129,6 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
   // Map tool call IDs (from main agent's task tool calls) to agent_ids for routing subagent events
   const toolCallIdToTaskIdMapRef = useRef(new Map()); // Map<toolCallId, agentId>
-  // Map display_id ("Task-1") -> agent_id for resolving completed_tasks in subagent_status
-  const displayIdToAgentIdMapRef = useRef(new Map());
 
   // Per-task SSE connections: taskId → AbortController
   const subagentStreamsRef = useRef(new Map());
@@ -146,8 +144,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   // retain messages from previous runs. Keyed by taskId (e.g., "task:k7Xm2p").
   const subagentStateRefsRef = useRef({});
 
-  // During history load: store agent_ids from subagent_status and task tool call IDs for order-based matching
-  const historyPendingAgentIdsRef = useRef([]);
+  // During history load: queue task tool call IDs until the matching artifact 'spawned' event drains them
   const historyPendingTaskToolCallIdsRef = useRef([]);
 
   // Keep threadIdRef in sync with state (for use inside closures)
@@ -245,67 +242,6 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           console.log('[History] Updated active pair to:', pairIndex, 'counter:', currentActivePairState?.contentOrderCounter);
         }
 
-        // Handle subagent_status events - register task IDs for subagent history storage
-        if (eventType === 'subagent_status') {
-          const activeTasks = event.active_tasks || [];
-          const completedTasks = event.completed_tasks || [];
-          const allTaskItems = [...activeTasks, ...completedTasks];
-
-          // Collect genuinely new agentIds (not yet seen) for pending toolCallId matching
-          const seenAgentIds = new Set(historyPendingAgentIdsRef.current);
-          const newAgentIds = [];
-
-          allTaskItems.forEach((task) => {
-            if (!task) return;
-            // agent_id is now "task:{task_id}" format (e.g., "task:pkyRHQ")
-            const agentId = task.agent_id || task.agent;
-            const displayId = task.id;
-            if (agentId) {
-              if (displayId) {
-                displayIdToAgentIdMapRef.current.set(displayId, agentId);
-              }
-              if (!subagentHistoryByTaskId.has(agentId)) {
-                subagentHistoryByTaskId.set(agentId, {
-                  messages: [],
-                  events: [],
-                  description: task.description || '',
-                  type: task.type || 'general-purpose',
-                  resumePoints: [],
-                });
-              } else {
-                // Update description/type if missing (entry may have been created by artifact or message_chunk)
-                const existing = subagentHistoryByTaskId.get(agentId);
-                if (task.description && !existing.description) existing.description = task.description;
-                if (task.type && !existing.type) existing.type = task.type;
-              }
-              // Only track as "new" if not already seen
-              if (!seenAgentIds.has(agentId)) {
-                newAgentIds.push(agentId);
-                seenAgentIds.add(agentId);
-              }
-            }
-          });
-
-          if (newAgentIds.length > 0) {
-            // Match pending toolCallIds (from earlier tool_calls events) with newly discovered agentIds
-            const pendingToolCallIds = historyPendingTaskToolCallIdsRef.current;
-            if (pendingToolCallIds.length > 0) {
-              const minLen = Math.min(pendingToolCallIds.length, newAgentIds.length);
-              for (let i = 0; i < minLen; i++) {
-                toolCallIdToTaskIdMapRef.current.set(pendingToolCallIds[i], newAgentIds[i]);
-              }
-              historyPendingTaskToolCallIdsRef.current = pendingToolCallIds.slice(minLen);
-            }
-            // Seed for any future tool_calls events
-            historyPendingAgentIdsRef.current = [
-              ...historyPendingAgentIdsRef.current,
-              ...newAgentIds,
-            ];
-          }
-
-          return;
-        }
-
         // Handle token_usage events from history (for context window progress ring)
         if (eventType === 'token_usage') {
           const callInput = event.input_tokens || 0;
@@ -369,7 +305,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           // Note: ask_user_question is NOT resolved here — the answer text lives in
           // the tool_call_result that comes AFTER this user_message in the resume pair.
           // It gets resolved in the tool_call_result handler below instead.
-          if (pendingHistoryInterrupt && pendingHistoryInterrupt.type !== 'ask_user_question') {
+          if (pendingHistoryInterrupt?.type === 'plan_approval') {
             // Plan approval: resolve based on whether user sent feedback text
             const hasContent = event.content && event.content.trim();
             const resolvedStatus = hasContent ? 'rejected' : 'approved';
@@ -557,9 +493,10 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                   type: type || 'general-purpose',
                   resumePoints: [],
                 });
-              } else if (description) {
+              } else {
                 const existing = subagentHistoryByTaskId.get(agentId);
-                if (!existing.description) existing.description = description;
+                if (description && !existing.description) existing.description = description;
+                if (type && !existing.type) existing.type = type;
               }
               // Track resume boundaries for history replay
               if (action === 'resumed') {
@@ -581,9 +518,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 toolCallIdToTaskIdMapRef.current.set(event.tool_call_id, agentId);
               }
               // Match pending tool call IDs from earlier tool_calls events.
-              // During replay, subagent_status events are not stored, so the
-              // pending queue is not drained by the subagent_status handler.
-              // The artifact 'spawned' event is the reliable signal to match.
+              // The artifact 'spawned' event drains the pending queue to
+              // establish the toolCallId → agentId mapping for replay.
               if (action === 'spawned') {
                 const pendingToolCallIds = historyPendingTaskToolCallIdsRef.current;
                 if (pendingToolCallIds.length > 0) {
@@ -614,35 +550,19 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             return;
           }
 
-          // Extract task tool call IDs and map to agent_ids (from subagent_status) by order
+          // Queue task tool call IDs for matching against artifact 'spawned' events
           // Skip follow-up/resume calls (task_id present) — they target existing subagents
           if (event.tool_calls) {
-            const taskToolCalls = event.tool_calls.filter((tc) => (tc.name === 'task' || tc.name === 'Task') && tc.id && !tc.args?.task_id);
-            const agentIds = historyPendingAgentIdsRef.current;
+            const taskToolCalls = event.tool_calls.filter(
+              (tc) => (tc.name === 'task' || tc.name === 'Task') && tc.id && !tc.args?.task_id
+            );
             const toolCallIds = taskToolCalls.map((tc) => tc.id).filter(Boolean);
-            if (agentIds.length > 0 && toolCallIds.length > 0) {
-              const minLen = Math.min(toolCallIds.length, agentIds.length);
-              for (let i = 0; i < minLen; i++) {
-                toolCallIdToTaskIdMapRef.current.set(toolCallIds[i], agentIds[i]);
-              }
-            } else if (toolCallIds.length > 0) {
+            if (toolCallIds.length > 0) {
               historyPendingTaskToolCallIdsRef.current = [
                 ...historyPendingTaskToolCallIdsRef.current,
                 ...toolCallIds,
               ];
             }
-            taskToolCalls.forEach((toolCall, i) => {
-              const agentId = agentIds[i];
-              if (agentId && !subagentHistoryByTaskId.has(agentId)) {
-                subagentHistoryByTaskId.set(agentId, {
-                  messages: [],
-                  events: [],
-                  description: toolCall.args?.description || '',
-                  type: toolCall.args?.subagent_type || 'general-purpose',
-                  resumePoints: [],
-                });
-              }
-            });
           }
 
           handleHistoryToolCalls({
@@ -1034,6 +954,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
             const tempRefs = {
               subagentStateRefs: tempSubagentStateRefs,
+              isReconnect: true, // Suppress Date.now() timestamps so items go straight to accordion zone
             };
 
             // History-specific no-op updater: prevents floating cards from being
@@ -1475,8 +1396,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         setHasActiveSubagents(true);
       } else {
         // Workflow is not active — mark all subagent tasks as completed.
-        // (Skipped when reconnecting because the reconnect stream will
-        //  deliver live subagent_status events with the real status.)
+        // (Skipped when reconnecting because per-task SSE streams
+        //  will deliver live events with the real status.)
         markAllSubagentTasksCompleted();
       }
     };
@@ -1498,10 +1419,9 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   /**
    * Marks all subagentTasks in messages as 'completed'.
    * Called when the SSE stream ends or history finishes loading, because a finished
-   * workflow implies all subagents are done. This is a safety net — the subagent_status
-   * event handler should have already updated most of them, but the final completion
-   * event from the tail phase may not be persisted in sse_events (history) or may have
-   * been missed during live streaming.
+   * workflow implies all subagents are done. This is a safety net — artifact events
+   * and per-task SSE streams should have already updated most of them, but the final
+   * completion may not be persisted in sse_events or may have been missed.
    */
   const markAllSubagentTasksCompleted = () => {
     // Skip tasks with open per-task SSE streams (still active)
