@@ -270,7 +270,13 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                   events: [],
                   description: task.description || '',
                   type: task.type || 'general-purpose',
+                  resumePoints: [],
                 });
+              } else {
+                // Update description/type if missing (entry may have been created by artifact or message_chunk)
+                const existing = subagentHistoryByTaskId.get(agentId);
+                if (task.description && !existing.description) existing.description = task.description;
+                if (task.type && !existing.type) existing.type = task.type;
               }
               // Only track as "new" if not already seen
               if (!seenAgentIds.has(agentId)) {
@@ -338,6 +344,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               subagentHistoryByTaskId.set(taskId, {
                 messages: [],
                 events: [],
+                resumePoints: [],
               });
             }
 
@@ -573,6 +580,20 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               if (event.tool_call_id) {
                 toolCallIdToTaskIdMapRef.current.set(event.tool_call_id, agentId);
               }
+              // Match pending tool call IDs from earlier tool_calls events.
+              // During replay, subagent_status events are not stored, so the
+              // pending queue is not drained by the subagent_status handler.
+              // The artifact 'spawned' event is the reliable signal to match.
+              if (action === 'spawned') {
+                const pendingToolCallIds = historyPendingTaskToolCallIdsRef.current;
+                if (pendingToolCallIds.length > 0) {
+                  const toolCallId = pendingToolCallIds[0];
+                  if (!toolCallIdToTaskIdMapRef.current.has(toolCallId)) {
+                    toolCallIdToTaskIdMapRef.current.set(toolCallId, agentId);
+                  }
+                  historyPendingTaskToolCallIdsRef.current = pendingToolCallIds.slice(1);
+                }
+              }
             }
           }
           return;
@@ -618,6 +639,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                   events: [],
                   description: toolCall.args?.description || '',
                   type: toolCall.args?.subagent_type || 'general-purpose',
+                  resumePoints: [],
                 });
               }
             });
