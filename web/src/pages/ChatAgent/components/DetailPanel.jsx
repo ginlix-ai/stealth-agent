@@ -7,6 +7,7 @@ import {
   SectorPerformanceChart,
 } from './charts/MarketDataCharts';
 import SecFilingViewer from './charts/SecFilingViewer';
+import AutomationDetailPanel from './charts/AutomationDetailPanel';
 import Markdown from './Markdown';
 import iconRobo from '../../../assets/img/icon-robo.png';
 import iconRoboSing from '../../../assets/img/icon-robo-sing.png';
@@ -263,6 +264,8 @@ function ArtifactOrMarkdown({ artifact, content, toolName, toolCallProcess, onOp
         return <SectorPerformanceChart data={artifact} />;
       case 'sec_filing':
         return <SecFilingViewer data={artifact} />;
+      case 'automations':
+        return <AutomationDetailPanel data={artifact} />;
     }
   }
 

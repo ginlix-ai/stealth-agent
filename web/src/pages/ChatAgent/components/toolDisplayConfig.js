@@ -1,7 +1,7 @@
 import {
   TrendingUp, Building2, BarChart3, PieChart, Search, Globe,
   FilePlus, FileText, FilePen, FolderSearch, SquareChevronRight, Wrench,
-  Newspaper, Brain, User, FileBarChart, Clock, ClipboardList,
+  Newspaper, Brain, User, FileBarChart, Clock, ClipboardList, Zap, Settings,
 } from 'lucide-react';
 
 export const TOOL_DISPLAY_CONFIG = {
@@ -45,6 +45,10 @@ export const TOOL_DISPLAY_CONFIG = {
   // Background subagent management
   Wait:                     { displayName: 'Waiting for Subagent', icon: Clock },
   TaskOutput:               { displayName: 'Task Output',          icon: ClipboardList },
+  // Automations
+  check_automations:        { displayName: 'Automations',          icon: Clock },
+  create_automation:        { displayName: 'Create Automation',    icon: Zap },
+  manage_automation:        { displayName: 'Manage Automation',    icon: Settings },
 };
 
 export function getDisplayName(rawToolName) {
@@ -105,6 +109,12 @@ export function getInProgressText(rawToolName, toolCall) {
       return 'waiting for subagent...';
     case 'TaskOutput':
       return 'fetching task output...';
+    case 'check_automations':
+      return 'checking automations...';
+    case 'create_automation':
+      return args?.name ? `creating ${args.name}...` : 'creating automation...';
+    case 'manage_automation':
+      return args?.action ? `${args.action} automation...` : 'managing automation...';
     default:
       return 'processing...';
   }

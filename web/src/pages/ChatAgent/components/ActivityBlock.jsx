@@ -14,6 +14,7 @@ import {
   InlineSectorPerformanceCard,
   InlineSecFilingCard,
 } from './charts/InlineMarketCharts';
+import { InlineAutomationCard } from './charts/InlineAutomationCards';
 
 /** Tool names where clicking should open the file in the FilePanel */
 const FILE_NAV_TOOLS = new Set(['Read', 'Write', 'Save', 'read_file', 'write_file', 'save_file']);
@@ -30,6 +31,7 @@ const INLINE_ARTIFACT_MAP = {
   market_indices: InlineMarketIndicesCard,
   sector_performance: InlineSectorPerformanceCard,
   sec_filing: InlineSecFilingCard,
+  automations: InlineAutomationCard,
 };
 
 /** Spring config matching radix-accordion feel */

@@ -530,6 +530,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
 
     // Slim: compact data cards
     if (artifactType === 'company_overview') return 480;
+    if (artifactType === 'automations') return 480;
 
     return 650;
   }, []);

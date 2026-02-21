@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import AutomationsHeader from './components/AutomationsHeader';
 import AutomationsTable from './components/AutomationsTable';
 import AutomationFormDialog from './components/AutomationFormDialog';
@@ -10,8 +11,22 @@ import './Automations.css';
 export default function Automations() {
   const { automations, loading, refetch } = useAutomations();
   const mutations = useAutomationMutations(refetch);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [selectedAutomation, setSelectedAutomation] = useState(null);
+
+  // Deep-link: auto-open detail overlay when ?id= is present
+  const deepLinkHandledRef = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandledRef.current || loading || automations.length === 0) return;
+    const targetId = searchParams.get('id');
+    if (!targetId) return;
+    deepLinkHandledRef.current = true;
+    const match = automations.find((a) => a.automation_id === targetId);
+    if (match) setSelectedAutomation(match);
+    // Clear the query param so refreshing doesn't re-trigger
+    setSearchParams({}, { replace: true });
+  }, [automations, loading, searchParams, setSearchParams]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);

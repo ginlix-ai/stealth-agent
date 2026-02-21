@@ -18,6 +18,8 @@ export const INLINE_ARTIFACT_TOOLS = new Set([
   'get_market_indices',
   'get_sector_performance',
   'get_sec_filing',
+  'check_automations',
+  'create_automation',
 ]);
 
 // ─── Helpers ────────────────────────────────────────────────────────

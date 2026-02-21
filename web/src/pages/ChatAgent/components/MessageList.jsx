@@ -11,6 +11,7 @@ import {
   InlineSectorPerformanceCard,
   InlineSecFilingCard,
 } from './charts/InlineMarketCharts';
+import { InlineAutomationCard } from './charts/InlineAutomationCards';
 import { extractFilePaths, FileMentionCards } from './FileCard';
 import { useAuth } from '../../../contexts/AuthContext';
 import ReasoningMessageContent from './ReasoningMessageContent';
@@ -75,6 +76,7 @@ const INLINE_ARTIFACT_MAP = {
   market_indices: InlineMarketIndicesCard,
   sector_performance: InlineSectorPerformanceCard,
   sec_filing: InlineSecFilingCard,
+  automations: InlineAutomationCard,
 };
 
 /* --- Attachment helpers --- */
