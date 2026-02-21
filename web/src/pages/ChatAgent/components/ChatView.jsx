@@ -587,20 +587,29 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     const finalType = history?.type || existingType || overrides.type || 'general-purpose';
     const finalStatus = history?.status || overrides.status || 'completed';
 
+    // Check if card is currently live (active with an open stream)
+    const existingCard = cards[cardId]?.subagentData;
+    const isLive = existingCard?.isActive && !history;
+
     const updateData = {
       agentId,
       taskId: agentId,
       description: finalDescription,
       type: finalType,
-      status: finalStatus,
-      toolCalls: 0,
-      currentTool: '',
       isHistory: !!history,
       // isActive: true bypasses the inactive-card guard so stale fields get cleared.
       // For history cards this will be immediately overridden to false by the
       // isHistory check inside updateSubagentCard.
       isActive: !history,
     };
+    if (isLive) {
+      // Card is actively streaming — preserve its current status, toolCalls, and currentTool.
+      // Overwriting these causes a brief "completed" flash in the SubagentStatusBar.
+    } else {
+      updateData.status = finalStatus;
+      updateData.toolCalls = 0;
+      updateData.currentTool = '';
+    }
     if (history) {
       updateData.messages = history.messages || [];
     }
