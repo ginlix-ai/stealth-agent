@@ -1036,6 +1036,15 @@ async def astream_ptc_workflow(
                     f"duration={execution_time:.2f}s"
                 )
 
+                # Backup sandbox files to DB after each message
+                try:
+                    ws_manager = WorkspaceManager.get_instance()
+                    await ws_manager._backup_files_to_db(request.workspace_id)
+                except Exception as backup_err:
+                    logger.warning(
+                        f"[PTC_COMPLETE] File backup failed for {thread_id}: {backup_err}"
+                    )
+
             except Exception as e:
                 logger.error(
                     f"[PTC_CHAT] Background completion persistence failed for {thread_id}: {e}",
