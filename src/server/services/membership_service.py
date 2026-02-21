@@ -37,7 +37,7 @@ _FALLBACK_MEMBERSHIP = MembershipInfo(
     rank=0,
     daily_credits=50.0,
     max_active_workspaces=3,
-    max_concurrent_requests=5,
+    max_concurrent_requests=10,
     is_default=True,
 )
 

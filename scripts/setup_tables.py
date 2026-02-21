@@ -195,8 +195,8 @@ async def setup_tables_async():
                             (name, display_name, rank, daily_credits,
                              max_active_workspaces, max_concurrent_requests, is_default)
                         VALUES
-                            ('free',       'Free',       0, 1000.0,  3, 5,  TRUE),
-                            ('pro',        'Pro',        1, 5000.0, 10, 20, FALSE),
+                            ('free',       'Free',       0, 1000.0,  3, 10,  TRUE),
+                            ('pro',        'Pro',        1, 5000.0, 10, 40, FALSE),
                             ('enterprise', 'Enterprise', 2,   -1,   -1, -1, FALSE)
                         ON CONFLICT (name) DO NOTHING;
                     """)
