@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Loader2, Search, ArrowDownUp, MoreHorizontal, Zap } from 'lucide-react';
+import { Plus, Loader2, Search, ArrowDownUp, MoreHorizontal, Zap, MessageSquareText } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import CreateWorkspaceModal from './CreateWorkspaceModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import MorphingPageDots from '../../../components/ui/morphing-page-dots';
-import { getWorkspaces, createWorkspace, deleteWorkspace } from '../utils/api';
-import { DEFAULT_WORKSPACE_NAME } from '../../Dashboard/utils/workspace';
+import { getWorkspaces, createWorkspace, deleteWorkspace, getFlashWorkspace } from '../utils/api';
 import { removeStoredThreadId } from '../hooks/useChatMessages';
 import { clearChatSession } from '../hooks/utils/chatSessionRestore';
 import '../../Dashboard/Dashboard.css';
@@ -170,33 +169,20 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
 
   /**
    * Handles delete icon click - opens confirmation modal
-   * Prevents deletion of default workspace (LangAlpha)
    * @param {Object} workspace - The workspace to delete
    */
   const handleDeleteClick = (workspace) => {
-    // Prevent deletion of default workspace
-    if (workspace.name === DEFAULT_WORKSPACE_NAME) {
-      return;
-    }
     setDeleteModal({ isOpen: true, workspace });
     setDeleteError(null);
   };
 
   /**
    * Handles confirmed workspace deletion
-   * Prevents deletion of default workspace (LangAlpha)
    */
   const handleConfirmDelete = async () => {
     if (!deleteModal.workspace) return;
 
     const workspaceToDelete = deleteModal.workspace;
-    
-    // Prevent deletion of default workspace
-    if (workspaceToDelete.name === DEFAULT_WORKSPACE_NAME) {
-      setDeleteError(`Cannot delete the default "${DEFAULT_WORKSPACE_NAME}" workspace.`);
-      return;
-    }
-    
     const workspaceId = workspaceToDelete.workspace_id;
 
     if (!workspaceId) {
@@ -307,6 +293,8 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
     );
   }
 
+  const hasWorkspaces = workspaces.length > 0;
+
   return (
     <div
       className="h-full flex flex-col overflow-hidden"
@@ -324,17 +312,19 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
             Workspaces
           </h1>
           <div></div>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-2 h-9 rounded-lg transition-all hover:scale-[1.01] active:scale-[0.985]"
-            style={{
-              backgroundColor: '#6155F5',
-              color: '#FFFFFF',
-            }}
-          >
-            <Plus className="h-4 w-4" />
-            <span className="text-sm font-medium">New workspace</span>
-          </button>
+          {hasWorkspaces && (
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-1.5 px-4 py-2 h-9 rounded-lg transition-all hover:scale-[1.01] active:scale-[0.985]"
+              style={{
+                backgroundColor: '#6155F5',
+                color: '#FFFFFF',
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              <span className="text-sm font-medium">New workspace</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -345,6 +335,7 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
         </h1>
 
         <div className="overflow-auto pb-20 px-1">
+          {hasWorkspaces && (
           <div className="sticky top-0 z-[5] flex flex-col gap-4 pb-4 md:pb-8">
             {/* Search Bar */}
             <div className="w-full">
@@ -385,26 +376,62 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
               </div>
             </div>
           </div>
+          )}
 
           {/* Projects Grid */}
           {filteredAndSortedWorkspaces.length === 0 ? (
             // Empty state
-            <div className="flex flex-col items-center justify-center py-12">
-              <p className="text-sm mb-2" style={{ color: '#FFFFFF', opacity: 0.65 }}>
-                {searchQuery ? 'No workspaces found' : 'No workspaces yet'}
-              </p>
-              {!searchQuery && (
-                <button
-                  onClick={() => setIsModalOpen(true)}
-                  className="mt-4 flex items-center gap-2 px-6 py-3 rounded-lg transition-colors"
-                  style={{
-                    backgroundColor: '#6155F5',
-                    color: '#FFFFFF',
-                  }}
-                >
-                  <Plus className="h-5 w-5" />
-                  <span className="font-medium">Create Workspace</span>
-                </button>
+            <div className="flex flex-col items-center justify-center py-16">
+              {searchQuery ? (
+                <p className="text-sm" style={{ color: '#FFFFFF', opacity: 0.65 }}>
+                  No workspaces found
+                </p>
+              ) : (
+                <>
+                  <p className="text-lg font-medium mb-2" style={{ color: '#FFFFFF' }}>
+                    Welcome to LangAlpha
+                  </p>
+                  <p className="text-sm mb-8" style={{ color: '#FFFFFF', opacity: 0.55 }}>
+                    Get started by setting up your preferences or creating a workspace.
+                  </p>
+                  <div className="flex flex-col sm:flex-row items-center gap-3">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const flashWs = await getFlashWorkspace();
+                          navigate(`/chat/${flashWs.workspace_id}/__default__`, {
+                            state: {
+                              isOnboarding: true,
+                              agentMode: 'flash',
+                              workspaceStatus: 'flash',
+                            },
+                          });
+                        } catch (err) {
+                          console.error('Error starting onboarding:', err);
+                        }
+                      }}
+                      className="flex items-center gap-2 px-6 py-3 rounded-lg transition-all hover:scale-[1.01] active:scale-[0.985]"
+                      style={{
+                        backgroundColor: '#6155F5',
+                        color: '#FFFFFF',
+                      }}
+                    >
+                      <MessageSquareText className="h-5 w-5" />
+                      <span className="font-medium">Start Onboarding</span>
+                    </button>
+                    <button
+                      onClick={() => setIsModalOpen(true)}
+                      className="flex items-center gap-2 px-6 py-3 rounded-lg border transition-all hover:bg-white/5 hover:scale-[1.01] active:scale-[0.985]"
+                      style={{
+                        borderColor: 'rgba(255, 255, 255, 0.15)',
+                        color: '#FFFFFF',
+                      }}
+                    >
+                      <Plus className="h-5 w-5" />
+                      <span className="font-medium">Create Workspace</span>
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           ) : (
@@ -447,7 +474,7 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
                       </div>
                     </div>
                     {/* Three dots menu */}
-                    {workspace.name !== DEFAULT_WORKSPACE_NAME && workspace.status !== 'flash' && (
+                    {workspace.status !== 'flash' && (
                       <div className="absolute top-3 right-3 z-10 transition-opacity opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
                         <button
                           onClick={(e) => {

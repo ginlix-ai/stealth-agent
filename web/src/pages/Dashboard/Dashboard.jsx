@@ -8,9 +8,8 @@ import {
 } from './utils/api';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '@/components/ui/use-toast';
-import { getWorkspaces, createWorkspace } from '../ChatAgent/utils/api';
+import { getFlashWorkspace } from '../ChatAgent/utils/api';
 import { useNavigate } from 'react-router-dom';
-import { findOrCreateDefaultWorkspace } from './utils/workspace';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
 import DashboardHeader from './components/DashboardHeader';
 import ConfirmDialog from './components/ConfirmDialog';
@@ -243,33 +242,6 @@ function Dashboard() {
   }, [fetchIndices]);
 
   /**
-   * Check and create "LangAlpha" default workspace on Dashboard load
-   */
-  useEffect(() => {
-    const ensureDefaultWorkspace = async () => {
-      try {
-        const { workspaces } = await getWorkspaces();
-        const stealthAgentWorkspace = workspaces?.find(
-          (ws) => ws.name === 'LangAlpha'
-        );
-        
-        if (!stealthAgentWorkspace) {
-          // Create default workspace if it doesn't exist
-          await createWorkspace(
-            'LangAlpha',
-            'system default workspace, cannot be deleted'
-          );
-        }
-      } catch (error) {
-        // Silently fail - user can still use the app
-        console.error('[Dashboard] Error ensuring default workspace:', error);
-      }
-    };
-
-    ensureDefaultWorkspace();
-  }, []);
-
-  /**
    * Check onboarding completion status on every Dashboard mount.
    * Refetches so we pick up onboarding_completed after ChatAgent completes it.
    * Only shows dialog if onboarding is incomplete AND user hasn't clicked Ignore for 24h (persisted in localStorage).
@@ -298,12 +270,13 @@ function Dashboard() {
   const navigateToOnboarding = useCallback(async () => {
     setIsCreatingWorkspace(true);
     try {
-      const workspaceId = await findOrCreateDefaultWorkspace(
-        () => {},
-        () => {},
-      );
-      navigate(`/chat/${workspaceId}/__default__`, {
-        state: { isOnboarding: true },
+      const flashWs = await getFlashWorkspace();
+      navigate(`/chat/${flashWs.workspace_id}/__default__`, {
+        state: {
+          isOnboarding: true,
+          agentMode: 'flash',
+          workspaceStatus: 'flash',
+        },
       });
     } catch (error) {
       console.error('Error setting up onboarding:', error);
@@ -314,6 +287,26 @@ function Dashboard() {
       });
     } finally {
       setIsCreatingWorkspace(false);
+    }
+  }, [navigate, toast]);
+
+  const navigateToModifyPreferences = useCallback(async () => {
+    try {
+      const flashWs = await getFlashWorkspace();
+      navigate(`/chat/${flashWs.workspace_id}/__default__`, {
+        state: {
+          isModifyingPreferences: true,
+          agentMode: 'flash',
+          workspaceStatus: 'flash',
+        },
+      });
+    } catch (error) {
+      console.error('Error navigating to modify preferences:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to start preference update. Please try again.',
+      });
     }
   }, [navigate, toast]);
 
@@ -389,7 +382,7 @@ function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      <DashboardHeader onResetOnboarding={navigateToOnboarding} />
+      <DashboardHeader onModifyPreferences={navigateToModifyPreferences} />
 
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         <div className="w-full flex-1 min-h-0 flex justify-center">

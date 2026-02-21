@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, User, LogOut, Eye, EyeOff, Trash2, HelpCircle } from 'lucide-react';
+import { X, User, LogOut, Eye, EyeOff, Trash2, HelpCircle, MessageSquareText } from 'lucide-react';
 import { Input } from '../../../components/ui/input';
 import { updateCurrentUser, getCurrentUser, updatePreferences, getPreferences, clearPreferences, uploadAvatar, redeemCode, getUsageStatus, getAvailableModels, getUserApiKeys, updateUserApiKeys, deleteUserApiKey } from '../utils/api';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -13,7 +13,7 @@ import ConfirmDialog from './ConfirmDialog';
  * @param {boolean} isOpen - Whether the panel is open
  * @param {Function} onClose - Callback to close the panel
  */
-function UserConfigPanel({ isOpen, onClose, onResetOnboarding }) {
+function UserConfigPanel({ isOpen, onClose, onModifyPreferences }) {
   const { user: authUser, logout, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState('userInfo');
   const [avatarUrl, setAvatarUrl] = useState(null);
@@ -24,11 +24,7 @@ function UserConfigPanel({ isOpen, onClose, onResetOnboarding }) {
   const [timezone, setTimezone] = useState('');
   const [locale, setLocale] = useState('');
 
-  const [riskTolerance, setRiskTolerance] = useState('');
-  const [companyInterest, setCompanyInterest] = useState('');
-  const [holdingPeriod, setHoldingPeriod] = useState('');
-  const [analysisFocus, setAnalysisFocus] = useState('');
-  const [outputStyle, setOutputStyle] = useState('');
+  const [preferences, setPreferences] = useState(null);
 
   const [membership, setMembership] = useState({ membership_id: 1, name: 'free', display_name: 'Free', rank: 0 });
   const [redeemInput, setRedeemInput] = useState('');
@@ -133,13 +129,7 @@ function UserConfigPanel({ isOpen, onClose, onResetOnboarding }) {
   const loadPreferencesData = async () => {
     try {
       const preferencesData = await getPreferences();
-      if (preferencesData) {
-        setRiskTolerance(preferencesData.risk_preference?.risk_tolerance || '');
-        setCompanyInterest(preferencesData.investment_preference?.company_interest || '');
-        setHoldingPeriod(preferencesData.investment_preference?.holding_period || '');
-        setAnalysisFocus(preferencesData.investment_preference?.analysis_focus || '');
-        setOutputStyle(preferencesData.agent_preference?.output_style || '');
-      }
+      setPreferences(preferencesData || null);
     } catch {}
   };
 
@@ -264,31 +254,9 @@ function UserConfigPanel({ isOpen, onClose, onResetOnboarding }) {
     }
   };
 
-  const handlePreferencesSubmit = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setError(null);
-    setSaveSuccess(false);
-    try {
-      const preferences = {};
-      if (riskTolerance) preferences.risk_preference = { risk_tolerance: riskTolerance };
-      const investmentPrefs = {};
-      if (companyInterest) investmentPrefs.company_interest = companyInterest;
-      if (holdingPeriod) investmentPrefs.holding_period = holdingPeriod;
-      if (analysisFocus) investmentPrefs.analysis_focus = analysisFocus;
-      if (Object.keys(investmentPrefs).length > 0) preferences.investment_preference = investmentPrefs;
-      if (outputStyle) preferences.agent_preference = { output_style: outputStyle };
-      if (Object.keys(preferences).length > 0) {
-        await updatePreferences(preferences);
-        await updateCurrentUser({ onboarding_completed: true });
-      }
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (err) {
-      setError(err.message || 'Failed to update preferences');
-    } finally {
-      setIsSubmitting(false);
-    }
+  const handleModifyPreferences = () => {
+    onClose();
+    if (onModifyPreferences) onModifyPreferences();
   };
 
   const handleLogoutConfirm = () => {
@@ -301,9 +269,8 @@ function UserConfigPanel({ isOpen, onClose, onResetOnboarding }) {
     setIsResetting(true);
     try {
       await clearPreferences();
+      setPreferences(null);
       setShowResetConfirm(false);
-      onClose();
-      if (onResetOnboarding) onResetOnboarding();
     } catch {
       setError('Failed to reset preferences');
       setShowResetConfirm(false);
@@ -665,102 +632,56 @@ function UserConfigPanel({ isOpen, onClose, onResetOnboarding }) {
               )}
 
               {!isLoading && activeTab === 'preferences' && (
-                <form onSubmit={handlePreferencesSubmit} onKeyDown={preventEnterSubmit} className="space-y-5">
-                  <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>Risk Tolerance</label>
-                    <select
-                      value={riskTolerance}
-                      onChange={(e) => setRiskTolerance(e.target.value)}
-                      className="w-full rounded-md px-3 py-2 text-sm"
+                <div className="space-y-5">
+                  <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    Preferences are managed through conversation with the agent. Use the button below to update them.
+                  </p>
+
+                  {preferences && (preferences.risk_preference || preferences.investment_preference || preferences.agent_preference) ? (
+                    <div className="space-y-4">
+                      {[
+                        { label: 'Risk Tolerance', data: preferences.risk_preference },
+                        { label: 'Investment Style', data: preferences.investment_preference },
+                        { label: 'Agent Settings', data: preferences.agent_preference },
+                      ].filter(({ data }) => data && Object.keys(data).length > 0).map(({ label, data }) => (
+                        <div key={label}>
+                          <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>{label}</label>
+                          <div
+                            className="rounded-md px-3 py-2.5 text-sm space-y-1"
+                            style={{
+                              backgroundColor: 'var(--color-bg-card)',
+                              border: '1px solid var(--color-border-muted)',
+                            }}
+                          >
+                            {Object.entries(data).map(([key, value]) => (
+                              value != null && value !== '' && (
+                                <div key={key} className="flex gap-2">
+                                  <span className="shrink-0 font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                                    {key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}:
+                                  </span>
+                                  <span style={{ color: 'var(--color-text-primary)', wordBreak: 'break-word' }}>
+                                    {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                  </span>
+                                </div>
+                              )
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div
+                      className="rounded-md px-4 py-6 text-center"
                       style={{
                         backgroundColor: 'var(--color-bg-card)',
                         border: '1px solid var(--color-border-muted)',
-                        color: 'var(--color-text-primary)',
                       }}
-                      disabled={isSubmitting}
                     >
-                      <option value="" style={{ backgroundColor: 'var(--color-bg-card)' }}>Select...</option>
-                      <option value="low" style={{ backgroundColor: 'var(--color-bg-card)' }}>Low</option>
-                      <option value="medium" style={{ backgroundColor: 'var(--color-bg-card)' }}>Medium</option>
-                      <option value="high" style={{ backgroundColor: 'var(--color-bg-card)' }}>High</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>Company Interest</label>
-                    <select
-                      value={companyInterest}
-                      onChange={(e) => setCompanyInterest(e.target.value)}
-                      className="w-full rounded-md px-3 py-2 text-sm"
-                      style={{
-                        backgroundColor: 'var(--color-bg-card)',
-                        border: '1px solid var(--color-border-muted)',
-                        color: 'var(--color-text-primary)',
-                      }}
-                      disabled={isSubmitting}
-                    >
-                      <option value="" style={{ backgroundColor: 'var(--color-bg-card)' }}>Select...</option>
-                      <option value="growth" style={{ backgroundColor: 'var(--color-bg-card)' }}>Growth</option>
-                      <option value="stable" style={{ backgroundColor: 'var(--color-bg-card)' }}>Stable</option>
-                      <option value="value" style={{ backgroundColor: 'var(--color-bg-card)' }}>Value</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>Holding Period</label>
-                    <select
-                      value={holdingPeriod}
-                      onChange={(e) => setHoldingPeriod(e.target.value)}
-                      className="w-full rounded-md px-3 py-2 text-sm"
-                      style={{
-                        backgroundColor: 'var(--color-bg-card)',
-                        border: '1px solid var(--color-border-muted)',
-                        color: 'var(--color-text-primary)',
-                      }}
-                      disabled={isSubmitting}
-                    >
-                      <option value="" style={{ backgroundColor: 'var(--color-bg-card)' }}>Select...</option>
-                      <option value="short_term" style={{ backgroundColor: 'var(--color-bg-card)' }}>Short-term</option>
-                      <option value="mid_term" style={{ backgroundColor: 'var(--color-bg-card)' }}>Mid-term</option>
-                      <option value="long_term" style={{ backgroundColor: 'var(--color-bg-card)' }}>Long-term</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>Analysis Focus</label>
-                    <select
-                      value={analysisFocus}
-                      onChange={(e) => setAnalysisFocus(e.target.value)}
-                      className="w-full rounded-md px-3 py-2 text-sm"
-                      style={{
-                        backgroundColor: 'var(--color-bg-card)',
-                        border: '1px solid var(--color-border-muted)',
-                        color: 'var(--color-text-primary)',
-                      }}
-                      disabled={isSubmitting}
-                    >
-                      <option value="" style={{ backgroundColor: 'var(--color-bg-card)' }}>Select...</option>
-                      <option value="growth" style={{ backgroundColor: 'var(--color-bg-card)' }}>Growth</option>
-                      <option value="valuation" style={{ backgroundColor: 'var(--color-bg-card)' }}>Valuation</option>
-                      <option value="moat" style={{ backgroundColor: 'var(--color-bg-card)' }}>Moat</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>Output Style</label>
-                    <select
-                      value={outputStyle}
-                      onChange={(e) => setOutputStyle(e.target.value)}
-                      className="w-full rounded-md px-3 py-2 text-sm"
-                      style={{
-                        backgroundColor: 'var(--color-bg-card)',
-                        border: '1px solid var(--color-border-muted)',
-                        color: 'var(--color-text-primary)',
-                      }}
-                      disabled={isSubmitting}
-                    >
-                      <option value="" style={{ backgroundColor: 'var(--color-bg-card)' }}>Select...</option>
-                      <option value="summary" style={{ backgroundColor: 'var(--color-bg-card)' }}>Summary</option>
-                      <option value="data" style={{ backgroundColor: 'var(--color-bg-card)' }}>Data</option>
-                      <option value="deep_dive" style={{ backgroundColor: 'var(--color-bg-card)' }}>Deep Dive</option>
-                    </select>
-                  </div>
+                      <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+                        No preferences set yet. Use the button below to set up your profile.
+                      </p>
+                    </div>
+                  )}
 
                   {error && (
                     <div className="p-3 rounded-md" style={{ backgroundColor: 'var(--color-loss-soft)', border: '1px solid var(--color-border-loss)' }}>
@@ -768,35 +689,34 @@ function UserConfigPanel({ isOpen, onClose, onResetOnboarding }) {
                     </div>
                   )}
 
-                  <div className="flex gap-3 justify-between pt-4">
+                  <div className="flex gap-3 justify-between pt-4" style={{ borderTop: '1px solid var(--color-border-muted)' }}>
                     <button
                       type="button"
                       onClick={() => setShowResetConfirm(true)}
                       className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors"
                       style={{ color: 'var(--color-loss)', backgroundColor: 'transparent', border: '1px solid var(--color-loss)' }}
                     >
-                      <Trash2 className="h-4 w-4" /> Reset & Re-onboard
+                      <Trash2 className="h-4 w-4" /> Reset Preferences
                     </button>
                     <div className="flex items-center gap-3">
-                      {saveSuccess && (
-                        <span className="text-xs" style={{ color: 'var(--color-success, #22c55e)' }}>Saved</span>
-                      )}
-                      <button type="button" onClick={handleClose} disabled={isSubmitting}
+                      <button type="button" onClick={handleClose}
                         className="px-4 py-2 rounded-md text-sm font-medium hover:bg-white/10" style={{ color: 'var(--color-text-primary)' }}>
                         Close
                       </button>
-                      <button type="submit" disabled={isSubmitting}
-                        className="px-4 py-2 rounded-md text-sm font-medium"
+                      <button
+                        type="button"
+                        onClick={handleModifyPreferences}
+                        className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium"
                         style={{
-                          backgroundColor: isSubmitting ? 'var(--color-accent-disabled)' : 'var(--color-accent-primary)',
+                          backgroundColor: 'var(--color-accent-primary)',
                           color: 'var(--color-text-on-accent)',
                         }}
                       >
-                        {isSubmitting ? 'Saving...' : 'Save'}
+                        <MessageSquareText className="h-4 w-4" /> Modify with Agent
                       </button>
                     </div>
                   </div>
-                </form>
+                </div>
               )}
 
               {!isLoading && activeTab === 'model' && (
@@ -966,8 +886,8 @@ function UserConfigPanel({ isOpen, onClose, onResetOnboarding }) {
       <ConfirmDialog
         open={showResetConfirm}
         title="Reset Preferences"
-        message="This will clear all your preferences (risk tolerance, investment style, agent settings) and restart the onboarding process. Are you sure?"
-        confirmLabel={isResetting ? 'Resetting...' : 'Reset & Re-onboard'}
+        message="This will clear all your preferences (risk tolerance, investment style, agent settings). You can set them up again anytime via the agent. Are you sure?"
+        confirmLabel={isResetting ? 'Resetting...' : 'Reset Preferences'}
         onConfirm={handleResetConfirm}
         onOpenChange={setShowResetConfirm}
       />

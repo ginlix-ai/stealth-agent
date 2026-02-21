@@ -10,10 +10,8 @@ import TradingPanel from './components/TradingPanel';
 import TradingSidebarPanel from './components/TradingSidebarPanel';
 import { fetchStockQuote, fetchCompanyOverview, fetchAnalystData } from './utils/api';
 import { useTradingChat } from './hooks/useTradingChat';
-import { findOrCreateDefaultWorkspace } from '../Dashboard/utils/workspace';
 import { getWorkspaces } from '../ChatAgent/utils/api';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
-import { Loader2, ArrowLeft, RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
 import CompanyOverviewPanel from './components/CompanyOverviewPanel';
 
 const QUICK_QUERIES = [
@@ -40,7 +38,6 @@ function TradingCenter() {
   const chartRef = useRef();
   const [chartImage, setChartImage] = useState(null);       // base64 data URL
   const [chartImageDesc, setChartImageDesc] = useState(null); // text description for LLM
-  const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
   const [showOverview, setShowOverview] = useState(false);
   const [overviewData, setOverviewData] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
@@ -315,12 +312,12 @@ function TradingCenter() {
       try {
         let workspaceId = selectedWorkspaceId;
         if (!workspaceId) {
-          setIsCreatingWorkspace(true);
-          workspaceId = await findOrCreateDefaultWorkspace(
-            () => {},
-            () => {}
-          );
-          setIsCreatingWorkspace(false);
+          toast({
+            variant: 'destructive',
+            title: 'No workspace selected',
+            description: 'Please create a workspace first to use deep mode.',
+          });
+          return;
         }
 
         navigate(`/chat/${workspaceId}/__default__`, {
@@ -338,7 +335,6 @@ function TradingCenter() {
           title: 'Error',
           description: 'Failed to set up deep mode. Please try again.',
         });
-        setIsCreatingWorkspace(false);
       }
     }
     setChartImage(null);
@@ -475,24 +471,6 @@ function TradingCenter() {
           </div>
         </div>
       </div>
-      {isCreatingWorkspace && (
-        <Dialog open={isCreatingWorkspace} onOpenChange={() => {}}>
-          <DialogContent className="sm:max-w-md text-white border" style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}>
-            <DialogHeader>
-              <DialogTitle className="dashboard-title-font" style={{ color: 'var(--color-text-primary)' }}>
-                Setting up Deep Mode
-              </DialogTitle>
-              <DialogDescription style={{ color: 'var(--color-text-secondary)' }}>
-                Please wait while we set up your workspace...
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="h-6 w-6 animate-spin" style={{ color: 'var(--color-accent-primary)' }} />
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
       {/* Floating "Return to Chat" card — shown when navigated from chat context */}
       {chatReturnPath && (
         <button

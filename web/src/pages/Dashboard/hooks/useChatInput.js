@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../../components/ui/use-toast';
-import { findOrCreateDefaultWorkspace } from '../utils/workspace';
 import { getFlashWorkspace, getWorkspaces } from '../../ChatAgent/utils/api';
 
 /**
@@ -14,7 +13,6 @@ import { getFlashWorkspace, getWorkspaces } from '../../ChatAgent/utils/api';
 export function useChatInput() {
   const [mode, setMode] = useState('fast'); // 'fast' or 'deep'
   const [isLoading, setIsLoading] = useState(false);
-  const [showCreatingDialog, setShowCreatingDialog] = useState(false);
   const [workspaces, setWorkspaces] = useState([]);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(null);
   const navigate = useNavigate();
@@ -87,13 +85,15 @@ export function useChatInput() {
           },
         });
       } else {
-        // Deep mode: use selected workspace or fall back to default
+        // Deep mode: use selected workspace or prompt user to create one
         let workspaceId = selectedWorkspaceId;
         if (!workspaceId) {
-          workspaceId = await findOrCreateDefaultWorkspace(
-            () => setShowCreatingDialog(true),
-            () => setShowCreatingDialog(false)
-          );
+          toast({
+            variant: 'destructive',
+            title: 'No workspace selected',
+            description: 'Please create a workspace first to use deep mode.',
+          });
+          return;
         }
 
         navigate(`/chat/${workspaceId}/__default__`, {
@@ -121,7 +121,6 @@ export function useChatInput() {
     mode,
     setMode,
     isLoading,
-    showCreatingDialog,
     handleSend,
     workspaces,
     selectedWorkspaceId,
