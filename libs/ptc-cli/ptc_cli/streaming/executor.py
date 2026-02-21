@@ -998,7 +998,7 @@ def _cancel_task_watchers(session_state: "SessionState") -> None:
 def _maybe_start_task_watchers(client: SSEStreamClient, session_state: "SessionState") -> None:
     """Open per-task SSE streams for each active background task."""
     bg_status = getattr(session_state, "background_status", None) or {}
-    active_tasks = bg_status.get("active_tasks") or []
+    active_tasks = bg_status.get("active_tasks") or bg_status.get("active_subagents") or []
     if not active_tasks:
         return
 
@@ -1015,7 +1015,11 @@ def _maybe_start_task_watchers(client: SSEStreamClient, session_state: "SessionS
     if existing and not existing.done():
         existing.cancel()
 
-    task_ids = [t.get("id") for t in active_tasks if t.get("id")]
+    task_ids = [
+        (t if isinstance(t, str) else t.get("id"))
+        for t in active_tasks
+        if (t if isinstance(t, str) else t.get("id"))
+    ]
     if not task_ids:
         return
 
@@ -1032,12 +1036,13 @@ def _maybe_start_task_watchers(client: SSEStreamClient, session_state: "SessionS
             for coro in asyncio.as_completed(watchers):
                 finished_task_id = await coro
                 bg = getattr(session_state, "background_status", None) or {}
-                active = bg.get("active_tasks") or []
-                completed = bg.get("completed_tasks") or []
+                active = bg.get("active_tasks") or bg.get("active_subagents") or []
+                completed = bg.get("completed_tasks") or bg.get("completed_subagents") or []
                 # Find the actual task that finished by its id
                 done_task = None
                 for i, t in enumerate(active):
-                    if isinstance(t, dict) and t.get("id") == finished_task_id:
+                    task_id_val = t if isinstance(t, str) else (t.get("id") if isinstance(t, dict) else None)
+                    if task_id_val == finished_task_id:
                         done_task = active.pop(i)
                         break
                 if done_task is not None:
@@ -1046,7 +1051,10 @@ def _maybe_start_task_watchers(client: SSEStreamClient, session_state: "SessionS
                     **bg,
                     "active_tasks": active,
                     "completed_tasks": completed,
-                    "active_subagents": [t.get("id") for t in active if t.get("id")],
+                    "active_subagents": [
+                        (t if isinstance(t, str) else t.get("id")) for t in active
+                        if (t if isinstance(t, str) else t.get("id"))
+                    ],
                     "completed_subagents": [
                         t.get("id") if isinstance(t, dict) else t for t in completed
                     ],
