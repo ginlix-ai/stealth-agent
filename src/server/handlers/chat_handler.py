@@ -417,7 +417,36 @@ async def astream_flash_workflow(
             messages = inject_multimodal_context(messages, multimodal_contexts)
             logger.info(f"[FLASH_CHAT] Multimodal context injected: {len(multimodal_contexts)} attachment(s)")
 
-        input_state = {"messages": messages}
+        # Skill Context Injection (Flash mode)
+        loaded_skill_names: list[str] = []
+        skill_contexts = parse_skill_contexts(request.additional_context)
+        if skill_contexts:
+            skill_dirs = [
+                local_dir
+                for local_dir, _ in config.skills.local_skill_dirs_with_sandbox()
+            ]
+            skill_result = build_skill_prefix_message(
+                skill_contexts, skill_dirs=skill_dirs, mode="flash"
+            )
+            if skill_result:
+                messages.insert(0, skill_result.message)
+                loaded_skill_names = skill_result.loaded_skill_names
+                logger.info(
+                    f"[FLASH_CHAT] Skill context injected: {[s.name for s in skill_contexts]}"
+                )
+
+        # Build input state or resume command
+        if request.hitl_response:
+            resume_payload = serialize_hitl_response_map(request.hitl_response)
+            input_state = Command(resume=resume_payload)
+            logger.info(
+                f"[FLASH_RESUME] thread_id={thread_id} "
+                f"hitl_response keys={list(request.hitl_response.keys())}"
+            )
+        else:
+            input_state = {"messages": messages}
+            if loaded_skill_names:
+                input_state["loaded_skills"] = loaded_skill_names
 
         # Build LangGraph config
         graph_config = {
@@ -759,6 +788,7 @@ async def astream_ptc_workflow(
         # When skills are requested via additional_context, load SKILL.md content
         # and prepend as a separate message before user messages.
         # The original user_input is preserved for database persistence.
+        loaded_skill_names: list[str] = []
         skill_contexts = parse_skill_contexts(request.additional_context)
         if skill_contexts and not request.hitl_response:
             # Get skill directories from config
@@ -766,12 +796,13 @@ async def astream_ptc_workflow(
                 local_dir
                 for local_dir, _ in config.skills.local_skill_dirs_with_sandbox()
             ]
-            skill_prefix_msg = build_skill_prefix_message(
-                skill_contexts, skill_dirs=skill_dirs
+            skill_result = build_skill_prefix_message(
+                skill_contexts, skill_dirs=skill_dirs, mode="ptc"
             )
-            if skill_prefix_msg:
+            if skill_result:
                 # Insert skill message before user messages
-                messages.insert(0, skill_prefix_msg)
+                messages.insert(0, skill_result.message)
+                loaded_skill_names = skill_result.loaded_skill_names
                 logger.info(
                     f"[PTC_CHAT] Skill context injected: {[s.name for s in skill_contexts]}"
                 )
@@ -798,6 +829,9 @@ async def astream_ptc_workflow(
                 "messages": messages,
                 "current_agent": "ptc",  # For FileOperationMiddleware SSE events
             }
+            # Auto-load skill tools when skills were injected via additional_context
+            if loaded_skill_names:
+                input_state["loaded_skills"] = loaded_skill_names
 
         # =====================================================================
         # Plan Mode Injection

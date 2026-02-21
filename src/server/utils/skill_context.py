@@ -7,13 +7,41 @@ messages for the LLM.
 """
 
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.server.models.additional_context import SkillContext
-from ptc_agent.agent.skills import get_skill, SKILL_REGISTRY
+from ptc_agent.agent.skills import get_skill, SkillMode
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SkillPrefixResult:
+    """Result of building a skill prefix message."""
+
+    message: Dict[str, Any]  # The user message dict to inject
+    loaded_skill_names: list[str] = field(default_factory=list)  # Skills that successfully loaded
+
+
+def build_tool_descriptions(skill_name: str, mode: SkillMode | None = None) -> Optional[str]:
+    """Build formatted tool descriptions for a skill.
+
+    Mirrors the format from DynamicSkillLoaderMiddleware._build_skill_result.
+
+    Args:
+        skill_name: Name of the skill
+        mode: Optional agent mode filter
+
+    Returns:
+        Formatted tool description string, or None if skill has no tools
+    """
+    skill = get_skill(skill_name, mode=mode)
+    if not skill or not skill.tools:
+        return None
+
+    return skill.format_tool_descriptions()
 
 
 def parse_skill_contexts(
@@ -73,7 +101,8 @@ def parse_skill_contexts(
 
 def load_skill_content(
     skill_name: str,
-    skill_dirs: Optional[List[str]] = None
+    skill_dirs: Optional[List[str]] = None,
+    mode: SkillMode | None = None,
 ) -> Optional[str]:
     """Load SKILL.md content for a skill from local file system.
 
@@ -84,6 +113,8 @@ def load_skill_content(
         skill_name: Name of the skill (e.g., 'user-profile')
         skill_dirs: Optional list of local skill directories to search.
                    If not provided, uses project_root/skills.
+        mode: Optional agent mode filter. If provided, only loads skills
+              whose exposure matches the mode.
 
     Returns:
         Content of SKILL.md as string, or None if not found
@@ -93,8 +124,8 @@ def load_skill_content(
         >>> if content:
         ...     print(content[:50])
     """
-    # Verify skill exists in registry
-    skill = get_skill(skill_name)
+    # Verify skill exists in registry (and matches mode if specified)
+    skill = get_skill(skill_name, mode=mode)
     if not skill:
         logger.warning(f"Skill '{skill_name}' not found in registry")
         return None
@@ -134,25 +165,32 @@ def load_skill_content(
 
 def build_skill_prefix_message(
     skills: List[SkillContext],
-    skill_dirs: Optional[List[str]] = None
-) -> Optional[Dict[str, Any]]:
-    """Build a HumanMessage dict with loaded skill content.
+    skill_dirs: Optional[List[str]] = None,
+    mode: SkillMode | None = None,
+) -> Optional[SkillPrefixResult]:
+    """Build a HumanMessage dict with loaded skill content and tool descriptions.
 
     Creates a message containing skill instructions that should be prepended
-    to the conversation before the user's actual query.
+    to the conversation before the user's actual query. Also returns the list
+    of successfully loaded skill names so callers can set loaded_skills in
+    the graph state for immediate tool availability.
 
     Args:
         skills: List of SkillContext objects to load
         skill_dirs: Optional list of local skill directories to search
+        mode: Optional agent mode filter. Skills whose exposure doesn't match
+              the mode will be skipped.
 
     Returns:
-        Message dict with role="user" and skill content, or None if no skills loaded
+        SkillPrefixResult with message and loaded skill names, or None if no skills loaded
 
     Example:
         >>> skills = [SkillContext(type="skills", name="user-profile", instruction="Help onboard")]
-        >>> msg = build_skill_prefix_message(skills)
-        >>> msg["role"]
+        >>> result = build_skill_prefix_message(skills)
+        >>> result.message["role"]
         'user'
+        >>> result.loaded_skill_names
+        ['user-profile']
     """
     if not skills:
         return None
@@ -160,9 +198,10 @@ def build_skill_prefix_message(
     loaded_skills = []
     skill_contents = []
     instructions = []
+    all_tool_descriptions = []
 
     for skill_ctx in skills:
-        content = load_skill_content(skill_ctx.name, skill_dirs)
+        content = load_skill_content(skill_ctx.name, skill_dirs, mode=mode)
 
         if content:
             loaded_skills.append(skill_ctx.name)
@@ -173,6 +212,14 @@ def build_skill_prefix_message(
             else:
                 # Single skill: no header needed
                 skill_contents.append(content)
+
+            # Collect tool descriptions for this skill
+            tool_desc = build_tool_descriptions(skill_ctx.name, mode=mode)
+            if tool_desc:
+                if len(skills) > 1:
+                    all_tool_descriptions.append(f"### {skill_ctx.name} tools\n{tool_desc}")
+                else:
+                    all_tool_descriptions.append(tool_desc)
 
             if skill_ctx.instruction:
                 instructions.append(f"- {skill_ctx.name}: {skill_ctx.instruction}")
@@ -189,6 +236,12 @@ def build_skill_prefix_message(
 
     # Add skill contents
     parts.append("\n\n".join(skill_contents))
+
+    # Add tool descriptions
+    if all_tool_descriptions:
+        parts.append("\n\n**Available tools:**")
+        parts.append("\n".join(all_tool_descriptions))
+        parts.append("\nYou can call these tools directly without needing to call LoadSkill.")
 
     # Add instructions if any
     if instructions:
@@ -207,7 +260,7 @@ def build_skill_prefix_message(
         f"{loaded_skills}"
     )
 
-    return {
-        "role": "user",
-        "content": message_content,
-    }
+    return SkillPrefixResult(
+        message={"role": "user", "content": message_content},
+        loaded_skill_names=loaded_skills,
+    )
