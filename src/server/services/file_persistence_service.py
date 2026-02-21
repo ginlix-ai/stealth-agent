@@ -13,17 +13,19 @@ import hashlib
 import logging
 import mimetypes
 import os
+import shlex
 from datetime import datetime, timezone
 from typing import Any
 
 from src.server.database.workspace_file import (
+    bulk_update_file_mtimes,
+    bulk_upsert_files,
     delete_removed_files,
     get_file as db_get_file,
     get_file_metadata_for_sync,
     get_files_for_workspace,
     get_workspace_total_size,
     update_file_mtime,
-    upsert_file,
 )
 
 logger = logging.getLogger(__name__)
@@ -186,6 +188,56 @@ class FilePersistenceService:
         return result
 
     @classmethod
+    async def _compute_sandbox_hashes(
+        cls, sandbox: Any, file_paths: list[str]
+    ) -> dict[str, str]:
+        """Compute SHA-256 hashes on the sandbox to avoid downloading unchanged files.
+
+        Args:
+            sandbox: Sandbox instance
+            file_paths: List of absolute paths on the sandbox
+
+        Returns:
+            Dict mapping abs_path to hex hash. Missing entries mean the file
+            could not be hashed (deleted, permission error, etc.).
+        """
+        if not file_paths:
+            return {}
+
+        batch_size = 200
+        batches = [
+            file_paths[i : i + batch_size]
+            for i in range(0, len(file_paths), batch_size)
+        ]
+
+        async def _run_batch(paths: list[str]) -> dict[str, str]:
+            quoted = " ".join(shlex.quote(p) for p in paths)
+            cmd = f"sha256sum {quoted} 2>/dev/null"
+            res = await sandbox.execute_bash_command(cmd, timeout=30)
+            result: dict[str, str] = {}
+            if not res.get("success") or not res.get("stdout", "").strip():
+                return result
+            for line in res["stdout"].strip().split("\n"):
+                parts = line.split(None, 1)
+                if len(parts) == 2:
+                    hex_hash, path = parts
+                    result[path] = hex_hash
+            return result
+
+        try:
+            batch_results = await asyncio.gather(
+                *[_run_batch(b) for b in batches], return_exceptions=True
+            )
+            merged: dict[str, str] = {}
+            for br in batch_results:
+                if isinstance(br, dict):
+                    merged.update(br)
+            return merged
+        except Exception as e:
+            logger.warning(f"Sandbox hash computation failed: {e}")
+            return {}
+
+    @classmethod
     async def sync_to_db(cls, workspace_id: str, sandbox: Any) -> dict[str, Any]:
         """
         Snapshot workspace files from sandbox to PostgreSQL.
@@ -246,39 +298,58 @@ class FilePersistenceService:
 
                 changed_files.append(file_info)
 
-            # 5. Download changed files in parallel batches
-            batch_size = 10
+            # 5. Compute hashes on sandbox to avoid unnecessary downloads
+            sandbox_hashes = await cls._compute_sandbox_hashes(
+                sandbox, [f["abs_path"] for f in changed_files]
+            )
 
-            async def _process_file(file_info: dict[str, Any]) -> None:
+            # 6. Split into mtime-only updates vs files needing download
+            mtime_updates: list[tuple[str, datetime]] = []
+            files_to_download: list[dict[str, Any]] = []
+
+            for file_info in changed_files:
                 virtual_path = file_info["virtual_path"]
-                try:
-                    content = await sandbox.adownload_file_bytes(file_info["abs_path"])
-                    if content is None:
-                        result["errors"] += 1
-                        return
+                sandbox_hash = sandbox_hashes.get(file_info["abs_path"])
+                db_meta = existing_meta.get(virtual_path)
 
-                    content_hash = hashlib.sha256(content).hexdigest()
-
-                    # Skip if hash matches despite size/mtime difference
-                    db_meta = existing_meta.get(virtual_path)
-                    if db_meta is not None and db_meta["content_hash"] == content_hash:
-                        # Update DB mtime to match sandbox (e.g. after file restore)
-                        if file_info["mtime"] > 0 and (
-                            db_meta["mtime_epoch"] is None
-                            or abs(db_meta["mtime_epoch"] - file_info["mtime"]) >= 1.0
-                        ):
-                            await update_file_mtime(
-                                workspace_id,
+                if (
+                    sandbox_hash
+                    and db_meta is not None
+                    and db_meta["content_hash"] == sandbox_hash
+                ):
+                    # Content unchanged — just update mtime in DB
+                    if file_info["mtime"] > 0:
+                        mtime_updates.append(
+                            (
                                 virtual_path,
                                 datetime.fromtimestamp(
                                     file_info["mtime"], tz=timezone.utc
                                 ),
                             )
-                        result["skipped"] += 1
-                        return
+                        )
+                    result["skipped"] += 1
+                else:
+                    files_to_download.append(file_info)
+
+            # 7. Bulk update mtimes for unchanged files
+            if mtime_updates:
+                await bulk_update_file_mtimes(workspace_id, mtime_updates)
+
+            # 8. Download files that actually changed, in parallel batches
+            upsert_payloads: list[dict[str, Any]] = []
+            download_batch_size = 10
+
+            async def _download_file(file_info: dict[str, Any]) -> dict[str, Any] | None:
+                virtual_path = file_info["virtual_path"]
+                try:
+                    content = await sandbox.adownload_file_bytes(file_info["abs_path"])
+                    if content is None:
+                        return None
+
+                    # Recompute hash from actual bytes (race safety)
+                    content_hash = hashlib.sha256(content).hexdigest()
 
                     is_binary = _detect_is_binary(virtual_path, content)
-
                     content_text = None
                     content_binary = None
                     if is_binary:
@@ -298,36 +369,43 @@ class FilePersistenceService:
                             file_info["mtime"], tz=timezone.utc
                         )
 
-                    await upsert_file(
-                        workspace_id=workspace_id,
-                        file_path=virtual_path,
-                        file_name=file_info["file_name"],
-                        file_size=file_info["file_size"],
-                        content_hash=content_hash,
-                        content_text=content_text,
-                        content_binary=content_binary,
-                        mime_type=mime,
-                        is_binary=is_binary,
-                        permissions=None,
-                        sandbox_modified_at=sandbox_modified_at,
-                    )
-                    result["synced"] += 1
-
+                    return {
+                        "file_path": virtual_path,
+                        "file_name": file_info["file_name"],
+                        "file_size": file_info["file_size"],
+                        "content_hash": content_hash,
+                        "content_text": content_text,
+                        "content_binary": content_binary,
+                        "mime_type": mime,
+                        "is_binary": is_binary,
+                        "permissions": None,
+                        "sandbox_modified_at": sandbox_modified_at,
+                    }
                 except Exception as e:
                     logger.warning(
-                        f"Error syncing file {virtual_path} "
+                        f"Error downloading file {virtual_path} "
                         f"for workspace {workspace_id}: {e}"
                     )
-                    result["errors"] += 1
+                    return None
 
-            for i in range(0, len(changed_files), batch_size):
-                batch = changed_files[i : i + batch_size]
-                await asyncio.gather(
-                    *[_process_file(f) for f in batch],
+            for i in range(0, len(files_to_download), download_batch_size):
+                batch = files_to_download[i : i + download_batch_size]
+                batch_results = await asyncio.gather(
+                    *[_download_file(f) for f in batch],
                     return_exceptions=False,
                 )
+                for payload in batch_results:
+                    if payload is not None:
+                        upsert_payloads.append(payload)
+                    else:
+                        result["errors"] += 1
 
-            # 6. Delete files from DB that no longer exist in sandbox
+            # 9. Bulk upsert all downloaded files
+            if upsert_payloads:
+                count = await bulk_upsert_files(workspace_id, upsert_payloads)
+                result["synced"] = count
+
+            # 10. Delete files from DB that no longer exist in sandbox
             deleted = await delete_removed_files(workspace_id, active_paths)
             result["deleted"] = deleted
 

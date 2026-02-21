@@ -21,6 +21,100 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
+async def bulk_upsert_files(
+    workspace_id: str,
+    files: List[Dict[str, Any]],
+    *,
+    conn=None,
+) -> int:
+    """
+    Bulk insert or update workspace files.
+
+    Uses executemany with ON CONFLICT for efficient batch upserts.
+    Sub-batches at 50 rows per executemany call to limit memory.
+
+    Args:
+        workspace_id: Workspace UUID
+        files: List of dicts with keys: file_path, file_name, file_size,
+               content_hash, content_text, content_binary, mime_type,
+               is_binary, permissions, sandbox_modified_at
+        conn: Optional database connection to reuse
+
+    Returns:
+        Number of files written
+    """
+    if not files:
+        return 0
+
+    sql = """
+        INSERT INTO workspace_files (
+            workspace_id, file_path, file_name, file_size, content_hash,
+            content_text, content_binary, mime_type, is_binary, permissions,
+            sandbox_modified_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (workspace_id, file_path) DO UPDATE SET
+            file_name = EXCLUDED.file_name,
+            file_size = EXCLUDED.file_size,
+            content_hash = EXCLUDED.content_hash,
+            content_text = EXCLUDED.content_text,
+            content_binary = EXCLUDED.content_binary,
+            mime_type = EXCLUDED.mime_type,
+            is_binary = EXCLUDED.is_binary,
+            permissions = EXCLUDED.permissions,
+            sandbox_modified_at = EXCLUDED.sandbox_modified_at,
+            updated_at = NOW()
+    """
+
+    params_list = [
+        (
+            workspace_id,
+            f["file_path"],
+            f["file_name"],
+            f["file_size"],
+            f.get("content_hash"),
+            f.get("content_text"),
+            f.get("content_binary"),
+            f.get("mime_type"),
+            f.get("is_binary", False),
+            f.get("permissions"),
+            f.get("sandbox_modified_at"),
+        )
+        for f in files
+    ]
+
+    sub_batch_size = 50
+    count = 0
+
+    try:
+
+        async def _execute(c):
+            nonlocal count
+            async with c.transaction():
+                async with c.cursor() as cur:
+                    for i in range(0, len(params_list), sub_batch_size):
+                        batch = params_list[i : i + sub_batch_size]
+                        await cur.executemany(sql, batch)
+                        count += len(batch)
+
+        if conn:
+            await _execute(conn)
+        else:
+            async with get_db_connection() as c:
+                await _execute(c)
+
+        logger.info(
+            f"Bulk upserted {count} files for workspace {workspace_id}"
+        )
+        return count
+
+    except Exception as e:
+        logger.error(
+            f"Error bulk upserting files for workspace {workspace_id}: {e}"
+        )
+        raise
+
+
 async def upsert_file(
     workspace_id: str,
     file_path: str,
@@ -35,90 +129,26 @@ async def upsert_file(
     sandbox_modified_at: Optional[datetime] = None,
     *,
     conn=None,
-) -> dict:
-    """
-    Insert or update a workspace file.
-
-    Uses ON CONFLICT (workspace_id, file_path) DO UPDATE to upsert.
-
-    Args:
-        workspace_id: Workspace UUID
-        file_path: Full path of the file within the workspace
-        file_name: File name (basename)
-        file_size: File size in bytes
-        content_hash: SHA-256 hex digest of file content
-        content_text: Text content (for text files)
-        content_binary: Binary content (for binary files)
-        mime_type: MIME type of the file
-        is_binary: Whether the file is binary
-        permissions: File permissions string (e.g. "0644")
-        sandbox_modified_at: Last modified time in the sandbox
-        conn: Optional database connection to reuse
-
-    Returns:
-        Upserted file record as dict
-    """
-    try:
-
-        async def _execute(cur):
-            await cur.execute(
-                """
-                INSERT INTO workspace_files (
-                    workspace_id, file_path, file_name, file_size, content_hash,
-                    content_text, content_binary, mime_type, is_binary, permissions,
-                    sandbox_modified_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (workspace_id, file_path) DO UPDATE SET
-                    file_name = EXCLUDED.file_name,
-                    file_size = EXCLUDED.file_size,
-                    content_hash = EXCLUDED.content_hash,
-                    content_text = EXCLUDED.content_text,
-                    content_binary = EXCLUDED.content_binary,
-                    mime_type = EXCLUDED.mime_type,
-                    is_binary = EXCLUDED.is_binary,
-                    permissions = EXCLUDED.permissions,
-                    sandbox_modified_at = EXCLUDED.sandbox_modified_at,
-                    updated_at = NOW()
-                RETURNING workspace_file_id, workspace_id, file_path, file_name,
-                          file_size, content_hash, content_text, content_binary,
-                          mime_type, is_binary, permissions, sandbox_modified_at,
-                          created_at, updated_at
-                """,
-                (
-                    workspace_id,
-                    file_path,
-                    file_name,
-                    file_size,
-                    content_hash,
-                    content_text,
-                    content_binary,
-                    mime_type,
-                    is_binary,
-                    permissions,
-                    sandbox_modified_at,
-                ),
-            )
-            return await cur.fetchone()
-
-        if conn:
-            async with conn.cursor(row_factory=dict_row) as cur:
-                result = await _execute(cur)
-        else:
-            async with get_db_connection() as conn:
-                async with conn.cursor(row_factory=dict_row) as cur:
-                    result = await _execute(cur)
-
-        logger.info(
-            f"Upserted workspace file: {file_path} for workspace: {workspace_id}"
-        )
-        return dict(result)
-
-    except Exception as e:
-        logger.error(
-            f"Error upserting workspace file {file_path} for workspace {workspace_id}: {e}"
-        )
-        raise
+) -> None:
+    """Insert or update a single workspace file. Delegates to bulk_upsert_files."""
+    await bulk_upsert_files(
+        workspace_id,
+        [
+            {
+                "file_path": file_path,
+                "file_name": file_name,
+                "file_size": file_size,
+                "content_hash": content_hash,
+                "content_text": content_text,
+                "content_binary": content_binary,
+                "mime_type": mime_type,
+                "is_binary": is_binary,
+                "permissions": permissions,
+                "sandbox_modified_at": sandbox_modified_at,
+            }
+        ],
+        conn=conn,
+    )
 
 
 async def get_files_for_workspace(
@@ -339,25 +369,70 @@ async def get_file_metadata_for_sync(
         raise
 
 
+async def bulk_update_file_mtimes(
+    workspace_id: str,
+    updates: List[tuple],
+    *,
+    conn=None,
+) -> int:
+    """
+    Bulk update sandbox_modified_at for multiple files.
+
+    Args:
+        workspace_id: Workspace UUID
+        updates: List of (file_path, sandbox_modified_at) tuples
+        conn: Optional database connection to reuse
+
+    Returns:
+        Number of rows updated
+    """
+    if not updates:
+        return 0
+
+    sql = """
+        UPDATE workspace_files
+        SET sandbox_modified_at = %s, updated_at = NOW()
+        WHERE workspace_id = %s AND file_path = %s
+    """
+
+    params_list = [
+        (mtime, workspace_id, fpath) for fpath, mtime in updates
+    ]
+
+    try:
+
+        async def _execute(c):
+            async with c.transaction():
+                async with c.cursor() as cur:
+                    await cur.executemany(sql, params_list)
+
+        if conn:
+            await _execute(conn)
+        else:
+            async with get_db_connection() as c:
+                await _execute(c)
+
+        logger.info(
+            f"Bulk updated mtimes for {len(updates)} files in workspace {workspace_id}"
+        )
+        return len(updates)
+
+    except Exception as e:
+        logger.warning(
+            f"Error bulk updating mtimes for workspace {workspace_id}: {e}"
+        )
+        return 0
+
+
 async def update_file_mtime(
     workspace_id: str,
     file_path: str,
     sandbox_modified_at: datetime,
 ) -> None:
-    """Update only the sandbox_modified_at for a file (content unchanged)."""
-    try:
-        async with get_db_connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    """
-                    UPDATE workspace_files
-                    SET sandbox_modified_at = %s, updated_at = NOW()
-                    WHERE workspace_id = %s AND file_path = %s
-                    """,
-                    (sandbox_modified_at, workspace_id, file_path),
-                )
-    except Exception as e:
-        logger.warning(f"Error updating mtime for {file_path}: {e}")
+    """Update only the sandbox_modified_at for a file. Delegates to bulk_update_file_mtimes."""
+    await bulk_update_file_mtimes(
+        workspace_id, [(file_path, sandbox_modified_at)]
+    )
 
 
 async def delete_removed_files(
