@@ -11,28 +11,28 @@
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  background: rgba(97, 85, 245, 0.06);
-  border: 1px solid rgba(97, 85, 245, 0.18);
+  background: var(--color-accent-soft);
+  border: 1px solid var(--color-border-muted);
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s ease;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--color-text-primary);
   font-size: 13px;
   font-family: inherit;
   text-align: left;
   max-width: 340px;
 }
 .file-mention-card:hover {
-  background: rgba(97, 85, 245, 0.14);
-  border-color: rgba(97, 85, 245, 0.35);
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-overlay);
   transform: translateY(-1px);
-  box-shadow: 0 2px 12px rgba(97, 85, 245, 0.12);
+  box-shadow: 0 2px 12px var(--color-accent-soft);
 }
 
 .file-mention-card-icon {
   width: 20px;
   height: 20px;
-  color: #6155F5;
+  color: var(--color-accent-primary);
   flex-shrink: 0;
 }
 
@@ -52,7 +52,7 @@
 }
 .file-mention-card-dir {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--color-text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -62,15 +62,15 @@
 .file-mention-card-action {
   width: 14px;
   height: 14px;
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--color-text-tertiary);
   flex-shrink: 0;
   transition: color 0.15s;
 }
 .file-mention-card:hover .file-mention-card-action {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--color-text-tertiary);
 }
 
 /* Directory card variant */
 .file-mention-card-dir-card .file-mention-card-icon {
-  color: #f59e0b;
+  color: var(--color-warning);
 }

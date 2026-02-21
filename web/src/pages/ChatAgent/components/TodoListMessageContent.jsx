@@ -52,12 +52,12 @@ function TodoListMessageContent({ todos, total, completed, in_progress, pending 
   const getStatusIcon = (status) => {
     switch (status) {
       case 'completed':
-        return <CheckCircle2 className="h-4 w-4" style={{ color: '#0FEDBE' }} />;
+        return <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--color-profit)' }} />;
       case 'in_progress':
-        return <Loader2 className="h-4 w-4 animate-spin" style={{ color: '#6155F5' }} />;
+        return <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--color-accent-primary)' }} />;
       case 'pending':
       default:
-        return <Circle className="h-4 w-4" style={{ color: '#FFFFFF', opacity: 0.5 }} />;
+        return <Circle className="h-4 w-4" style={{ color: 'var(--color-text-tertiary)' }} />;
     }
   };
 
@@ -87,13 +87,13 @@ function TodoListMessageContent({ todos, total, completed, in_progress, pending 
   const getStatusBadgeColor = (status) => {
     switch (status) {
       case 'completed':
-        return 'rgba(15, 237, 190, 0.2)';
+        return 'var(--color-profit-soft)';
       case 'in_progress':
-        return 'rgba(97, 85, 245, 0.2)';
+        return 'var(--color-accent-soft)';
       case 'pending':
-        return 'rgba(255, 255, 255, 0.1)';
+        return 'var(--color-border-muted)';
       default:
-        return 'rgba(255, 255, 255, 0.1)';
+        return 'var(--color-border-muted)';
     }
   };
 
@@ -102,31 +102,31 @@ function TodoListMessageContent({ todos, total, completed, in_progress, pending 
       {/* Todo list indicator button */}
       <button
         onClick={handleToggle}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors hover:bg-white/10 w-full"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors hover:bg-foreground/10 w-full"
         style={{
-          backgroundColor: 'rgba(97, 85, 245, 0.15)',
-          border: '1px solid rgba(97, 85, 245, 0.3)',
+          backgroundColor: 'var(--color-accent-soft)',
+          border: '1px solid var(--color-accent-overlay)',
         }}
         title="Todo List"
       >
         {/* Icon */}
-        <ListTodo className="h-4 w-4" style={{ color: '#6155F5' }} />
+        <ListTodo className="h-4 w-4" style={{ color: 'var(--color-accent-primary)' }} />
         
         {/* Label with counts */}
-        <span className="text-xs font-medium" style={{ color: '#FFFFFF', opacity: 0.9 }}>
+        <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
           Todo List
         </span>
         
         {/* Status summary */}
-        <span className="text-xs ml-auto" style={{ color: '#FFFFFF', opacity: 0.6 }}>
+        <span className="text-xs ml-auto" style={{ color: 'var(--color-text-tertiary)' }}>
           {completed}/{total} completed
         </span>
         
         {/* Expand/collapse icon */}
         {isExpanded ? (
-          <ChevronUp className="h-3 w-3" style={{ color: '#FFFFFF', opacity: 0.6 }} />
+          <ChevronUp className="h-3 w-3" style={{ color: 'var(--color-text-tertiary)' }} />
         ) : (
-          <ChevronDown className="h-3 w-3" style={{ color: '#FFFFFF', opacity: 0.6 }} />
+          <ChevronDown className="h-3 w-3" style={{ color: 'var(--color-text-tertiary)' }} />
         )}
       </button>
 
@@ -135,24 +135,24 @@ function TodoListMessageContent({ todos, total, completed, in_progress, pending 
         <div
           className="mt-2 space-y-2"
           style={{
-            backgroundColor: 'rgba(97, 85, 245, 0.1)',
-            border: '1px solid rgba(97, 85, 245, 0.2)',
+            backgroundColor: 'var(--color-accent-soft)',
+            border: '1px solid var(--color-accent-soft)',
             borderRadius: '6px',
             padding: '12px',
           }}
         >
           {/* Status summary bar */}
-          <div className="flex items-center gap-4 pb-2 mb-2" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-            <div className="text-xs" style={{ color: '#FFFFFF', opacity: 0.7 }}>
+          <div className="flex items-center gap-4 pb-2 mb-2" style={{ borderBottom: '1px solid var(--color-border-muted)' }}>
+            <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
               <span className="font-semibold">Total:</span> {total}
             </div>
-            <div className="text-xs" style={{ color: '#0FEDBE', opacity: 0.9 }}>
+            <div className="text-xs" style={{ color: 'var(--color-profit)', opacity: 0.9 }}>
               <span className="font-semibold">Completed:</span> {completed}
             </div>
-            <div className="text-xs" style={{ color: '#6155F5', opacity: 0.9 }}>
+            <div className="text-xs" style={{ color: 'var(--color-accent-primary)', opacity: 0.9 }}>
               <span className="font-semibold">In Progress:</span> {in_progress}
             </div>
-            <div className="text-xs" style={{ color: '#FFFFFF', opacity: 0.6 }}>
+            <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
               <span className="font-semibold">Pending:</span> {pending}
             </div>
           </div>
@@ -165,7 +165,7 @@ function TodoListMessageContent({ todos, total, completed, in_progress, pending 
                 className="flex items-start gap-3 p-2 rounded-md"
                 style={{
                   backgroundColor: getStatusBadgeColor(todo.status),
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  border: '1px solid var(--color-border-muted)',
                 }}
               >
                 {/* Status icon */}
@@ -177,7 +177,7 @@ function TodoListMessageContent({ todos, total, completed, in_progress, pending 
                 <div className="flex-1 min-w-0">
                   {/* Todo name (activeForm) */}
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-semibold" style={{ color: '#FFFFFF', opacity: 0.9 }}>
+                    <span className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                       {todo.activeForm || `Task ${index + 1}`}
                     </span>
                     {/* Status badge */}
@@ -185,8 +185,7 @@ function TodoListMessageContent({ todos, total, completed, in_progress, pending 
                       className="text-xs px-2 py-0.5 rounded-full"
                       style={{
                         backgroundColor: getStatusBadgeColor(todo.status),
-                        color: '#FFFFFF',
-                        opacity: 0.8,
+                        color: 'var(--color-text-primary)',
                       }}
                     >
                       {getStatusLabel(todo.status)}
@@ -195,7 +194,7 @@ function TodoListMessageContent({ todos, total, completed, in_progress, pending 
 
                   {/* Todo content/description */}
                   {todo.content && (
-                    <p className="text-xs" style={{ color: '#FFFFFF', opacity: 0.7 }}>
+                    <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                       {todo.content}
                     </p>
                   )}

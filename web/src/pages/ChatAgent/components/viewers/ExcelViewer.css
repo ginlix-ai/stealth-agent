@@ -8,7 +8,7 @@
 .excel-viewer-empty {
   padding: 2rem;
   text-align: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--color-text-tertiary);
   font-size: 13px;
 }
 
@@ -17,7 +17,7 @@
   display: flex;
   gap: 2px;
   padding: 6px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--color-border-muted);
   overflow-x: auto;
   flex-shrink: 0;
 }
@@ -26,23 +26,23 @@
   padding: 4px 10px;
   border-radius: 4px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--color-text-tertiary);
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-border-muted);
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s;
 }
 
 .excel-sheet-tab:hover {
-  color: rgba(255, 255, 255, 0.8);
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-primary);
+  background: var(--color-border-muted);
 }
 
 .excel-sheet-tab.active {
-  color: #fff;
-  background: rgba(97, 85, 245, 0.25);
-  border-color: rgba(97, 85, 245, 0.4);
+  color: var(--color-text-primary);
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-overlay);
 }
 
 /* Table wrapper — white background like a real spreadsheet */
@@ -89,7 +89,7 @@
 }
 
 .excel-table tbody tr:hover td {
-  outline: 1px solid rgba(97, 85, 245, 0.35);
+  outline: 1px solid var(--color-accent-overlay);
   outline-offset: -1px;
 }
 
@@ -117,7 +117,7 @@ thead .excel-row-num {
   padding: 8px 12px;
   text-align: center;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--color-text-tertiary);
+  border-top: 1px solid var(--color-border-muted);
   flex-shrink: 0;
 }

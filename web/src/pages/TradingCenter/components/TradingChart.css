@@ -2,7 +2,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  background-color: #0f1422;
+  background-color: var(--color-bg-card);
   position: relative;
   overflow: hidden;
   min-height: 0;
@@ -32,7 +32,7 @@
   gap: 4px;
   font-size: 11px;
   font-family: 'SF Mono', 'Fira Code', monospace;
-  color: #c4c8d8;
+  color: var(--color-text-secondary);
   white-space: nowrap;
 }
 
@@ -47,7 +47,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #1a1f35;
+  border-bottom: 1px solid var(--color-border-default);
   flex-shrink: 0;
 }
 
@@ -74,7 +74,7 @@
 .indicator-toggles-label {
   font-size: 11px;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--color-text-secondary);
   margin-right: 4px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -85,7 +85,7 @@
   font-size: 11px;
   font-weight: 500;
   font-family: 'SF Mono', 'Fira Code', monospace;
-  color: #555a6e;
+  color: var(--color-text-secondary);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 3px;
@@ -94,7 +94,7 @@
 }
 
 .indicator-toggle-btn:hover {
-  color: #c4c8d8;
+  color: var(--color-text-primary);
 }
 
 .indicator-toggle-active {
@@ -104,7 +104,7 @@
 .interval-selector {
   display: flex;
   gap: 2px;
-  background-color: #141826;
+  background-color: var(--color-bg-surface);
   border-radius: 6px;
   padding: 2px;
 }
@@ -114,7 +114,7 @@
   font-size: 12px;
   font-weight: 500;
   font-family: 'SF Mono', 'Fira Code', monospace;
-  color: #8b8fa3;
+  color: var(--color-text-secondary);
   background: transparent;
   border: none;
   border-radius: 4px;
@@ -122,9 +122,9 @@
   transition: color 0.15s, background-color 0.15s;
 }
 
-.interval-btn:hover { color: #c4c8d8; background: rgba(102,126,234,0.1); }
-.interval-btn-active { color: #fff; background: #667eea; }
-.interval-btn-active:hover { background: #5a6fd6; }
+.interval-btn:hover { color: var(--color-text-primary); background: var(--color-accent-soft); }
+.interval-btn-active { color: var(--color-text-on-accent); background: var(--color-accent-primary); }
+.interval-btn-active:hover { background: var(--color-accent-primary); opacity: 0.9; }
 
 .chart-tools-right {
   display: flex;
@@ -139,10 +139,10 @@
   min-width: 28px;
   height: 28px;
   padding: 0 6px;
-  background-color: #1a1f35;
-  border: 1px solid #2a2f45;
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border-elevated);
   border-radius: 4px;
-  color: #8b8fa3;
+  color: var(--color-text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -155,15 +155,15 @@
 }
 
 .chart-tool-btn:hover {
-  background-color: #2a2f45;
-  color: #ffffff;
-  border-color: #667eea;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  border-color: var(--color-accent-primary);
 }
 
 .chart-tool-btn-active {
-  background-color: rgba(102,126,234,0.15);
-  color: #667eea;
-  border-color: #667eea;
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent-primary);
+  border-color: var(--color-accent-primary);
 }
 
 /* Light chart visible in Light mode: fills parent flex column */
@@ -204,7 +204,7 @@
 .rsi-container {
   height: 120px;
   flex-shrink: 0;
-  border-top: 1px solid #1a1f35;
+  border-top: 1px solid var(--color-border-default);
   padding: 4px 0 0 0;
   display: flex;
   flex-direction: column;
@@ -212,7 +212,7 @@
 
 .rsi-label {
   font-size: 12px;
-  color: #8b8fa3;
+  color: var(--color-text-secondary);
   margin: 0 0 2px 8px;
 }
 
@@ -228,20 +228,20 @@
   left: 50%;
   transform: translate(-50%, -50%);
   padding: 20px;
-  background-color: #1a1f35;
+  background-color: var(--color-bg-elevated);
   border-radius: 8px;
-  color: #ffffff;
+  color: var(--color-text-primary);
   z-index: 10;
 }
 
 .chart-loading-hint {
   font-size: 12px;
-  color: #8b8fa3;
+  color: var(--color-text-secondary);
   margin-top: 10px;
 }
 
 .chart-error {
-  color: #ef4444;
+  color: var(--color-loss);
   max-width: 80%;
   text-align: center;
   line-height: 1.5;

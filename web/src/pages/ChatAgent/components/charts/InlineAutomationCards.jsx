@@ -5,13 +5,13 @@ import { formatRelativeTime } from '../../../Automations/utils/time';
 
 // ─── Constants (matching InlineMarketCharts) ─────────────────────────
 
-const GREEN = '#10b981';
-const YELLOW = '#eab308';
-const RED = '#ef4444';
-const BLUE = '#3b82f6';
-const TEXT_COLOR = '#8b8fa3';
-const CARD_BG = 'rgba(255,255,255,0.03)';
-const CARD_BORDER = 'rgba(255,255,255,0.06)';
+const GREEN = 'var(--color-profit)';
+const YELLOW = 'var(--color-warning)';
+const RED = 'var(--color-loss)';
+const BLUE = 'var(--color-info)';
+const TEXT_COLOR = 'var(--color-text-tertiary)';
+const CARD_BG = 'var(--color-bg-elevated)';
+const CARD_BORDER = 'var(--color-border-muted)';
 
 const cardStyle = {
   background: CARD_BG,
@@ -66,7 +66,7 @@ function QuoteRow({ label, value }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
       <span style={{ opacity: 0.7 }}>{label}</span>
-      <span style={{ color: '#fff', fontWeight: 500 }}>{value}</span>
+      <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{value}</span>
     </div>
   );
 }
@@ -103,17 +103,17 @@ function InlineAutomationListCard({ artifact, onClick }) {
     <div
       style={cardStyle}
       onClick={onClick}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-border-default)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
     >
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontWeight: 600, color: '#fff', fontSize: 13 }}>Automations</span>
+        <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 13 }}>Automations</span>
         <span
           style={{
             fontSize: 11,
             color: TEXT_COLOR,
-            backgroundColor: 'rgba(255,255,255,0.06)',
+            backgroundColor: 'var(--color-bg-surface)',
             padding: '1px 6px',
             borderRadius: 10,
           }}
@@ -136,7 +136,7 @@ function InlineAutomationListCard({ artifact, onClick }) {
             }}
           >
             <StatusDot status={a.status} />
-            <span style={{ color: '#fff', fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ color: 'var(--color-text-primary)', fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {a.name}
             </span>
             <span style={{ color: TEXT_COLOR, flexShrink: 0, fontSize: 11 }}>
@@ -169,13 +169,13 @@ function InlineAutomationDetailCard({ artifact, onClick }) {
     <div
       style={cardStyle}
       onClick={onClick}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-border-default)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
     >
       {/* Header: icon + name + status */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <Icon size={14} style={{ color: TEXT_COLOR, flexShrink: 0 }} />
-        <span style={{ fontWeight: 700, color: '#fff', fontSize: 14, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontWeight: 700, color: 'var(--color-text-primary)', fontSize: 14, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {automation.name}
         </span>
         <span style={{ fontSize: 12, fontWeight: 500, color: statusColor(automation.status), flexShrink: 0 }}>
@@ -207,11 +207,11 @@ function InlineAutomationCreatedCard({ artifact, onClick }) {
     <div
       style={{
         ...cardStyle,
-        borderColor: 'rgba(16, 185, 129, 0.2)',
+        borderColor: 'var(--color-profit-border)',
       }}
       onClick={onClick}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.35)')}
-      onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.2)')}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-profit-border-hover)')}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--color-profit-border)')}
     >
       {/* Header: checkmark + "Automation Created" */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
@@ -220,7 +220,7 @@ function InlineAutomationCreatedCard({ artifact, onClick }) {
       </div>
 
       {/* Name */}
-      <div style={{ fontWeight: 600, color: '#fff', fontSize: 14, marginBottom: 8 }}>
+      <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 14, marginBottom: 8 }}>
         {artifact.name}
       </div>
 

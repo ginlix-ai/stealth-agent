@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Dialog,
   DialogContent,
@@ -31,7 +32,7 @@ const inputStyle = {
   borderColor: 'var(--color-border-default)',
 };
 
-const labelClass = 'text-sm font-medium text-white';
+const labelClass = 'text-sm font-medium';
 const radioGroupClass = 'flex gap-3';
 
 function RadioOption({ name, value, checked, onChange, label }) {
@@ -43,7 +44,7 @@ function RadioOption({ name, value, checked, onChange, label }) {
         value={value}
         checked={checked}
         onChange={() => onChange(value)}
-        className="accent-[#6155F5]"
+        className="accent-[var(--color-accent-primary)]"
       />
       {label}
     </label>
@@ -65,6 +66,7 @@ const INITIAL_FORM = {
 };
 
 export default function AutomationFormDialog({ open, onOpenChange, onSubmit, automation, loading }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState(INITIAL_FORM);
   const [workspaces, setWorkspaces] = useState([]);
 
@@ -128,64 +130,64 @@ export default function AutomationFormDialog({ open, onOpenChange, onSubmit, aut
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-lg text-white border overflow-y-auto max-h-[90vh]"
+        className="sm:max-w-lg border overflow-y-auto max-h-[90vh]"
         style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}
       >
         <DialogHeader>
-          <DialogTitle className="text-white">
-            {isEdit ? 'Edit Automation' : 'Create Automation'}
+          <DialogTitle style={{ color: 'var(--color-text-primary)' }}>
+            {isEdit ? t('automation.editAutomation') : t('automation.createAutomation')}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {/* Name */}
           <div className="flex flex-col gap-1.5">
-            <label className={labelClass}>Name</label>
+            <label className={labelClass}>{t('common.name')}</label>
             <Input
               value={form.name}
               onChange={set('name')}
-              placeholder="e.g. Daily market summary"
+              placeholder={t('automation.namePlaceholder')}
               required
-              className="text-white placeholder:text-gray-500 border"
+              className="placeholder:text-gray-500 border"
               style={inputStyle}
             />
           </div>
 
           {/* Description */}
           <div className="flex flex-col gap-1.5">
-            <label className={labelClass}>Description</label>
+            <label className={labelClass}>{t('common.description')}</label>
             <Input
               value={form.description}
               onChange={set('description')}
-              placeholder="Optional description"
-              className="text-white placeholder:text-gray-500 border"
+              placeholder={t('automation.descPlaceholder')}
+              className="placeholder:text-gray-500 border"
               style={inputStyle}
             />
           </div>
 
           {/* Trigger Type */}
           <div className="flex flex-col gap-1.5">
-            <label className={labelClass}>Trigger Type</label>
+            <label className={labelClass}>{t('automation.triggerType')}</label>
             <div className={radioGroupClass}>
-              <RadioOption name="trigger_type" value="cron" checked={form.trigger_type === 'cron'} onChange={set('trigger_type')} label="Cron (recurring)" />
-              <RadioOption name="trigger_type" value="once" checked={form.trigger_type === 'once'} onChange={set('trigger_type')} label="Once" />
+              <RadioOption name="trigger_type" value="cron" checked={form.trigger_type === 'cron'} onChange={set('trigger_type')} label={t('automation.cronRecurring')} />
+              <RadioOption name="trigger_type" value="once" checked={form.trigger_type === 'once'} onChange={set('trigger_type')} label={t('automation.once')} />
             </div>
           </div>
 
           {/* Cron Expression */}
           {form.trigger_type === 'cron' && (
             <div className="flex flex-col gap-1.5">
-              <label className={labelClass}>Cron Expression</label>
+              <label className={labelClass}>{t('automation.cronExpression')}</label>
               <Input
                 value={form.cron_expression}
                 onChange={set('cron_expression')}
                 placeholder="*/30 * * * *"
                 required
-                className="text-white placeholder:text-gray-500 border font-mono"
+                className="placeholder:text-gray-500 border font-mono"
                 style={inputStyle}
               />
               <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                5-field cron: minute hour day-of-month month day-of-week
+                {t('automation.cronHelp')}
               </span>
             </div>
           )}
@@ -193,13 +195,13 @@ export default function AutomationFormDialog({ open, onOpenChange, onSubmit, aut
           {/* Run At */}
           {form.trigger_type === 'once' && (
             <div className="flex flex-col gap-1.5">
-              <label className={labelClass}>Run At</label>
+              <label className={labelClass}>{t('automation.runAt')}</label>
               <Input
                 type="datetime-local"
                 value={form.next_run_at}
                 onChange={set('next_run_at')}
                 required
-                className="text-white border"
+                className="border"
                 style={inputStyle}
               />
             </div>
@@ -207,11 +209,11 @@ export default function AutomationFormDialog({ open, onOpenChange, onSubmit, aut
 
           {/* Timezone */}
           <div className="flex flex-col gap-1.5">
-            <label className={labelClass}>Timezone</label>
+            <label className={labelClass}>{t('settings.timezone')}</label>
             <select
               value={form.timezone}
               onChange={set('timezone')}
-              className="flex h-10 w-full rounded-md border px-3 py-2 text-sm text-white"
+              className="flex h-10 w-full rounded-md border px-3 py-2 text-sm"
               style={inputStyle}
             >
               {COMMON_TIMEZONES.map((tz) => (
@@ -222,25 +224,25 @@ export default function AutomationFormDialog({ open, onOpenChange, onSubmit, aut
 
           {/* Agent Mode */}
           <div className="flex flex-col gap-1.5">
-            <label className={labelClass}>Agent Mode</label>
+            <label className={labelClass}>{t('automation.agentMode')}</label>
             <div className={radioGroupClass}>
-              <RadioOption name="agent_mode" value="flash" checked={form.agent_mode === 'flash'} onChange={set('agent_mode')} label="Flash" />
-              <RadioOption name="agent_mode" value="ptc" checked={form.agent_mode === 'ptc'} onChange={set('agent_mode')} label="PTC (Sandbox)" />
+              <RadioOption name="agent_mode" value="flash" checked={form.agent_mode === 'flash'} onChange={set('agent_mode')} label={t('automation.flash')} />
+              <RadioOption name="agent_mode" value="ptc" checked={form.agent_mode === 'ptc'} onChange={set('agent_mode')} label={t('automation.ptcSandbox')} />
             </div>
           </div>
 
           {/* Workspace */}
           {form.agent_mode === 'ptc' && (
             <div className="flex flex-col gap-1.5">
-              <label className={labelClass}>Workspace</label>
+              <label className={labelClass}>{t('thread.workspace')}</label>
               <select
                 value={form.workspace_id}
                 onChange={set('workspace_id')}
                 required
-                className="flex h-10 w-full rounded-md border px-3 py-2 text-sm text-white"
+                className="flex h-10 w-full rounded-md border px-3 py-2 text-sm"
                 style={inputStyle}
               >
-                <option value="">Select workspace...</option>
+                <option value="">{t('automation.selectWorkspace')}</option>
                 {workspaces.map((ws) => (
                   <option key={ws.workspace_id} value={ws.workspace_id}>
                     {ws.name}
@@ -252,37 +254,37 @@ export default function AutomationFormDialog({ open, onOpenChange, onSubmit, aut
 
           {/* Instruction */}
           <div className="flex flex-col gap-1.5">
-            <label className={labelClass}>Instruction</label>
+            <label className={labelClass}>{t('automation.instruction')}</label>
             <Textarea
               value={form.instruction}
               onChange={set('instruction')}
-              placeholder="What should the agent do?"
+              placeholder={t('automation.instructionPlaceholder')}
               required
               rows={4}
-              className="text-white placeholder:text-gray-500 border"
+              className="placeholder:text-gray-500 border"
               style={inputStyle}
             />
           </div>
 
           {/* Thread Strategy */}
           <div className="flex flex-col gap-1.5">
-            <label className={labelClass}>Thread Strategy</label>
+            <label className={labelClass}>{t('automation.threadStrategy')}</label>
             <div className={radioGroupClass}>
-              <RadioOption name="thread_strategy" value="new" checked={form.thread_strategy === 'new'} onChange={set('thread_strategy')} label="New thread each run" />
-              <RadioOption name="thread_strategy" value="continue" checked={form.thread_strategy === 'continue'} onChange={set('thread_strategy')} label="Continue existing" />
+              <RadioOption name="thread_strategy" value="new" checked={form.thread_strategy === 'new'} onChange={set('thread_strategy')} label={t('automation.newThreadEachRun')} />
+              <RadioOption name="thread_strategy" value="continue" checked={form.thread_strategy === 'continue'} onChange={set('thread_strategy')} label={t('automation.continueExisting')} />
             </div>
           </div>
 
           {/* Max Failures */}
           <div className="flex flex-col gap-1.5">
-            <label className={labelClass}>Max Failures</label>
+            <label className={labelClass}>{t('automation.maxFailures')}</label>
             <Input
               type="number"
               min={1}
               max={100}
               value={form.max_failures}
               onChange={set('max_failures')}
-              className="text-white border w-24"
+              className="border w-24"
               style={inputStyle}
             />
           </div>
@@ -292,17 +294,15 @@ export default function AutomationFormDialog({ open, onOpenChange, onSubmit, aut
               type="button"
               variant="ghost"
               onClick={() => onOpenChange(false)}
-              className="text-white"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
               disabled={loading}
-              className="text-white"
-              style={{ backgroundColor: '#6155F5' }}
+              style={{ backgroundColor: 'var(--color-accent-primary)', color: 'var(--color-text-on-accent)' }}
             >
-              {loading ? 'Saving...' : isEdit ? 'Save Changes' : 'Create'}
+              {loading ? t('common.saving') : isEdit ? t('automation.saveChanges') : t('common.create')}
             </Button>
           </DialogFooter>
         </form>

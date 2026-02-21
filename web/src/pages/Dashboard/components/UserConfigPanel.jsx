@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, User, LogOut, Eye, EyeOff, Trash2, HelpCircle, MessageSquareText } from 'lucide-react';
+import { X, User, LogOut, Eye, EyeOff, Trash2, HelpCircle, MessageSquareText, Sun, Moon, Monitor } from 'lucide-react';
 import { Input } from '../../../components/ui/input';
 import { updateCurrentUser, getCurrentUser, updatePreferences, getPreferences, clearPreferences, uploadAvatar, redeemCode, getUsageStatus, getAvailableModels, getUserApiKeys, updateUserApiKeys, deleteUserApiKey } from '../utils/api';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useTheme } from '../../../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 import ConfirmDialog from './ConfirmDialog';
 
 /**
@@ -15,6 +17,8 @@ import ConfirmDialog from './ConfirmDialog';
  */
 function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboarding }) {
   const { user: authUser, logout, refreshUser } = useAuth();
+  const { theme, preference, setTheme: setThemePref } = useTheme();
+  const { t, i18n } = useTranslation();
   const [activeTab, setActiveTab] = useState('userInfo');
   const [avatarUrl, setAvatarUrl] = useState(null);
   const fileInputRef = useRef(null);
@@ -55,7 +59,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
   const [isResetting, setIsResetting] = useState(false);
 
   const timezones = [
-    { value: '', label: 'Select timezone...' },
+    { value: '', label: t('settings.selectTimezone') },
     { group: 'Americas', options: [
       { value: 'America/New_York', label: 'Eastern Time (America/New_York)' },
       { value: 'America/Chicago', label: 'Central Time (America/Chicago)' },
@@ -85,13 +89,9 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
   ];
 
   const locales = [
-    { value: '', label: 'Select locale...' },
+    { value: '', label: t('settings.selectLocale') },
     { value: 'en-US', label: 'English (United States)' },
-    { value: 'en-GB', label: 'English (United Kingdom)' },
-    { value: 'zh-CN', label: 'Chinese (Simplified, China)' },
-    { value: 'zh-TW', label: 'Chinese (Traditional, Taiwan)' },
-    { value: 'ja-JP', label: 'Japanese (Japan)' },
-    { value: 'ko-KR', label: 'Korean (Korea)' },
+    { value: 'zh-CN', label: '中文（简体）' },
   ];
 
   useEffect(() => {
@@ -156,7 +156,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
       setPreferredModel(prefsRes?.other_preference?.preferred_model || '');
       setPreferredFlashModel(prefsRes?.other_preference?.preferred_flash_model || '');
     } catch {
-      setModelTabError('Failed to load model settings');
+      setModelTabError(t('settings.failedToLoadModels'));
     }
   };
 
@@ -186,7 +186,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
       setModelSaveSuccess(true);
       setTimeout(() => setModelSaveSuccess(false), 3000);
     } catch {
-      setModelTabError('Failed to save settings');
+      setModelTabError(t('settings.failedToSaveSettings'));
     } finally {
       setIsSubmitting(false);
     }
@@ -200,7 +200,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
       setByokEnabled(result.byok_enabled);
       setByokProviders(result.providers);
     } catch {
-      setModelTabError('Failed to toggle BYOK');
+      setModelTabError(t('settings.failedToToggleByok'));
     }
   };
 
@@ -211,7 +211,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
       const result = await deleteUserApiKey(provider);
       setByokProviders(result.providers);
     } catch {
-      setModelTabError(`Failed to delete ${provider} key`);
+      setModelTabError(t('settings.failedToDeleteKey', { provider }));
     } finally {
       setDeletingProvider(null);
     }
@@ -226,9 +226,18 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
       setAvatarUrl(`${avatar_url}?t=${Date.now()}`);
       refreshUser();
     } catch {
-      setError('Failed to upload avatar');
+      setError(t('settings.failedToUploadAvatar'));
     } finally {
       setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleLocaleChange = (newLocale) => {
+    setLocale(newLocale);
+    // Also switch i18n language for supported UI locales
+    if (newLocale === 'en-US' || newLocale === 'zh-CN') {
+      i18n.changeLanguage(newLocale);
+      localStorage.setItem('locale', newLocale);
     }
   };
 
@@ -248,7 +257,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
-      setError(err.message || 'Failed to update user information');
+      setError(err.message || t('settings.failedToUpdateUser'));
     } finally {
       setIsSubmitting(false);
     }
@@ -277,7 +286,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
       setPreferences(null);
       setShowResetConfirm(false);
     } catch {
-      setError('Failed to reset preferences');
+      setError(t('settings.failedToResetPreferences'));
       setShowResetConfirm(false);
     } finally {
       setIsResetting(false);
@@ -305,8 +314,8 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
 
   const PLAN_BADGE_COLORS = [
     { backgroundColor: 'var(--color-bg-card)', color: 'var(--color-text-tertiary)', border: '1px solid var(--color-border-muted)' },
-    { backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.3)' },
-    { backgroundColor: 'rgba(234, 179, 8, 0.15)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)' },
+    { backgroundColor: 'var(--color-info-soft)', color: 'var(--color-info)', border: '1px solid var(--color-info-soft)' },
+    { backgroundColor: 'var(--color-warning-soft)', color: 'var(--color-warning)', border: '1px solid var(--color-warning-soft)' },
   ];
   const getPlanBadgeStyle = (rank) => PLAN_BADGE_COLORS[Math.min(rank, PLAN_BADGE_COLORS.length - 1)];
 
@@ -347,13 +356,15 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
         >
           <button
             onClick={handleClose}
-            className="absolute top-4 right-4 p-1 rounded-full transition-colors hover:bg-white/10"
-            style={{ color: 'var(--color-text-primary)' }}
+            className="absolute top-4 right-4 p-1 rounded-full transition-colors"
+            style={{ color: 'var(--color-text-primary)', backgroundColor: 'transparent' }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-border-muted)'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           >
             <X className="h-5 w-5" />
           </button>
 
-          <h2 className="text-xl font-semibold mb-6" style={{ color: 'var(--color-text-primary)' }}>User Settings</h2>
+          <h2 className="text-xl font-semibold mb-6" style={{ color: 'var(--color-text-primary)' }}>{t('settings.title')}</h2>
               <div className="flex gap-2 mb-6 border-b" style={{ borderColor: 'var(--color-border-muted)' }}>
                 <button
                   type="button"
@@ -364,7 +375,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                     borderBottom: activeTab === 'userInfo' ? '2px solid var(--color-accent-primary)' : '2px solid transparent',
                   }}
                 >
-                  User Info
+                  {t('settings.userInfo')}
                 </button>
                 <button
                   type="button"
@@ -375,7 +386,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                     borderBottom: activeTab === 'preferences' ? '2px solid var(--color-accent-primary)' : '2px solid transparent',
                   }}
                 >
-                  Preferences
+                  {t('settings.preferences')}
                 </button>
                 <button
                   type="button"
@@ -386,13 +397,13 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                     borderBottom: activeTab === 'model' ? '2px solid var(--color-accent-primary)' : '2px solid transparent',
                   }}
                 >
-                  Model
+                  {t('settings.model')}
                 </button>
               </div>
 
               {isLoading && (
                 <div className="flex items-center justify-center py-8">
-                  <p className="text-sm" style={{ color: 'var(--color-text-primary)', opacity: 0.7 }}>Loading...</p>
+                  <p className="text-sm" style={{ color: 'var(--color-text-primary)', opacity: 0.7 }}>{t('common.loading')}</p>
                 </div>
               )}
 
@@ -415,14 +426,14 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                         className="px-3 py-1.5 rounded-md text-sm font-medium"
                         style={{ backgroundColor: 'var(--color-accent-soft)', color: 'var(--color-accent-primary)' }}
                       >
-                        {isUploadingAvatar ? 'Uploading...' : 'Change Avatar'}
+                        {isUploadingAvatar ? t('settings.uploading') : t('settings.changeAvatar')}
                       </button>
                     </div>
                     <input type="file" ref={fileInputRef} onChange={handleAvatarChange} accept="image/png,image/jpeg,image/gif,image/webp" style={{ display: 'none' }} />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>Email</label>
+                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>{t('common.email')}</label>
                     <Input
                       type="email"
                       value={authUser?.email || ''}
@@ -435,16 +446,16 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                         color: 'var(--color-text-primary)',
                       }}
                     />
-                    <p className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>Email cannot be changed</p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>{t('settings.emailCannotBeChanged')}</p>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>Name</label>
+                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>{t('common.name')}</label>
                     <Input
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      placeholder="Enter your name"
+                      placeholder={t('auth.enterName')}
                       className="w-full"
                       style={{
                         backgroundColor: 'var(--color-bg-card)',
@@ -456,7 +467,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>Timezone</label>
+                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>{t('settings.timezone')}</label>
                     <select
                       value={timezone}
                       onChange={(e) => setTimezone(e.target.value)}
@@ -483,10 +494,10 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>Locale</label>
+                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>{t('settings.locale')}</label>
                     <select
                       value={locale}
-                      onChange={(e) => setLocale(e.target.value)}
+                      onChange={(e) => handleLocaleChange(e.target.value)}
                       className="w-full rounded-md px-3 py-2 text-sm"
                       style={{
                         backgroundColor: 'var(--color-bg-card)',
@@ -501,8 +512,51 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                     </select>
                   </div>
 
+                  {/* Theme Toggle */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>{t('settings.theme')}</label>
+                    <div className="inline-flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--color-border-muted)' }}>
+                      <button
+                        type="button"
+                        onClick={() => setThemePref('dark')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors"
+                        style={{
+                          backgroundColor: preference === 'dark' ? 'var(--color-accent-soft)' : 'transparent',
+                          color: preference === 'dark' ? 'var(--color-accent-primary)' : 'var(--color-text-tertiary)',
+                        }}
+                      >
+                        <Moon className="h-3.5 w-3.5" />
+                        {t('settings.dark')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setThemePref('light')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors"
+                        style={{
+                          backgroundColor: preference === 'light' ? 'var(--color-accent-soft)' : 'transparent',
+                          color: preference === 'light' ? 'var(--color-accent-primary)' : 'var(--color-text-tertiary)',
+                        }}
+                      >
+                        <Sun className="h-3.5 w-3.5" />
+                        {t('settings.light')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setThemePref('auto')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors"
+                        style={{
+                          backgroundColor: preference === 'auto' ? 'var(--color-accent-soft)' : 'transparent',
+                          color: preference === 'auto' ? 'var(--color-accent-primary)' : 'var(--color-text-tertiary)',
+                        }}
+                      >
+                        <Monitor className="h-3.5 w-3.5" />
+                        {t('settings.auto', 'Auto')}
+                      </button>
+                    </div>
+                  </div>
+
                   <div style={{ borderTop: '1px solid var(--color-border-muted)', paddingTop: '16px' }}>
-                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>Plan</label>
+                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>{t('settings.plan')}</label>
                     <div className="flex items-center gap-3 mb-3">
                       <span
                         className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase"
@@ -518,11 +572,11 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                         <div>
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                              Daily Credits
+                              {t('settings.dailyCredits')}
                               {usage.byok_enabled && (
                                 <span
                                   className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
-                                  style={{ backgroundColor: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)' }}
+                                  style={{ backgroundColor: 'var(--color-success-soft)', color: 'var(--color-success)', border: '1px solid var(--color-success-soft)' }}
                                 >
                                   BYOK
                                 </span>
@@ -530,7 +584,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                             </span>
                             <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
                               {usage.credits.limit === -1
-                                ? 'Unlimited'
+                                ? t('settings.unlimited')
                                 : `${usage.credits.used} / ${usage.credits.limit}`}
                             </span>
                           </div>
@@ -552,10 +606,10 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                         {/* Workspaces */}
                         <div>
                           <div className="flex items-center justify-between">
-                            <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Active Workspaces</span>
+                            <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{t('settings.activeWorkspaces')}</span>
                             <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
                               {usage.workspaces.limit === -1
-                                ? 'Unlimited'
+                                ? t('settings.unlimited')
                                 : `${usage.workspaces.active} / ${usage.workspaces.limit}`}
                             </span>
                           </div>
@@ -568,7 +622,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                         type="text"
                         value={redeemInput}
                         onChange={(e) => { setRedeemInput(e.target.value); setRedeemError(null); setRedeemSuccess(null); }}
-                        placeholder="Enter redemption code"
+                        placeholder={t('settings.enterRedemptionCode')}
                         className="flex-1 rounded-md px-3 py-1.5 text-sm"
                         style={{
                           backgroundColor: 'var(--color-bg-card)',
@@ -588,7 +642,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                           color: 'var(--color-text-on-accent)',
                         }}
                       >
-                        {isRedeeming ? 'Redeeming...' : 'Redeem'}
+                        {isRedeeming ? t('settings.redeeming') : t('settings.redeem')}
                       </button>
                     </div>
                     {redeemError && (
@@ -612,15 +666,19 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                       className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors"
                       style={{ color: 'var(--color-loss)', backgroundColor: 'transparent', border: '1px solid var(--color-loss)' }}
                     >
-                      <LogOut className="h-4 w-4" /> Logout
+                      <LogOut className="h-4 w-4" /> {t('settings.logout')}
                     </button>
                     <div className="flex items-center gap-3">
                       {saveSuccess && (
-                        <span className="text-xs" style={{ color: 'var(--color-success, #22c55e)' }}>Saved</span>
+                        <span className="text-xs" style={{ color: 'var(--color-success)' }}>{t('common.saved')}</span>
                       )}
                       <button type="button" onClick={handleClose} disabled={isSubmitting}
-                        className="px-4 py-2 rounded-md text-sm font-medium hover:bg-white/10" style={{ color: 'var(--color-text-primary)' }}>
-                        Close
+                        className="px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                        style={{ color: 'var(--color-text-primary)', backgroundColor: 'transparent' }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-border-muted)'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        {t('common.close')}
                       </button>
                       <button type="submit" disabled={isSubmitting}
                         className="px-4 py-2 rounded-md text-sm font-medium"
@@ -629,7 +687,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                           color: 'var(--color-text-on-accent)',
                         }}
                       >
-                        {isSubmitting ? 'Saving...' : 'Save'}
+                        {isSubmitting ? t('common.saving') : t('common.save')}
                       </button>
                     </div>
                   </div>
@@ -648,10 +706,10 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                     >
                       <div>
                         <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                          Complete your profile setup
+                          {t('settings.completeProfile')}
                         </p>
                         <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
-                          Set up your stocks, risk tolerance, and preferences through a quick conversation.
+                          {t('settings.completeProfileDesc')}
                         </p>
                       </div>
                       <button
@@ -663,21 +721,21 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                           color: 'var(--color-text-on-accent)',
                         }}
                       >
-                        Start Onboarding
+                        {t('settings.startOnboarding')}
                       </button>
                     </div>
                   )}
 
                   <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                    Preferences are managed through conversation with the agent. Use the button below to update them.
+                    {t('settings.preferencesDesc')}
                   </p>
 
                   {preferences && (preferences.risk_preference || preferences.investment_preference || preferences.agent_preference) ? (
                     <div className="space-y-4">
                       {[
-                        { label: 'Risk Tolerance', data: preferences.risk_preference },
-                        { label: 'Investment Style', data: preferences.investment_preference },
-                        { label: 'Agent Settings', data: preferences.agent_preference },
+                        { label: t('settings.riskTolerance'), data: preferences.risk_preference },
+                        { label: t('settings.investmentStyle'), data: preferences.investment_preference },
+                        { label: t('settings.agentSettings'), data: preferences.agent_preference },
                       ].filter(({ data }) => data && Object.keys(data).length > 0).map(({ label, data }) => (
                         <div key={label}>
                           <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>{label}</label>
@@ -713,7 +771,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                       }}
                     >
                       <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
-                        No preferences set yet. Use the button below to set up your profile.
+                        {t('settings.noPreferencesYet')}
                       </p>
                     </div>
                   )}
@@ -731,12 +789,16 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                       className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors"
                       style={{ color: 'var(--color-loss)', backgroundColor: 'transparent', border: '1px solid var(--color-loss)' }}
                     >
-                      <Trash2 className="h-4 w-4" /> Reset Preferences
+                      <Trash2 className="h-4 w-4" /> {t('settings.resetPreferences')}
                     </button>
                     <div className="flex items-center gap-3">
                       <button type="button" onClick={handleClose}
-                        className="px-4 py-2 rounded-md text-sm font-medium hover:bg-white/10" style={{ color: 'var(--color-text-primary)' }}>
-                        Close
+                        className="px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                        style={{ color: 'var(--color-text-primary)', backgroundColor: 'transparent' }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-border-muted)'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        {t('common.close')}
                       </button>
                       <button
                         type="button"
@@ -747,7 +809,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                           color: 'var(--color-text-on-accent)',
                         }}
                       >
-                        <MessageSquareText className="h-4 w-4" /> Modify with Agent
+                        <MessageSquareText className="h-4 w-4" /> {t('settings.modifyWithAgent')}
                       </button>
                     </div>
                   </div>
@@ -759,8 +821,8 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                   {/* Section 1: Model Preferences */}
                   <div>
                     {[
-                      { label: 'Default Model', desc: 'Used for workspace conversations (code execution, sandbox).', value: preferredModel, setter: setPreferredModel },
-                      { label: 'Flash Model', desc: 'Used for quick queries without sandbox (web search, market data).', value: preferredFlashModel, setter: setPreferredFlashModel },
+                      { label: t('settings.defaultModel'), desc: t('settings.defaultModelDesc'), value: preferredModel, setter: setPreferredModel },
+                      { label: t('settings.flashModel'), desc: t('settings.flashModelDesc'), value: preferredFlashModel, setter: setPreferredFlashModel },
                     ].map(({ label, desc, value, setter }) => (
                       <div key={label} className="mb-4">
                         <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>{label}</label>
@@ -776,7 +838,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                           }}
                           disabled={isSubmitting}
                         >
-                          <option value="" style={{ backgroundColor: 'var(--color-bg-card)' }}>System default</option>
+                          <option value="" style={{ backgroundColor: 'var(--color-bg-card)' }}>{t('settings.systemDefault')}</option>
                           {Object.entries(availableModels).map(([provider, models]) => (
                             <optgroup key={provider} label={provider.charAt(0).toUpperCase() + provider.slice(1)} style={{ backgroundColor: 'var(--color-bg-card)' }}>
                               {models.map((m) => (
@@ -795,7 +857,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <label className="block text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Bring Your Own Key (BYOK)</label>
+                          <label className="block text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{t('settings.byok')}</label>
                           <div className="relative group">
                             <HelpCircle className="h-3.5 w-3.5 cursor-help" style={{ color: 'var(--color-text-tertiary)' }} />
                             <div
@@ -808,12 +870,12 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                                 boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
                               }}
                             >
-                              Your API keys are stored using AES encryption and are never visible in plaintext. If you choose to delete a key, it is permanently removed from our records.
+                              {t('settings.byokTooltip')}
                             </div>
                           </div>
                         </div>
                         <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
-                          Provide your own API keys to bypass credit limits.
+                          {t('settings.byokDesc')}
                         </p>
                       </div>
                       <button
@@ -843,7 +905,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                                 type={visibleKeys[prov.provider] ? 'text' : 'password'}
                                 value={keyInputs[prov.provider] || ''}
                                 onChange={(e) => setKeyInputs((prev) => ({ ...prev, [prov.provider]: e.target.value }))}
-                                placeholder={prov.has_key ? prov.masked_key : 'Enter API key...'}
+                                placeholder={prov.has_key ? prov.masked_key : t('settings.enterApiKey')}
                                 className="w-full rounded-md px-3 py-1.5 pr-8 text-sm"
                                 style={{
                                   backgroundColor: 'var(--color-bg-card)',
@@ -865,7 +927,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                                 type="button"
                                 onClick={() => handleDeleteProviderKey(prov.provider)}
                                 disabled={deletingProvider === prov.provider}
-                                className="p-1.5 rounded-md shrink-0 transition-colors hover:bg-white/10"
+                                className="p-1.5 rounded-md shrink-0 transition-colors"
                                 style={{ color: 'var(--color-loss)' }}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -885,11 +947,15 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
 
                   <div className="flex items-center gap-3 justify-end pt-4" style={{ borderTop: '1px solid var(--color-border-muted)', marginTop: '8px', paddingTop: '16px' }}>
                     {modelSaveSuccess && (
-                      <span className="text-xs" style={{ color: 'var(--color-success, #22c55e)' }}>Saved</span>
+                      <span className="text-xs" style={{ color: 'var(--color-success)' }}>{t('common.saved')}</span>
                     )}
                     <button type="button" onClick={handleClose}
-                      className="px-4 py-2 rounded-md text-sm font-medium hover:bg-white/10" style={{ color: 'var(--color-text-primary)' }}>
-                      Close
+                      className="px-4 py-2 rounded-md text-sm font-medium transition-colors"
+                      style={{ color: 'var(--color-text-primary)', backgroundColor: 'transparent' }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-border-muted)'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                      {t('common.close')}
                     </button>
                     <button
                       type="button"
@@ -901,7 +967,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                         color: 'var(--color-text-on-accent)',
                       }}
                     >
-                      {isSubmitting ? 'Saving...' : 'Save'}
+                      {isSubmitting ? t('common.saving') : t('common.save')}
                     </button>
                   </div>
                 </div>
@@ -911,18 +977,18 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
 
       <ConfirmDialog
         open={showLogoutConfirm}
-        title="Logout"
-        message="Are you sure you want to logout?"
-        confirmLabel="Logout"
+        title={t('settings.logout')}
+        message={t('settings.logoutConfirmMsg')}
+        confirmLabel={t('settings.logout')}
         onConfirm={handleLogoutConfirm}
         onOpenChange={setShowLogoutConfirm}
       />
 
       <ConfirmDialog
         open={showResetConfirm}
-        title="Reset Preferences"
-        message="This will clear all your preferences (risk tolerance, investment style, agent settings). You can set them up again anytime via the agent. Are you sure?"
-        confirmLabel={isResetting ? 'Resetting...' : 'Reset Preferences'}
+        title={t('settings.resetPreferences')}
+        message={t('settings.resetConfirmMsg')}
+        confirmLabel={isResetting ? t('settings.resetting') : t('settings.resetPreferences')}
         onConfirm={handleResetConfirm}
         onOpenChange={setShowResetConfirm}
       />

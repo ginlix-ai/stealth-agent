@@ -20,7 +20,7 @@ const FilePreviewCard = ({ file, onRemove }) => {
   const isImage = file.type.startsWith('image/') && file.preview;
 
   return (
-    <div className="relative group flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] animate-fade-in transition-all hover:border-[rgba(255,255,255,0.25)]">
+    <div className="relative group flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-[var(--color-border-muted)] bg-[var(--color-bg-elevated)] animate-fade-in transition-all hover:border-[var(--color-border-default)]">
       {isImage ? (
         <div className="w-full h-full relative">
           <img src={file.preview} alt={file.file.name} className="w-full h-full object-cover" />
@@ -29,18 +29,18 @@ const FilePreviewCard = ({ file, onRemove }) => {
       ) : (
         <div className="w-full h-full p-3 flex flex-col justify-between">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-[rgba(255,255,255,0.1)] rounded">
-              <FileText className="w-4 h-4 text-[rgba(255,255,255,0.6)]" />
+            <div className="p-1.5 rounded" style={{ background: 'var(--color-border-muted)' }}>
+              <FileText className="w-4 h-4" style={{ color: 'var(--color-text-tertiary)' }} />
             </div>
-            <span className="text-[10px] font-medium text-[rgba(255,255,255,0.45)] uppercase tracking-wider truncate">
+            <span className="text-[10px] font-medium uppercase tracking-wider truncate" style={{ color: 'var(--color-text-tertiary)' }}>
               {file.file.name.split('.').pop()}
             </span>
           </div>
           <div className="space-y-0.5">
-            <p className="text-xs font-medium text-[#BBBBBB] truncate" title={file.file.name}>
+            <p className="text-xs font-medium truncate" style={{ color: 'var(--color-text-muted)' }} title={file.file.name}>
               {file.file.name}
             </p>
-            <p className="text-[10px] text-[rgba(255,255,255,0.35)]">
+            <p className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
               {formatFileSize(file.file.size)}
             </p>
           </div>
@@ -439,7 +439,7 @@ function ChatInput({
     >
       {/* Main Container */}
       <div
-        className="flex flex-col items-stretch transition-all duration-200 relative z-10 rounded-2xl cursor-text border border-[hsl(var(--primary))] bg-[rgba(0,0,0,0.3)]"
+        className="flex flex-col items-stretch transition-all duration-200 relative z-10 rounded-2xl cursor-text border border-[hsl(var(--primary))] bg-[var(--color-bg-card)]"
         onClick={() => textareaRef.current?.focus()}
       >
         <div className="flex flex-col px-3 pt-3 pb-2 gap-2">
@@ -451,7 +451,7 @@ function ChatInput({
                 const name = f.path.split('/').pop();
                 return (
                   <div key={f.path} className="mention-pill" title={f.path}>
-                    <FileText className="h-3 w-3 flex-shrink-0" style={{ color: 'rgba(97, 85, 245, 0.8)' }} />
+                    <FileText className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
                     <span>{name}</span>
                     <button
                       className="mention-pill-remove"
@@ -470,7 +470,7 @@ function ChatInput({
           {(chartImage || attachedFiles.length > 0) && (
             <div className="flex gap-3 overflow-x-auto pb-2 px-1">
               {chartImage && (
-                <div className="relative group flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] animate-fade-in transition-all hover:border-[rgba(255,255,255,0.25)]">
+                <div className="relative group flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-[var(--color-border-muted)] bg-[var(--color-bg-elevated)] animate-fade-in transition-all hover:border-[var(--color-border-default)]">
                   <img src={chartImage} alt="Chart" className="w-full h-full object-cover" />
                   <button
                     onClick={(e) => { e.stopPropagation(); onRemoveChartImage?.(); }}
@@ -511,7 +511,7 @@ function ChatInput({
                       }}
                       onMouseEnter={() => setActiveIndex(idx)}
                     >
-                      <FileText className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.45)' }} />
+                      <FileText className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
                       <span className="file-name">{name}</span>
                       {dir && <span className="file-path">{dir}/</span>}
                     </div>
@@ -534,7 +534,7 @@ function ChatInput({
                     setShowWorkspaceMenu(false);
                   }}
                 >
-                  <FolderOpen className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.45)' }} />
+                  <FolderOpen className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
                   <span>{ws.name}</span>
                 </div>
               ))}
@@ -551,7 +551,7 @@ function ChatInput({
               onKeyDown={handleKeyDown}
               onBlur={handleBlur}
               placeholder={placeholder}
-              className="w-full bg-transparent border-0 outline-none text-[#BBBBBB] text-sm placeholder:text-[rgba(255,255,255,0.35)] resize-none overflow-hidden leading-relaxed block"
+              className="w-full bg-transparent border-0 outline-none text-[var(--color-text-primary)] text-sm placeholder:text-[var(--color-text-tertiary)] resize-none overflow-hidden leading-relaxed block"
               rows={1}
               disabled={disabled}
               style={{ minHeight: '1.5em' }}
@@ -565,7 +565,7 @@ function ChatInput({
               {/* Attach Button */}
               <button
                 onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                className="inline-flex items-center justify-center h-8 w-8 rounded-lg transition-colors text-[rgba(255,255,255,0.45)] hover:text-[#BBBBBB] hover:bg-[rgba(255,255,255,0.05)] active:scale-95"
+                className="inline-flex items-center justify-center h-8 w-8 rounded-lg transition-colors text-[var(--color-icon-muted)] hover:text-[var(--color-text-muted)] hover:bg-foreground/5 active:scale-95"
                 type="button"
                 aria-label="Attach file"
               >
@@ -581,7 +581,7 @@ function ChatInput({
               {onCaptureChart && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onCaptureChart(); }}
-                  className="inline-flex items-center justify-center h-8 w-8 rounded-lg transition-colors text-[rgba(255,255,255,0.45)] hover:text-[#BBBBBB] hover:bg-[rgba(255,255,255,0.05)] active:scale-95"
+                  className="inline-flex items-center justify-center h-8 w-8 rounded-lg transition-colors text-[var(--color-icon-muted)] hover:text-[var(--color-text-muted)] hover:bg-foreground/5 active:scale-95"
                   type="button"
                   title="Attach chart screenshot"
                   aria-label="Capture chart"
@@ -599,14 +599,14 @@ function ChatInput({
                     padding: '6px 10px',
                     fontSize: '13px',
                     fontWeight: 500,
-                    background: mode === 'deep' ? 'rgba(97, 85, 245, 0.25)' : 'transparent',
-                    color: mode === 'deep' ? '#a89afb' : 'var(--color-text-muted, #8b8fa3)',
-                    border: mode === 'deep' ? '1px solid rgba(97, 85, 245, 0.5)' : '1px solid transparent',
+                    background: mode === 'deep' ? 'var(--color-accent-soft)' : 'transparent',
+                    color: mode === 'deep' ? 'var(--color-accent-light)' : 'var(--color-text-muted, #8b8fa3)',
+                    border: mode === 'deep' ? '1px solid var(--color-accent-overlay)' : '1px solid transparent',
                     transition: 'background 0.2s, color 0.2s, border-color 0.2s',
                   }}
                   onClick={(e) => { e.stopPropagation(); onModeChange(mode === 'fast' ? 'deep' : 'fast'); }}
                   onMouseEnter={(e) => {
-                    if (mode !== 'deep') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                    if (mode !== 'deep') e.currentTarget.style.background = 'var(--color-border-muted)';
                   }}
                   onMouseLeave={(e) => {
                     if (mode !== 'deep') e.currentTarget.style.background = 'transparent';
@@ -628,14 +628,14 @@ function ChatInput({
                     padding: '6px 10px',
                     fontSize: '13px',
                     fontWeight: 500,
-                    background: showWorkspaceMenu ? 'rgba(97, 85, 245, 0.25)' : 'transparent',
-                    color: showWorkspaceMenu ? '#a89afb' : 'var(--color-text-muted, #8b8fa3)',
-                    border: showWorkspaceMenu ? '1px solid rgba(97, 85, 245, 0.5)' : '1px solid transparent',
+                    background: showWorkspaceMenu ? 'var(--color-accent-soft)' : 'transparent',
+                    color: showWorkspaceMenu ? 'var(--color-accent-light)' : 'var(--color-text-muted, #8b8fa3)',
+                    border: showWorkspaceMenu ? '1px solid var(--color-accent-overlay)' : '1px solid transparent',
                     transition: 'background 0.2s, color 0.2s, border-color 0.2s',
                   }}
                   onClick={(e) => { e.stopPropagation(); setShowWorkspaceMenu((v) => !v); }}
                   onMouseEnter={(e) => {
-                    if (!showWorkspaceMenu) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                    if (!showWorkspaceMenu) e.currentTarget.style.background = 'var(--color-border-muted)';
                   }}
                   onMouseLeave={(e) => {
                     if (!showWorkspaceMenu) e.currentTarget.style.background = 'transparent';
@@ -658,14 +658,14 @@ function ChatInput({
                     padding: '6px 10px',
                     fontSize: '13px',
                     fontWeight: 500,
-                    background: planMode ? 'rgba(97, 85, 245, 0.25)' : 'transparent',
-                    color: planMode ? '#a89afb' : 'var(--color-text-muted, #8b8fa3)',
-                    border: planMode ? '1px solid rgba(97, 85, 245, 0.5)' : '1px solid transparent',
+                    background: planMode ? 'var(--color-accent-soft)' : 'transparent',
+                    color: planMode ? 'var(--color-accent-light)' : 'var(--color-text-muted, #8b8fa3)',
+                    border: planMode ? '1px solid var(--color-accent-overlay)' : '1px solid transparent',
                     transition: 'background 0.2s, color 0.2s, border-color 0.2s',
                   }}
                   onClick={(e) => { e.stopPropagation(); setPlanMode(!planMode); }}
                   onMouseEnter={(e) => {
-                    if (!planMode) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                    if (!planMode) e.currentTarget.style.background = 'var(--color-border-muted)';
                   }}
                   onMouseLeave={(e) => {
                     if (!planMode) e.currentTarget.style.background = 'transparent';
@@ -673,7 +673,7 @@ function ChatInput({
                   type="button"
                   title="Plan mode — agent creates a plan for approval before executing"
                 >
-                  <ScrollText className="h-4 w-4" style={planMode ? { color: '#a89afb' } : {}} />
+                  <ScrollText className="h-4 w-4" style={planMode ? { color: 'var(--color-accent-light)' } : {}} />
                   <span>Plan</span>
                 </button>
               )}
@@ -685,7 +685,7 @@ function ChatInput({
               {isLoading && onStop ? (
                 <button
                   className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                  style={{ backgroundColor: isStopping ? '#991b1b' : '#dc2626', color: '#FFFFFF' }}
+                  style={{ backgroundColor: isStopping ? 'var(--color-btn-danger-pressed)' : 'var(--color-btn-danger)', color: 'var(--color-text-on-accent)' }}
                   onClick={(e) => { e.stopPropagation(); handleStop(); }}
                   disabled={isStopping}
                   title={isStopping ? 'Stopping...' : 'Stop'}
@@ -703,8 +703,8 @@ function ChatInput({
                   disabled={!hasContent || disabled}
                   className="inline-flex items-center justify-center h-8 w-8 rounded-xl transition-colors active:scale-95 disabled:cursor-default"
                   style={{
-                    backgroundColor: !hasContent || disabled ? 'rgba(97, 85, 245, 0.3)' : '#6155F5',
-                    color: !hasContent || disabled ? 'rgba(255,255,255,0.4)' : '#FFFFFF',
+                    backgroundColor: !hasContent || disabled ? 'var(--color-accent-disabled)' : 'var(--color-accent-primary)',
+                    color: !hasContent || disabled ? 'var(--color-text-tertiary)' : 'var(--color-text-on-accent)',
                   }}
                   type="button"
                   aria-label="Send message"
@@ -719,9 +719,9 @@ function ChatInput({
 
       {/* Drag Overlay */}
       {isDragging && (
-        <div className="absolute inset-0 bg-[rgba(255,255,255,0.05)] border-2 border-dashed border-[#6155F5] rounded-2xl z-50 flex flex-col items-center justify-center backdrop-blur-sm pointer-events-none">
-          <Archive className="w-10 h-10 text-[#6155F5] mb-2 animate-bounce" />
-          <p className="text-[#6155F5] font-medium">Drop files to upload</p>
+        <div className="absolute inset-0 bg-[var(--color-accent-soft)] border-2 border-dashed border-[hsl(var(--primary))] rounded-2xl z-50 flex flex-col items-center justify-center backdrop-blur-sm pointer-events-none">
+          <Archive className="w-10 h-10 text-[hsl(var(--primary))] mb-2 animate-bounce" />
+          <p className="text-[hsl(var(--primary))] font-medium">Drop files to upload</p>
         </div>
       )}
 

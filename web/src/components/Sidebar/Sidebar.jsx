@@ -1,34 +1,40 @@
 import { ChartCandlestick, LayoutDashboard, MessageSquareText, Timer } from 'lucide-react';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
-import logo from '../../assets/img/logo.svg';
+import logoLight from '../../assets/img/logo.svg';
+import logoDark from '../../assets/img/logo-dark.svg';
+import { useTheme } from '../../contexts/ThemeContext';
 import { getChatSession } from '../../pages/ChatAgent/hooks/utils/chatSessionRestore';
 import './Sidebar.css';
 
 function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { t } = useTranslation();
+  const { theme } = useTheme();
+  const logo = theme === 'light' ? logoDark : logoLight;
 
   const menuItems = [
     {
       key: '/dashboard',
       icon: LayoutDashboard,
-      label: 'Dashboard',
+      label: t('sidebar.dashboard'),
     },
     {
       key: '/chat',
       icon: MessageSquareText,
-      label: 'Chat Agent',
+      label: t('sidebar.chatAgent'),
     },
     {
       key: '/trading',
       icon: ChartCandlestick,
-      label: 'Trading Center',
+      label: t('sidebar.tradingCenter'),
     },
     {
       key: '/automations',
       icon: Timer,
-      label: 'Automations',
+      label: t('sidebar.automations'),
     },
   ];
 

@@ -37,22 +37,22 @@ function PlanApprovalCard({ planData, onApprove, onReject, onDetailClick }) {
           >
             <ChevronRight
               className="h-3.5 w-3.5 flex-shrink-0"
-              style={{ color: 'rgba(255,255,255,0.25)' }}
+              style={{ color: 'var(--color-icon-muted)' }}
             />
           </motion.div>
           {isApproved ? (
-            <Check className="h-4 w-4 flex-shrink-0" style={{ color: '#8B83F0' }} />
+            <Check className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-light)' }} />
           ) : (
-            <X className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />
+            <X className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
           )}
           <span
             className="text-sm"
-            style={{ color: isApproved ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.5)' }}
+            style={{ color: isApproved ? 'var(--color-text-tertiary)' : 'var(--color-text-quaternary)' }}
           >
             {isApproved ? 'Plan Approved' : 'Plan Rejected'}
           </span>
           {isRejected && (
-            <span className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.25)' }}>
+            <span className="text-xs" style={{ color: 'var(--color-icon-muted)' }}>
               — provide feedback below
             </span>
           )}
@@ -72,7 +72,7 @@ function PlanApprovalCard({ planData, onApprove, onReject, onDetailClick }) {
                 <div
                   className="relative cursor-pointer rounded-lg overflow-hidden"
                   style={{
-                    border: `1px solid rgba(255, 255, 255, ${isApproved ? '0.06' : '0.04'})`,
+                    border: '1px solid var(--color-border-muted)',
                     opacity: isRejected ? 0.6 : 0.8,
                   }}
                   onClick={() => onDetailClick?.()}
@@ -84,7 +84,7 @@ function PlanApprovalCard({ planData, onApprove, onReject, onDetailClick }) {
                     style={{
                       position: 'absolute',
                       bottom: 0, left: 0, right: 0, height: '64px',
-                      background: 'linear-gradient(to bottom, transparent, #1B1D25)',
+                      background: 'linear-gradient(to bottom, transparent, var(--color-bg-page))',
                       pointerEvents: 'none',
                     }}
                   />
@@ -106,20 +106,20 @@ function PlanApprovalCard({ planData, onApprove, onReject, onDetailClick }) {
     >
       {/* Header */}
       <div className="flex items-center gap-2 pb-3">
-        <ScrollText className="h-4 w-4 flex-shrink-0" style={{ color: '#8B83F0' }} />
-        <span className="text-[15px] font-medium" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+        <ScrollText className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-light)' }} />
+        <span className="text-[15px] font-medium" style={{ color: 'var(--color-text-primary)' }}>
           Plan Approval Required
         </span>
         <Loader2
           className="h-3.5 w-3.5 animate-spin ml-auto flex-shrink-0"
-          style={{ color: 'rgba(255, 255, 255, 0.2)' }}
+          style={{ color: 'var(--color-icon-muted)' }}
         />
       </div>
 
       {/* Plan body */}
       <div
         className="relative cursor-pointer rounded-lg overflow-hidden"
-        style={{ border: '1px solid rgba(255, 255, 255, 0.06)' }}
+        style={{ border: '1px solid var(--color-border-muted)' }}
         onClick={() => onDetailClick?.()}
       >
         <div className="px-4 py-3 overflow-hidden" style={{ maxHeight: '260px' }}>
@@ -129,7 +129,7 @@ function PlanApprovalCard({ planData, onApprove, onReject, onDetailClick }) {
           style={{
             position: 'absolute',
             bottom: 0, left: 0, right: 0, height: '64px',
-            background: 'linear-gradient(to bottom, transparent, #1B1D25)',
+            background: 'linear-gradient(to bottom, transparent, var(--color-bg-page))',
             pointerEvents: 'none',
           }}
         />
@@ -140,7 +140,7 @@ function PlanApprovalCard({ planData, onApprove, onReject, onDetailClick }) {
         <motion.button
           onClick={(e) => { e.stopPropagation(); onApprove?.(); }}
           className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-md font-medium transition-colors hover:brightness-110"
-          style={{ backgroundColor: 'white', color: '#1a1b2e' }}
+          style={{ backgroundColor: 'var(--color-btn-primary-bg)', color: 'var(--color-btn-primary-text)' }}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >
@@ -151,16 +151,16 @@ function PlanApprovalCard({ planData, onApprove, onReject, onDetailClick }) {
           onClick={(e) => { e.stopPropagation(); onReject?.(); }}
           className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-md font-medium transition-colors"
           style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.06)',
-            color: 'rgba(255, 255, 255, 0.45)',
+            backgroundColor: 'var(--color-border-muted)',
+            color: 'var(--color-text-tertiary)',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)';
+            e.currentTarget.style.backgroundColor = 'var(--color-border-muted)';
+            e.currentTarget.style.color = 'var(--color-text-secondary)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.06)';
-            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.45)';
+            e.currentTarget.style.backgroundColor = 'var(--color-border-muted)';
+            e.currentTarget.style.color = 'var(--color-text-tertiary)';
           }}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}

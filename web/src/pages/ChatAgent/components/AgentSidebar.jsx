@@ -23,7 +23,7 @@ function AgentSidebar({ agents, activeAgentId, onSelectAgent, onRemoveAgent }) {
       className="flex-shrink-0 flex flex-col items-center py-2 overflow-y-auto overflow-x-hidden"
       style={{
         width: '56px',
-        borderRight: '1px solid rgba(255, 255, 255, 0.06)',
+        borderRight: '1px solid var(--color-border-muted)',
         backgroundColor: 'transparent',
       }}
     >
@@ -64,16 +64,16 @@ function AgentSidebar({ agents, activeAgentId, onSelectAgent, onRemoveAgent }) {
               onClick={() => onSelectAgent(agent.id)}
               className="flex flex-col items-center justify-center gap-0.5 p-1.5 rounded-lg transition-all w-full"
               style={{
-                backgroundColor: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                backgroundColor: isSelected ? 'var(--color-border-muted)' : 'transparent',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                e.currentTarget.style.backgroundColor = 'var(--color-border-muted)';
               }}
               onMouseLeave={(e) => {
                 if (!isSelected) {
                   e.currentTarget.style.backgroundColor = 'transparent';
                 } else {
-                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                  e.currentTarget.style.backgroundColor = 'var(--color-border-muted)';
                 }
               }}
               title={agent.name}
@@ -87,8 +87,8 @@ function AgentSidebar({ agents, activeAgentId, onSelectAgent, onRemoveAgent }) {
                   )}
                   style={{
                     backgroundColor: isActive && !isCompleted
-                      ? 'rgba(97, 85, 245, 0.25)'
-                      : 'rgba(255, 255, 255, 0.1)',
+                      ? 'var(--color-accent-soft)'
+                      : 'var(--color-border-muted)',
                   }}
                 >
                   <img
@@ -105,7 +105,7 @@ function AgentSidebar({ agents, activeAgentId, onSelectAgent, onRemoveAgent }) {
                 {isCompleted && (
                   <Check
                     className="absolute -bottom-0.5 -right-0.5 h-3 w-3"
-                    style={{ color: '#FFFFFF', zIndex: 10 }}
+                    style={{ color: 'var(--color-text-primary)', zIndex: 10 }}
                   />
                 )}
               </div>
@@ -114,7 +114,7 @@ function AgentSidebar({ agents, activeAgentId, onSelectAgent, onRemoveAgent }) {
               <span
                 className={cn(
                   "text-[10px] font-medium text-center truncate w-full leading-tight",
-                  isSelected ? "text-white" : "text-white/50"
+                  isSelected ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-secondary)]"
                 )}
               >
                 {agent.name}
@@ -140,7 +140,7 @@ function AgentSidebar({ agents, activeAgentId, onSelectAgent, onRemoveAgent }) {
                 }}
                 title="Remove agent"
               >
-                <X className="h-3 w-3" style={{ color: '#FFFFFF', strokeWidth: 2.5 }} />
+                <X className="h-3 w-3" style={{ color: 'var(--color-text-primary)', strokeWidth: 2.5 }} />
               </button>
             )}
           </div>

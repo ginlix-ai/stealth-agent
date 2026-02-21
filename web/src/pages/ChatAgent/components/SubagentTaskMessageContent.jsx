@@ -18,7 +18,7 @@ function summarize(text, maxLen = 100) {
   return cleaned.slice(0, maxLen).replace(/\s+\S*$/, '') + '…';
 }
 
-const CARD_BORDER = 'rgba(255,255,255,0.06)';
+const CARD_BORDER = 'var(--color-border-muted)';
 
 /**
  * SubagentTaskMessageContent Component
@@ -64,7 +64,7 @@ function SubagentTaskMessageContent({
   return (
     <div
       style={{
-        background: 'rgba(255,255,255,0.03)',
+        background: 'var(--color-bg-elevated)',
         border: `1px solid ${CARD_BORDER}`,
         borderRadius: 8,
         padding: '12px 14px',
@@ -72,7 +72,7 @@ function SubagentTaskMessageContent({
         transition: 'border-color 0.15s',
       }}
       onClick={handleCardClick}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-border-muted)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
       title={resumed === 'updated' ? 'Click to view updated subagent' : resumed ? 'Click to view resumed subagent' : isRunning ? 'Click to view running subagent' : 'Click to view subagent details'}
     >
@@ -90,18 +90,18 @@ function SubagentTaskMessageContent({
               style={{
                 width: 10, height: 10,
                 position: 'absolute', bottom: -2, right: -2,
-                color: '#6155F5',
+                color: 'var(--color-accent-primary)',
                 animation: 'spin 1s linear infinite',
               }}
             />
           )}
         </div>
-        <span style={{ fontWeight: 600, color: '#fff', fontSize: 14, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 14, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {summary || 'Subagent Task'}
         </span>
         {hasResult && (
           <ArrowRight
-            style={{ width: 14, height: 14, flexShrink: 0, color: '#6155F5' }}
+            style={{ width: 14, height: 14, flexShrink: 0, color: 'var(--color-accent-primary)' }}
             onClick={handleViewOutput}
           />
         )}
@@ -109,10 +109,10 @@ function SubagentTaskMessageContent({
 
       {/* Bottom row: type badge + status */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
+        <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
           {type}
         </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: resumed ? '#E8A838' : isRunning ? '#6155F5' : isCompleted ? '#6155F5' : 'rgba(255,255,255,0.4)' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: resumed ? 'var(--color-warning)' : isRunning ? 'var(--color-accent-primary)' : isCompleted ? 'var(--color-accent-primary)' : 'var(--color-text-tertiary)' }}>
           {resumed === 'updated' && <RefreshCw style={{ width: 12, height: 12 }} />}
           {resumed && resumed !== 'updated' && <RotateCw style={{ width: 12, height: 12 }} />}
           {!resumed && isRunning && <Loader2 style={{ width: 12, height: 12, animation: 'spin 1s linear infinite' }} />}

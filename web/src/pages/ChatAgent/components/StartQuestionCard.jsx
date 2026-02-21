@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquareText, Loader2, Check, X, ChevronRight } from 'lucide-react';
 
@@ -11,6 +12,7 @@ import { MessageSquareText, Loader2, Check, X, ChevronRight } from 'lucide-react
  *   rejected – collapsed "Question declined"
  */
 function StartQuestionCard({ proposalData, onApprove, onReject }) {
+  const { t } = useTranslation();
   if (!proposalData) return null;
 
   const { question, status } = proposalData;
@@ -33,19 +35,19 @@ function StartQuestionCard({ proposalData, onApprove, onReject }) {
           >
             <ChevronRight
               className="h-3.5 w-3.5 flex-shrink-0"
-              style={{ color: 'rgba(255,255,255,0.25)' }}
+              style={{ color: 'var(--color-icon-muted)' }}
             />
           </motion.div>
           {isApproved ? (
-            <Check className="h-4 w-4 flex-shrink-0" style={{ color: '#8B83F0' }} />
+            <Check className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-light)' }} />
           ) : (
-            <X className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />
+            <X className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
           )}
           <span
             className="text-sm"
-            style={{ color: isApproved ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.5)' }}
+            style={{ color: isApproved ? 'var(--color-text-tertiary)' : 'var(--color-text-tertiary)' }}
           >
-            {isApproved ? 'Question started' : 'Question declined'}
+            {isApproved ? t('chat.questionStarted') : t('chat.questionDeclined')}
           </span>
         </button>
 
@@ -62,11 +64,11 @@ function StartQuestionCard({ proposalData, onApprove, onReject }) {
                 <div
                   className="rounded-lg px-4 py-3"
                   style={{
-                    border: `1px solid rgba(255, 255, 255, ${isApproved ? '0.06' : '0.04'})`,
+                    border: '1px solid var(--color-border-muted)',
                     opacity: isRejected ? 0.6 : 0.8,
                   }}
                 >
-                  <div className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                  <div className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
                     {question}
                   </div>
                 </div>
@@ -87,22 +89,22 @@ function StartQuestionCard({ proposalData, onApprove, onReject }) {
     >
       {/* Header */}
       <div className="flex items-center gap-2 pb-3">
-        <MessageSquareText className="h-4 w-4 flex-shrink-0" style={{ color: '#8B83F0' }} />
-        <span className="text-[15px] font-medium" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>
-          Start a Question
+        <MessageSquareText className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-light)' }} />
+        <span className="text-[15px] font-medium" style={{ color: 'var(--color-text-primary)' }}>
+          {t('chat.startQuestion')}
         </span>
         <Loader2
           className="h-3.5 w-3.5 animate-spin ml-auto flex-shrink-0"
-          style={{ color: 'rgba(255, 255, 255, 0.2)' }}
+          style={{ color: 'var(--color-icon-muted)' }}
         />
       </div>
 
       {/* Question preview */}
       <div
         className="rounded-lg px-4 py-3"
-        style={{ border: '1px solid rgba(255, 255, 255, 0.06)' }}
+        style={{ border: '1px solid var(--color-border-muted)' }}
       >
-        <div className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+        <div className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
           {question}
         </div>
       </div>
@@ -112,33 +114,33 @@ function StartQuestionCard({ proposalData, onApprove, onReject }) {
         <motion.button
           onClick={(e) => { e.stopPropagation(); onApprove?.(); }}
           className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-md font-medium transition-colors hover:brightness-110"
-          style={{ backgroundColor: 'white', color: '#1a1b2e' }}
+          style={{ backgroundColor: 'var(--color-btn-primary-bg)', color: 'var(--color-btn-primary-text)' }}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >
           <Check className="h-3.5 w-3.5 stroke-[2.5]" />
-          Let's Go
+          {t('chat.letsGo')}
         </motion.button>
         <motion.button
           onClick={(e) => { e.stopPropagation(); onReject?.(); }}
           className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-md font-medium transition-colors"
           style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.06)',
-            color: 'rgba(255, 255, 255, 0.45)',
+            backgroundColor: 'var(--color-border-muted)',
+            color: 'var(--color-text-tertiary)',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)';
+            e.currentTarget.style.backgroundColor = 'var(--color-border-muted)';
+            e.currentTarget.style.color = 'var(--color-text-tertiary)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.06)';
-            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.45)';
+            e.currentTarget.style.backgroundColor = 'var(--color-border-muted)';
+            e.currentTarget.style.color = 'var(--color-text-tertiary)';
           }}
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >
           <X className="h-3.5 w-3.5" />
-          Skip
+          {t('chat.skip')}
         </motion.button>
       </div>
     </motion.div>

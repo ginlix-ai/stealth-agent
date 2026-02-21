@@ -44,14 +44,14 @@ function RenameThreadModal({ isOpen, currentTitle, onConfirm, onCancel, isRenami
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
+      style={{ backgroundColor: 'var(--color-bg-overlay-strong)' }}
       onClick={onCancel}
     >
       <div
         className="relative w-full max-w-md rounded-lg p-6"
         style={{
-          backgroundColor: '#1B1D25',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          backgroundColor: 'var(--color-bg-page)',
+          border: '1px solid var(--color-border-muted)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -60,19 +60,19 @@ function RenameThreadModal({ isOpen, currentTitle, onConfirm, onCancel, isRenami
           <div className="flex items-center gap-3">
             <div
               className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: 'rgba(97, 85, 245, 0.2)' }}
+              style={{ backgroundColor: 'var(--color-accent-soft)' }}
             >
-              <Edit2 className="h-5 w-5" style={{ color: '#6155F5' }} />
+              <Edit2 className="h-5 w-5" style={{ color: 'var(--color-accent-primary)' }} />
             </div>
-            <h2 className="text-xl font-semibold" style={{ color: '#FFFFFF' }}>
+            <h2 className="text-xl font-semibold" style={{ color: 'var(--color-text-primary)' }}>
               Rename Thread
             </h2>
           </div>
           <button
             onClick={onCancel}
             disabled={isRenaming}
-            className="p-1 rounded-full transition-colors hover:bg-white/10 disabled:opacity-50"
-            style={{ color: '#FFFFFF' }}
+            className="p-1 rounded-full transition-colors hover:bg-foreground/10 disabled:opacity-50"
+            style={{ color: 'var(--color-text-primary)' }}
           >
             <X className="h-5 w-5" />
           </button>
@@ -81,7 +81,7 @@ function RenameThreadModal({ isOpen, currentTitle, onConfirm, onCancel, isRenami
         {/* Form */}
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-2" style={{ color: '#FFFFFF', opacity: 0.9 }}>
+            <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
               Thread Title
             </label>
             <Input
@@ -94,21 +94,21 @@ function RenameThreadModal({ isOpen, currentTitle, onConfirm, onCancel, isRenami
               disabled={isRenaming}
               className="w-full"
               style={{
-                backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                color: '#FFFFFF',
+                backgroundColor: 'var(--color-border-muted)',
+                border: '1px solid var(--color-border-muted)',
+                color: 'var(--color-text-primary)',
               }}
               autoFocus
             />
-            <p className="text-xs mt-1" style={{ color: '#FFFFFF', opacity: 0.5 }}>
+            <p className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
               {newTitle.length}/255 characters
             </p>
           </div>
 
           {/* Error message */}
           {error && (
-            <div className="mb-4 p-3 rounded-md" style={{ backgroundColor: 'rgba(255, 56, 60, 0.1)', border: '1px solid rgba(255, 56, 60, 0.3)' }}>
-              <p className="text-sm" style={{ color: '#FF383C' }}>
+            <div className="mb-4 p-3 rounded-md" style={{ backgroundColor: 'rgba(255, 56, 60, 0.1)', border: '1px solid var(--color-border-loss)' }}>
+              <p className="text-sm" style={{ color: 'var(--color-loss)' }}>
                 {error}
               </p>
             </div>
@@ -120,8 +120,8 @@ function RenameThreadModal({ isOpen, currentTitle, onConfirm, onCancel, isRenami
               type="button"
               onClick={onCancel}
               disabled={isRenaming}
-              className="px-4 py-2 rounded-md text-sm font-medium transition-colors hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ color: '#FFFFFF' }}
+              className="px-4 py-2 rounded-md text-sm font-medium transition-colors hover:bg-foreground/10 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ color: 'var(--color-text-primary)' }}
             >
               Cancel
             </button>
@@ -130,10 +130,10 @@ function RenameThreadModal({ isOpen, currentTitle, onConfirm, onCancel, isRenami
               disabled={isRenaming || !newTitle.trim() || newTitle.trim() === currentTitle}
               className="px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
-                backgroundColor: (isRenaming || !newTitle.trim() || newTitle.trim() === currentTitle) 
-                  ? 'rgba(97, 85, 245, 0.5)' 
-                  : '#6155F5',
-                color: '#FFFFFF',
+                backgroundColor: (isRenaming || !newTitle.trim() || newTitle.trim() === currentTitle)
+                  ? 'var(--color-accent-overlay)'
+                  : 'var(--color-accent-primary)',
+                color: 'var(--color-text-on-accent)',
               }}
             >
               {isRenaming ? 'Renaming...' : 'Rename'}

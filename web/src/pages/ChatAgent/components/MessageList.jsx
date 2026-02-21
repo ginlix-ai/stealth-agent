@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Bot, User, FileText, ImageIcon } from 'lucide-react';
-import logo from '../../../assets/img/logo.svg';
+import logoLight from '../../../assets/img/logo.svg';
+import logoDark from '../../../assets/img/logo-dark.svg';
+import { useTheme } from '../../../contexts/ThemeContext';
 import MorphLoading from '@/components/ui/morph-loading';
 import ActivityBlock from './ActivityBlock';
 import {
@@ -103,7 +105,7 @@ function AttachmentCard({ attachment }) {
 
   if (isImage && hasPreview) {
     return (
-      <div className="relative group flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)]">
+      <div className="relative group flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border-muted)', background: 'var(--color-bg-input)' }}>
         <img src={att.preview || att.dataUrl} alt={att.name} className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-black/20" />
       </div>
@@ -113,10 +115,10 @@ function AttachmentCard({ attachment }) {
   if (isImage && !hasPreview) {
     // History image — no thumbnail available, show placeholder
     return (
-      <div className="relative flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)]">
+      <div className="relative flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border-muted)', background: 'var(--color-bg-input)' }}>
         <div className="w-full h-full p-3 flex flex-col items-center justify-center gap-2">
-          <ImageIcon className="w-6 h-6 text-[rgba(255,255,255,0.4)]" />
-          <p className="text-[10px] text-[rgba(255,255,255,0.45)] truncate w-full text-center">{att.name}</p>
+          <ImageIcon className="w-6 h-6" style={{ color: 'var(--color-icon-muted)' }} />
+          <p className="text-[10px] truncate w-full text-center" style={{ color: 'var(--color-text-tertiary)' }}>{att.name}</p>
         </div>
       </div>
     );
@@ -124,20 +126,20 @@ function AttachmentCard({ attachment }) {
 
   // PDF / generic file card
   return (
-    <div className="relative flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)]">
+    <div className="relative flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border-muted)', background: 'var(--color-bg-input)' }}>
       <div className="w-full h-full p-3 flex flex-col justify-between">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-[rgba(255,255,255,0.1)] rounded">
-            <FileText className="w-4 h-4 text-[rgba(255,255,255,0.6)]" />
+          <div className="p-1.5 rounded" style={{ background: 'var(--color-border-muted)' }}>
+            <FileText className="w-4 h-4" style={{ color: 'var(--color-text-tertiary)' }} />
           </div>
-          <span className="text-[10px] font-medium text-[rgba(255,255,255,0.45)] uppercase tracking-wider truncate">
+          <span className="text-[10px] font-medium uppercase tracking-wider truncate" style={{ color: 'var(--color-text-tertiary)' }}>
             {ext}
           </span>
         </div>
         <div className="space-y-0.5">
-          <p className="text-xs font-medium text-[#BBBBBB] truncate" title={att.name}>{att.name}</p>
+          <p className="text-xs font-medium truncate" style={{ color: 'var(--color-text-muted)' }} title={att.name}>{att.name}</p>
           {att.size > 0 && (
-            <p className="text-[10px] text-[rgba(255,255,255,0.35)]">{formatFileSize(att.size)}</p>
+            <p className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>{formatFileSize(att.size)}</p>
           )}
         </div>
       </div>
@@ -160,8 +162,8 @@ function MessageList({ messages, hideAvatar, compactToolCalls, isSubagentView, o
     if (isSubagentView) return null;
     return (
       <div className="flex flex-col items-center justify-center min-h-full py-12">
-        <Bot className="h-12 w-12 mb-4" style={{ color: '#6155F5', opacity: 0.5 }} />
-        <p className="text-sm" style={{ color: '#FFFFFF', opacity: 0.65 }}>
+        <Bot className="h-12 w-12 mb-4" style={{ color: 'var(--color-accent-primary)', opacity: 0.5 }} />
+        <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
           Start a conversation by typing a message below
         </p>
       </div>
@@ -205,6 +207,8 @@ function MessageList({ messages, hideAvatar, compactToolCalls, isSubagentView, o
  */
 function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion, onApproveCreateWorkspace, onRejectCreateWorkspace, onApproveStartQuestion, onRejectStartQuestion }) {
   const { user } = useAuth();
+  const { theme } = useTheme();
+  const logo = theme === 'light' ? logoDark : logoLight;
   const avatarUrl = user?.avatar_url;
   const isUser = message.role === 'user';
   const isAssistant = message.role === 'assistant';
@@ -235,14 +239,14 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, 
               ? 'var(--color-gray-292929)'
               : 'transparent',
             border: 'none',
-            color: '#FFFFFF',
+            color: 'var(--color-text-primary)',
           }}
         >
           {/* Pending delivery: user message queued but not yet confirmed by backend */}
           {isPendingDelivery ? (
             <TextShimmer
               as="span"
-              className="text-sm [--base-color:rgba(255,255,255,0.9)] [--base-gradient-color:#ffffff]"
+              className="text-sm [--base-color:var(--color-text-primary)] [--base-gradient-color:var(--color-text-secondary)]"
               duration={1.5}
             >
               {message.content || ''}
@@ -298,7 +302,7 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, 
           {/* Streaming indicator — hidden when dot-loader is already showing for pending chunks */}
           {message.isStreaming && !Object.keys(message.pendingToolCallChunks || {}).length && (() => {
             const hasContent = message.contentSegments?.some(s => s.content?.trim()) || message.content?.trim();
-            return <MorphLoading size="sm" className={hasContent ? "mt-2" : "mt-4"} style={{ color: '#6155F5' }} />;
+            return <MorphLoading size="sm" className={hasContent ? "mt-2" : "mt-4"} style={{ color: 'var(--color-accent-primary)' }} />;
           })()}
         </div>
 
@@ -316,12 +320,12 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, 
       {isUser && !hideAvatar && (
         <div
           className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center overflow-hidden"
-          style={{ backgroundColor: 'rgba(97, 85, 245, 0.2)' }}
+          style={{ backgroundColor: 'var(--color-accent-soft)' }}
         >
           {avatarUrl ? (
             <img src={avatarUrl} alt="User" className="w-full h-full object-cover" />
           ) : (
-            <User className="h-4 w-4" style={{ color: '#6155F5' }} />
+            <User className="h-4 w-4" style={{ color: 'var(--color-accent-primary)' }} />
           )}
         </div>
       )}

@@ -483,10 +483,10 @@ function TradingCenter() {
             alignItems: 'center',
             gap: 8,
             padding: '10px 16px',
-            background: 'rgba(97, 85, 245, 0.15)',
-            border: '1px solid rgba(97, 85, 245, 0.35)',
+            background: 'var(--color-accent-soft)',
+            border: '1px solid var(--color-accent-overlay)',
             borderRadius: 10,
-            color: '#c4bfff',
+            color: 'var(--color-accent-light)',
             fontSize: 13,
             fontWeight: 500,
             cursor: 'pointer',
@@ -496,12 +496,12 @@ function TradingCenter() {
             zIndex: 50,
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(97, 85, 245, 0.25)';
-            e.currentTarget.style.borderColor = 'rgba(97, 85, 245, 0.5)';
+            e.currentTarget.style.background = 'var(--color-accent-overlay)';
+            e.currentTarget.style.borderColor = 'var(--color-accent-primary)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'rgba(97, 85, 245, 0.15)';
-            e.currentTarget.style.borderColor = 'rgba(97, 85, 245, 0.35)';
+            e.currentTarget.style.background = 'var(--color-accent-soft)';
+            e.currentTarget.style.borderColor = 'var(--color-accent-overlay)';
           }}
         >
           <ArrowLeft style={{ width: 14, height: 14 }} />

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, memo } from 'react';
+import { useTheme } from '@/contexts/ThemeContext';
 
 // Map our interval keys to TradingView widget interval values
 const TV_INTERVALS = {
@@ -16,6 +17,7 @@ const TV_INTERVALS = {
  * Provides full drawing tools, indicators, and TradingView's own real-time data.
  */
 function TradingViewWidget({ symbol, interval = '1day' }) {
+  const { theme } = useTheme();
   const containerRef = useRef(null);
   const scriptRef = useRef(null);
 
@@ -42,11 +44,11 @@ function TradingViewWidget({ symbol, interval = '1day' }) {
       symbol: symbol,
       interval: TV_INTERVALS[interval] || 'D',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York',
-      theme: 'dark',
+      theme: theme === 'light' ? 'light' : 'dark',
       style: '1', // Candlestick
       locale: 'en',
-      backgroundColor: '#0f1422',
-      gridColor: '#1a1f35',
+      backgroundColor: theme === 'light' ? '#FFFCF9' : '#0f1422',
+      gridColor: theme === 'light' ? '#E8E2DB' : '#1a1f35',
       allow_symbol_change: false,
       hide_side_toolbar: false, // Keep drawing tools visible
       hide_top_toolbar: false,
@@ -66,7 +68,7 @@ function TradingViewWidget({ symbol, interval = '1day' }) {
       }
       scriptRef.current = null;
     };
-  }, [symbol, interval]);
+  }, [symbol, interval, theme]);
 
   return (
     <div

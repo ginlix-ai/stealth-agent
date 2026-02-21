@@ -3,7 +3,7 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background-color: #0f1422;
+  background-color: var(--color-bg-card);
   border-left: 1px solid hsl(var(--border-light));
   overflow: hidden;
 }
@@ -147,7 +147,7 @@
 }
 
 .trading-sidebar-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--color-border-default);
 }
 
 /* Row */
@@ -166,7 +166,7 @@
 }
 
 .trading-sidebar-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--color-border-muted);
 }
 
 .trading-sidebar-row--active {
@@ -293,7 +293,7 @@
 .trading-sidebar-skeleton-bar {
   height: 12px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-border-muted);
   animation: sidebar-pulse 1.5s ease-in-out infinite;
 }
 

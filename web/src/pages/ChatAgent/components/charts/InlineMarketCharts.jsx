@@ -6,11 +6,11 @@ import {
 
 // ─── Constants ──────────────────────────────────────────────────────
 
-const GREEN = '#10b981';
-const RED = '#ef4444';
-const TEXT_COLOR = '#8b8fa3';
-const CARD_BG = 'rgba(255,255,255,0.03)';
-const CARD_BORDER = 'rgba(255,255,255,0.06)';
+const GREEN = 'var(--color-profit)';
+const RED = 'var(--color-loss)';
+const TEXT_COLOR = 'var(--color-text-tertiary)';
+const CARD_BG = 'var(--color-bg-elevated)';
+const CARD_BORDER = 'var(--color-border-muted)';
 
 export const INLINE_ARTIFACT_TOOLS = new Set([
   'get_stock_daily_prices',
@@ -102,14 +102,14 @@ export function InlineStockPriceCard({ artifact, onClick }) {
     <div
       style={cardStyle}
       onClick={onClick}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-border-muted)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
     >
       {/* Header row: symbol + price + change */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 2 }}>
-        <span style={{ fontWeight: 700, color: '#fff', fontSize: 15 }}>{symbol}</span>
+        <span style={{ fontWeight: 700, color: 'var(--color-text-primary)', fontSize: 15 }}>{symbol}</span>
         {lastClose != null && (
-          <span style={{ color: '#fff', fontSize: 15, fontWeight: 600 }}>${lastClose.toFixed(2)}</span>
+          <span style={{ color: 'var(--color-text-primary)', fontSize: 15, fontWeight: 600 }}>${lastClose.toFixed(2)}</span>
         )}
         {changePct != null && (
           <span style={{ color, fontSize: 13, fontWeight: 600 }}>
@@ -192,12 +192,12 @@ export function InlineCompanyOverviewCard({ artifact, onClick }) {
     <div
       style={cardStyle}
       onClick={onClick}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-border-muted)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
     >
       {/* Company name + symbol */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
-        <span style={{ fontWeight: 700, color: '#fff', fontSize: 16 }}>
+        <span style={{ fontWeight: 700, color: 'var(--color-text-primary)', fontSize: 16 }}>
           {name || symbol}
         </span>
         {name && (
@@ -208,7 +208,7 @@ export function InlineCompanyOverviewCard({ artifact, onClick }) {
       {/* Price + change */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
         {quote.price != null && (
-          <span style={{ fontSize: 22, fontWeight: 700, color: '#fff' }}>
+          <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text-primary)' }}>
             ${quote.price.toFixed(2)}
           </span>
         )}
@@ -256,7 +256,7 @@ function QuoteRow({ label, value }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
       <span style={{ opacity: 0.7 }}>{label}</span>
-      <span style={{ color: '#fff', fontWeight: 500 }}>{value}</span>
+      <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{value}</span>
     </div>
   );
 }
@@ -271,10 +271,10 @@ export function InlineMarketIndicesCard({ artifact, onClick }) {
     <div
       style={cardStyle}
       onClick={onClick}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-border-muted)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
     >
-      <div style={{ fontWeight: 600, color: '#fff', fontSize: 13, marginBottom: 8 }}>
+      <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 13, marginBottom: 8 }}>
         Market Indices
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -296,7 +296,7 @@ export function InlineMarketIndicesCard({ artifact, onClick }) {
               <span style={{ color: TEXT_COLOR }}>{data.name || sym}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {lastClose != null && (
-                  <span style={{ color: '#fff', fontWeight: 500 }}>
+                  <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>
                     {lastClose.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 )}
@@ -337,10 +337,10 @@ export function InlineSectorPerformanceCard({ artifact, onClick }) {
     <div
       style={cardStyle}
       onClick={onClick}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-border-muted)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
     >
-      <div style={{ fontWeight: 600, color: '#fff', fontSize: 13, marginBottom: 6 }}>
+      <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 13, marginBottom: 6 }}>
         Sector Performance
       </div>
       <ResponsiveContainer width="100%" height={chartHeight}>
@@ -390,19 +390,19 @@ export function InlineStockScreenerCard({ artifact, onClick }) {
     <div
       style={cardStyle}
       onClick={onClick}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-border-muted)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
     >
       {/* Header: title + count badge */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <span style={{ fontWeight: 600, color: '#fff', fontSize: 13 }}>
+        <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 13 }}>
           Stock Screener
         </span>
         <span
           style={{
             fontSize: 11,
             color: TEXT_COLOR,
-            backgroundColor: 'rgba(255,255,255,0.06)',
+            backgroundColor: 'var(--color-bg-surface)',
             padding: '1px 6px',
             borderRadius: 10,
           }}
@@ -421,9 +421,9 @@ export function InlineStockScreenerCard({ artifact, onClick }) {
                 fontSize: 10,
                 padding: '1px 6px',
                 borderRadius: 10,
-                backgroundColor: 'rgba(97, 85, 245, 0.12)',
-                color: 'rgba(255,255,255,0.7)',
-                border: '1px solid rgba(97, 85, 245, 0.2)',
+                backgroundColor: 'var(--color-accent-soft)',
+                color: 'var(--color-text-tertiary)',
+                border: '1px solid var(--color-border-muted)',
                 whiteSpace: 'nowrap',
               }}
             >
@@ -452,7 +452,7 @@ export function InlineStockScreenerCard({ artifact, onClick }) {
                 padding: '2px 0',
               }}
             >
-              <span style={{ color: '#fff', fontWeight: 600, minWidth: 50, flexShrink: 0 }}>
+              <span style={{ color: 'var(--color-text-primary)', fontWeight: 600, minWidth: 50, flexShrink: 0 }}>
                 {stock.symbol}
               </span>
               <span
@@ -466,7 +466,7 @@ export function InlineStockScreenerCard({ artifact, onClick }) {
               >
                 {stock.companyName}
               </span>
-              <span style={{ color: '#fff', fontWeight: 500, flexShrink: 0 }}>
+              <span style={{ color: 'var(--color-text-primary)', fontWeight: 500, flexShrink: 0 }}>
                 {stock.price != null ? `$${stock.price.toFixed(2)}` : 'N/A'}
               </span>
               <span style={{ color: TEXT_COLOR, fontSize: 11, flexShrink: 0, minWidth: 42, textAlign: 'right' }}>
@@ -492,7 +492,7 @@ export function InlineStockScreenerCard({ artifact, onClick }) {
 
 // ─── InlineSecFilingCard ───────────────────────────────────────────
 
-const ACCENT = '#6155F5';
+const ACCENT = 'var(--color-accent-primary)';
 const MAX_INLINE_8K = 3;
 
 export function InlineSecFilingCard({ artifact, onClick }) {
@@ -512,7 +512,7 @@ function InlineAnnualQuarterlyCard({ artifact, onClick }) {
     <div
       style={cardStyle}
       onClick={onClick}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-border-muted)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
     >
       {/* Header: symbol badge + filing type */}
@@ -523,13 +523,13 @@ function InlineAnnualQuarterlyCard({ artifact, onClick }) {
             fontWeight: 700,
             padding: '2px 6px',
             borderRadius: 4,
-            backgroundColor: 'rgba(97, 85, 245, 0.15)',
+            backgroundColor: 'var(--color-accent-soft)',
             color: ACCENT,
           }}
         >
           {symbol}
         </span>
-        <span style={{ fontWeight: 700, color: '#fff', fontSize: 14 }}>
+        <span style={{ fontWeight: 700, color: 'var(--color-text-primary)', fontSize: 14 }}>
           {filing_type} Filing
         </span>
       </div>
@@ -579,7 +579,7 @@ function Inline8KCard({ artifact, onClick }) {
     <div
       style={cardStyle}
       onClick={onClick}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)')}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-border-muted)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
     >
       {/* Header: symbol badge + title + count */}
@@ -590,18 +590,18 @@ function Inline8KCard({ artifact, onClick }) {
             fontWeight: 700,
             padding: '2px 6px',
             borderRadius: 4,
-            backgroundColor: 'rgba(97, 85, 245, 0.15)',
+            backgroundColor: 'var(--color-accent-soft)',
             color: ACCENT,
           }}
         >
           {symbol}
         </span>
-        <span style={{ fontWeight: 700, color: '#fff', fontSize: 14 }}>8-K Filings</span>
+        <span style={{ fontWeight: 700, color: 'var(--color-text-primary)', fontSize: 14 }}>8-K Filings</span>
         <span
           style={{
             fontSize: 11,
             color: TEXT_COLOR,
-            backgroundColor: 'rgba(255,255,255,0.06)',
+            backgroundColor: 'var(--color-bg-surface)',
             padding: '1px 6px',
             borderRadius: 10,
           }}
@@ -623,7 +623,7 @@ function Inline8KCard({ artifact, onClick }) {
               padding: '3px 0',
             }}
           >
-            <span style={{ color: '#fff', fontWeight: 500, flexShrink: 0 }}>{f.filing_date}</span>
+            <span style={{ color: 'var(--color-text-primary)', fontWeight: 500, flexShrink: 0 }}>{f.filing_date}</span>
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', flex: 1, overflow: 'hidden' }}>
               {(f.items || []).slice(0, 2).map((item, j) => (
                 <span
@@ -632,9 +632,9 @@ function Inline8KCard({ artifact, onClick }) {
                     fontSize: 10,
                     padding: '1px 6px',
                     borderRadius: 10,
-                    backgroundColor: 'rgba(97, 85, 245, 0.12)',
-                    color: 'rgba(255,255,255,0.7)',
-                    border: '1px solid rgba(97, 85, 245, 0.2)',
+                    backgroundColor: 'var(--color-accent-soft)',
+                    color: 'var(--color-text-tertiary)',
+                    border: '1px solid var(--color-border-muted)',
                     whiteSpace: 'nowrap',
                   }}
                 >

@@ -6,11 +6,11 @@ import { formatRelativeTime, formatDateTime, formatDuration } from '../../../Aut
 
 // ─── Constants ───────────────────────────────────────────────────────
 
-const GREEN = '#10b981';
-const YELLOW = '#eab308';
-const RED = '#ef4444';
-const BLUE = '#3b82f6';
-const TEXT_SECONDARY = 'rgba(255, 255, 255, 0.5)';
+const GREEN = 'var(--color-profit)';
+const YELLOW = 'var(--color-warning)';
+const RED = 'var(--color-loss)';
+const BLUE = 'var(--color-info)';
+const TEXT_SECONDARY = 'var(--color-text-tertiary)';
 
 const STATUS_COLORS = {
   active: GREEN,
@@ -27,6 +27,15 @@ function statusColor(status) {
 
 // ─── Shared sub-components ───────────────────────────────────────────
 
+const STATUS_BG = {
+  active: 'var(--color-profit-soft)',
+  running: 'var(--color-profit-soft)',
+  paused: 'var(--color-warning-soft)',
+  failed: 'var(--color-loss-soft)',
+  completed: 'var(--color-info-soft)',
+  disabled: 'var(--color-loss-soft)',
+};
+
 function StatusBadge({ status }) {
   const color = statusColor(status);
   return (
@@ -36,7 +45,7 @@ function StatusBadge({ status }) {
         fontWeight: 600,
         padding: '2px 8px',
         borderRadius: 10,
-        backgroundColor: `${color}20`,
+        backgroundColor: STATUS_BG[status] || 'var(--color-border-muted)',
         color,
         textTransform: 'capitalize',
       }}
@@ -50,8 +59,8 @@ function StatCard({ label, value, sub }) {
   return (
     <div
       style={{
-        backgroundColor: 'rgba(255,255,255,0.04)',
-        border: '1px solid rgba(255,255,255,0.06)',
+        backgroundColor: 'var(--color-bg-surface)',
+        border: '1px solid var(--color-border-muted)',
         borderRadius: 8,
         padding: '8px 12px',
       }}
@@ -59,7 +68,7 @@ function StatCard({ label, value, sub }) {
       <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: TEXT_SECONDARY, marginBottom: 4 }}>
         {label}
       </p>
-      <p style={{ fontSize: 14, color: '#fff', fontWeight: 500 }}>{value}</p>
+      <p style={{ fontSize: 14, color: 'var(--color-text-primary)', fontWeight: 500 }}>{value}</p>
       {sub && (
         <p style={{ fontSize: 11, color: TEXT_SECONDARY, marginTop: 2 }}>{sub}</p>
       )}
@@ -71,7 +80,7 @@ function ConfigRow({ label, value }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13 }}>
       <span style={{ color: TEXT_SECONDARY }}>{label}</span>
-      <span style={{ color: '#fff', fontWeight: 500 }}>{value}</span>
+      <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>{value}</span>
     </div>
   );
 }
@@ -83,7 +92,7 @@ function scheduleLabel(auto) {
   return auto.schedule || '\u2014';
 }
 
-const ACCENT = '#6155F5';
+const ACCENT = 'var(--color-accent-primary)';
 
 function AutomationsPageLink({ automationId }) {
   const navigate = useNavigate();
@@ -91,8 +100,8 @@ function AutomationsPageLink({ automationId }) {
   return (
     <button
       onClick={() => navigate(path)}
-      className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors hover:bg-white/5"
-      style={{ color: ACCENT, border: `1px solid ${ACCENT}40` }}
+      className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors hover:bg-foreground/5"
+      style={{ color: ACCENT, border: '1px solid var(--color-accent-soft)' }}
     >
       <ExternalLink size={14} />
       View in Automations
@@ -140,8 +149,8 @@ function ListPanel({ automations, total }) {
           <div
             key={a.automation_id || i}
             style={{
-              backgroundColor: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.06)',
+              backgroundColor: 'var(--color-bg-surface)',
+              border: '1px solid var(--color-border-muted)',
               borderRadius: 8,
               padding: '10px 14px',
             }}
@@ -149,7 +158,7 @@ function ListPanel({ automations, total }) {
             {/* Row 1: icon + name + status badge */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <Icon size={14} style={{ color: TEXT_SECONDARY, flexShrink: 0 }} />
-              <span style={{ color: '#fff', fontWeight: 600, fontSize: 14, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span style={{ color: 'var(--color-text-primary)', fontWeight: 600, fontSize: 14, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {a.name}
               </span>
               <StatusBadge status={a.status} />
@@ -167,8 +176,8 @@ function ListPanel({ automations, total }) {
                     fontWeight: 600,
                     padding: '1px 6px',
                     borderRadius: 4,
-                    backgroundColor: 'rgba(255,255,255,0.06)',
-                    color: 'rgba(255,255,255,0.6)',
+                    backgroundColor: 'var(--color-bg-surface)',
+                    color: 'var(--color-text-tertiary)',
                     textTransform: 'uppercase',
                     letterSpacing: '0.03em',
                   }}
@@ -200,7 +209,7 @@ function DetailPanel({ automation, executions, totalExecutions }) {
       {/* Header: icon + name + status */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Icon size={16} style={{ color: TEXT_SECONDARY, flexShrink: 0 }} />
-        <span style={{ fontWeight: 700, color: '#fff', fontSize: 16, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontWeight: 700, color: 'var(--color-text-primary)', fontSize: 16, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {automation.name}
         </span>
         <StatusBadge status={automation.status} />
@@ -233,11 +242,11 @@ function DetailPanel({ automation, executions, totalExecutions }) {
           </p>
           <div
             style={{
-              backgroundColor: 'rgba(255,255,255,0.04)',
+              backgroundColor: 'var(--color-bg-surface)',
               borderRadius: 8,
               padding: '10px 12px',
               fontSize: 13,
-              color: 'rgba(255,255,255,0.7)',
+              color: 'var(--color-text-tertiary)',
               whiteSpace: 'pre-wrap',
               lineHeight: 1.5,
             }}
@@ -276,7 +285,7 @@ function DetailPanel({ automation, executions, totalExecutions }) {
                   gap: 8,
                   padding: '6px 10px',
                   fontSize: 12,
-                  backgroundColor: 'rgba(255,255,255,0.03)',
+                  backgroundColor: 'var(--color-bg-surface)',
                   borderRadius: 6,
                 }}
               >
@@ -290,7 +299,7 @@ function DetailPanel({ automation, executions, totalExecutions }) {
                     flexShrink: 0,
                   }}
                 />
-                <span style={{ color: '#fff', fontWeight: 500, flex: 1 }}>
+                <span style={{ color: 'var(--color-text-primary)', fontWeight: 500, flex: 1 }}>
                   {e.scheduled_at ? formatDateTime(e.scheduled_at) : 'Manual trigger'}
                 </span>
                 {e.started_at && e.completed_at && (
@@ -325,8 +334,8 @@ function CreatedPanel({ data }) {
       {/* Confirmation header */}
       <div
         style={{
-          backgroundColor: 'rgba(16, 185, 129, 0.08)',
-          border: '1px solid rgba(16, 185, 129, 0.2)',
+          backgroundColor: 'var(--color-profit-soft)',
+          border: '1px solid var(--color-profit-border)',
           borderRadius: 8,
           padding: '12px 14px',
         }}
@@ -334,7 +343,7 @@ function CreatedPanel({ data }) {
         <p style={{ color: GREEN, fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
           Automation Created Successfully
         </p>
-        <p style={{ color: '#fff', fontWeight: 600, fontSize: 16 }}>
+        <p style={{ color: 'var(--color-text-primary)', fontWeight: 600, fontSize: 16 }}>
           {data.name}
         </p>
       </div>

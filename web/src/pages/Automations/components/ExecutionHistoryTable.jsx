@@ -67,7 +67,7 @@ export default function ExecutionHistoryTable({ executions, loading, workspaceId
                         navigate(workspaceId ? `/chat/${workspaceId}/${threadId}` : `/chat/${threadId}`);
                       }}
                       className="hover:underline truncate max-w-[120px] block"
-                      style={{ color: '#6155F5' }}
+                      style={{ color: 'var(--color-accent-primary)' }}
                     >
                       {exec.conversation_thread_id.slice(0, 8)}...
                     </button>

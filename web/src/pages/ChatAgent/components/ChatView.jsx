@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, FolderOpen, Bot, StopCircle, ScrollText, AlertTriangle, CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import { ScrollArea } from '../../../components/ui/scroll-area';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -27,6 +28,7 @@ import '../../Dashboard/Dashboard.css';
  * SubagentStatusIndicator — inline status line for subagent view.
  */
 function SubagentStatusIndicator({ status, currentTool, toolCalls = 0, messages = [] }) {
+  const { t } = useTranslation();
   // Derive streaming state from messages (self-sufficient, no subagent_status dependency)
   const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
   const isMessageStreaming = lastAssistant?.isStreaming === true;
@@ -51,30 +53,30 @@ function SubagentStatusIndicator({ status, currentTool, toolCalls = 0, messages 
 
   const getIcon = () => {
     if (derivedCurrentTool) {
-      return <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />;
+      return <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />;
     }
     if (effectiveStatus === 'active') {
-      return <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />;
+      return <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />;
     }
     if (effectiveStatus === 'completed') {
-      return <CheckCircle2 className="h-3.5 w-3.5" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />;
+      return <CheckCircle2 className="h-3.5 w-3.5" style={{ color: 'var(--color-text-tertiary)' }} />;
     }
-    return <Circle className="h-3.5 w-3.5" style={{ color: 'rgba(255, 255, 255, 0.3)' }} />;
+    return <Circle className="h-3.5 w-3.5" style={{ color: 'var(--color-icon-muted)' }} />;
   };
 
   const getText = () => {
-    if (derivedCurrentTool) return `Running: ${derivedCurrentTool}`;
+    if (derivedCurrentTool) return t('chat.running', { tool: derivedCurrentTool });
     if (effectiveStatus === 'completed') {
-      return toolCalls > 0 ? `Completed (${toolCalls} tool calls)` : 'Completed';
+      return toolCalls > 0 ? t('chat.completedWithCalls', { count: toolCalls }) : t('chat.completed');
     }
     if (effectiveStatus === 'active') {
-      return 'Running';
+      return t('chat.runningStatus');
     }
-    return 'Initializing';
+    return t('chat.initializing');
   };
 
   return (
-    <div className="flex items-center gap-1.5 text-xs" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+    <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
       {getIcon()}
       <span>{getText()}</span>
     </div>
@@ -96,6 +98,7 @@ function SubagentStatusIndicator({ status, currentTool, toolCalls = 0, messages 
  * @param {Function} onBack - Callback to navigate back to thread gallery
  */
 function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspaceName }) {
+  const { t } = useTranslation();
   const scrollAreaRef = useRef(null);
   const subagentScrollAreaRef = useRef(null);
   const location = useLocation();
@@ -378,7 +381,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     .filter(([cardId]) => cardId.startsWith('subagent-'))
     .map(([cardId, card]) => ({
       id: cardId.replace('subagent-', ''),
-      name: card.subagentData?.displayId || 'Worker',
+      name: card.subagentData?.displayId || t('chat.worker'),
       taskId: card.subagentData?.taskId || card.subagentData?.agentId || '',
       description: card.subagentData?.description || '',
       type: card.subagentData?.type || 'general-purpose',
@@ -815,9 +818,9 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
   // Early return if workspaceId or threadId is missing
   if (!workspaceId || !threadId) {
     return (
-      <div className="flex items-center justify-center h-full" style={{ backgroundColor: '#1B1D25' }}>
-        <p className="text-sm" style={{ color: '#FFFFFF', opacity: 0.65 }}>
-          Missing workspace or thread information
+      <div className="flex items-center justify-center h-full" style={{ backgroundColor: 'var(--color-bg-page)' }}>
+        <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+          {t('chat.missingWorkspaceOrThread')}
         </p>
       </div>
     );
@@ -834,22 +837,24 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
       {/* Left Side: Topbar + Sidebar + Chat Window */}
       <div className="flex flex-col flex-1 min-w-0">
         {/* Top bar */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-white/10 min-w-0 flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-2 border-b min-w-0 flex-shrink-0" style={{ borderColor: 'var(--color-border-muted)' }}>
           <div className="flex items-center gap-4 min-w-0 flex-shrink">
             <button
               onClick={() => { intentionalExitRef.current = true; onBack(); }}
-              className="p-2 rounded-md transition-colors hover:bg-white/10 flex-shrink-0"
-              style={{ color: '#FFFFFF' }}
-              title="Back to threads"
+              className="p-2 rounded-md transition-colors flex-shrink-0"
+              style={{ color: 'var(--color-text-primary)' }}
+              title={t('workspace.backToThreads')}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-border-muted)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <h1 className="text-base font-semibold whitespace-nowrap dashboard-title-font truncate" style={{ color: '#FFFFFF' }}>
-              {workspaceName || 'Workspace'}
+            <h1 className="text-base font-semibold whitespace-nowrap dashboard-title-font truncate" style={{ color: 'var(--color-text-primary)' }}>
+              {workspaceName || t('thread.workspace')}
             </h1>
             {isLoadingHistory ? (
-              <span className="text-xs whitespace-nowrap" style={{ color: '#FFFFFF', opacity: 0.5 }}>
-                Loading history...
+              <span className="text-xs whitespace-nowrap" style={{ color: 'var(--color-text-tertiary)' }}>
+                {t('chat.loadingHistory')}
               </span>
             ) : null}
           </div>
@@ -858,18 +863,22 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
             {!isFlashMode && (
               <button
                 onClick={handleToggleFilePanel}
-                className={`p-2 rounded-md transition-colors ${rightPanelType === 'file' ? 'bg-white/15' : 'hover:bg-white/10'}`}
-                style={{ color: '#FFFFFF' }}
-                title="Workspace Files"
+                className="p-2 rounded-md transition-colors"
+                style={{ color: 'var(--color-text-primary)', backgroundColor: rightPanelType === 'file' ? 'var(--color-border-muted)' : undefined }}
+                title={t('chat.workspaceFiles')}
+                onMouseEnter={(e) => { if (rightPanelType !== 'file') e.currentTarget.style.backgroundColor = 'var(--color-border-muted)'; }}
+                onMouseLeave={(e) => { if (rightPanelType !== 'file') e.currentTarget.style.backgroundColor = ''; }}
               >
                 <FolderOpen className="h-5 w-5" />
               </button>
             )}
             <button
               onClick={handleToggleSidebar}
-              className={`p-2 rounded-md transition-colors ${sidebarVisible ? 'bg-white/15' : 'hover:bg-white/10'}`}
-              style={{ color: '#FFFFFF' }}
-              title="Agents"
+              className="p-2 rounded-md transition-colors"
+              style={{ color: 'var(--color-text-primary)', backgroundColor: sidebarVisible ? 'var(--color-border-muted)' : undefined }}
+              title={t('chat.agents')}
+              onMouseEnter={(e) => { if (!sidebarVisible) e.currentTarget.style.backgroundColor = 'var(--color-border-muted)'; }}
+              onMouseLeave={(e) => { if (!sidebarVisible) e.currentTarget.style.backgroundColor = ''; }}
             >
               <Bot className="h-5 w-5" />
             </button>
@@ -927,7 +936,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                     <div className="w-full max-w-3xl space-y-2.5">
                       {/* Task description */}
                       {activeAgent.description && (
-                        <div style={{ color: 'rgba(255, 255, 255, 0.8)' }}>
+                        <div style={{ color: 'var(--color-text-primary)' }}>
                           <Markdown
                             variant="chat"
                             content={normalizeSubagentText(activeAgent.description)}
@@ -944,7 +953,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                       />
                       {/* Messages — reuse MessageList */}
                       {activeAgent.messages?.length > 0 && (
-                        <div style={{ borderTop: '0.5px solid rgba(255, 255, 255, 0.04)', paddingTop: '8px' }}>
+                        <div style={{ borderTop: '0.5px solid var(--color-border-muted)', paddingTop: '8px' }}>
                           <MessageList
                             messages={activeAgent.messages}
                             isSubagentView={true}
@@ -960,8 +969,8 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
               ) : (
                 // Active agent not found (may have been removed) - fallback
                 <div className="flex items-center justify-center h-full">
-                  <p className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
-                    Agent not found
+                  <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+                    {t('chat.agentNotFound')}
                   </p>
                 </div>
               )}
@@ -976,19 +985,19 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                     {pendingRejection && (
                       <div
                         className="flex items-center gap-2 px-3 py-2 rounded-md text-sm"
-                        style={{ backgroundColor: 'rgba(97, 85, 245, 0.08)', color: 'rgba(255, 255, 255, 0.75)', border: '1px solid rgba(97, 85, 245, 0.2)' }}
+                        style={{ backgroundColor: 'var(--color-accent-soft)', color: 'var(--color-text-tertiary)', border: '1px solid var(--color-accent-soft)' }}
                       >
-                        <ScrollText className="h-4 w-4 flex-shrink-0" style={{ color: '#6155F5' }} />
-                        <span>Type your feedback to revise the plan, then send.</span>
+                        <ScrollText className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
+                        <span>{t('chat.planFeedbackHint')}</span>
                       </div>
                     )}
                     {wasInterrupted && !isLoading && !pendingInterrupt && !pendingRejection && (
                       <div
                         className="flex items-center gap-2 px-3 py-2 rounded-md text-sm"
-                        style={{ backgroundColor: 'rgba(220, 38, 38, 0.1)', color: 'rgba(255, 255, 255, 0.75)' }}
+                        style={{ backgroundColor: 'var(--color-loss-soft)', color: 'var(--color-text-tertiary)' }}
                       >
-                        <StopCircle className="h-4 w-4 flex-shrink-0" style={{ color: '#dc2626' }} />
-                        <span>Agent interrupted. Feel free to provide new instructions.</span>
+                        <StopCircle className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-loss)' }} />
+                        <span>{t('chat.interruptedHint')}</span>
                       </div>
                     )}
                     {messageError && !isLoading && (() => {
@@ -996,9 +1005,9 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                       return (
                         <div
                           className="flex items-center gap-2 px-3 py-2 rounded-md text-sm"
-                          style={{ backgroundColor: 'rgba(220, 38, 38, 0.1)', color: 'rgba(255, 180, 180, 0.9)' }}
+                          style={{ backgroundColor: 'var(--color-loss-soft)', color: 'var(--color-loss)' }}
                         >
-                          <AlertTriangle className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255, 120, 120, 0.9)' }} />
+                          <AlertTriangle className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-loss)' }} />
                           <span>{parsed.detail ? `${parsed.title}: ${parsed.detail}` : parsed.title}</span>
                         </div>
                       );
@@ -1009,7 +1018,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/60 opacity-75" />
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-primary/80" />
                         </span>
-                        Background tasks are still running
+                        {t('chat.backgroundTasksRunning')}
                       </div>
                     )}
                     <ChatInput

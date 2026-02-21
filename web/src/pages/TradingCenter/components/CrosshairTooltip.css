@@ -2,23 +2,23 @@
   position: absolute;
   pointer-events: none;
   z-index: 20;
-  background: rgba(15, 20, 34, 0.92);
-  border: 1px solid #2a2f45;
+  background: var(--color-bg-overlay-strong);
+  border: 1px solid var(--color-border-elevated);
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 11px;
   font-family: 'SF Mono', 'Fira Code', monospace;
-  color: #c4c8d8;
+  color: var(--color-text-primary);
   min-width: 140px;
   backdrop-filter: blur(8px);
 }
 
 .crosshair-tooltip-date {
   font-size: 10px;
-  color: #8b8fa3;
+  color: var(--color-text-secondary);
   margin-bottom: 6px;
   padding-bottom: 4px;
-  border-bottom: 1px solid #1a1f35;
+  border-bottom: 1px solid var(--color-border-default);
 }
 
 .crosshair-tooltip-grid {
@@ -36,12 +36,12 @@
 }
 
 .crosshair-tooltip-label {
-  color: #6b7280;
+  color: var(--color-text-secondary);
   font-size: 10px;
 }
 
 .crosshair-tooltip-ma-section {
   margin-top: 4px;
   padding-top: 4px;
-  border-top: 1px solid #1a1f35;
+  border-top: 1px solid var(--color-border-default);
 }

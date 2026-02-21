@@ -75,7 +75,7 @@ function WorkspaceImage({ src, alt, ...props }) {
           width: '100%',
           maxWidth: 480,
           height: 200,
-          backgroundColor: 'rgba(255, 255, 255, 0.06)',
+          backgroundColor: 'var(--color-border-muted)',
         }}
       />
     );
@@ -84,7 +84,7 @@ function WorkspaceImage({ src, alt, ...props }) {
   if (state === 'error') {
     const filename = normalizedPath.split('/').pop();
     return (
-      <span className="text-xs my-2 inline-block" style={{ color: 'rgba(255, 255, 255, 0.4)' }}>
+      <span className="text-xs my-2 inline-block" style={{ color: 'var(--color-text-tertiary)' }}>
         [image: {filename}]
       </span>
     );

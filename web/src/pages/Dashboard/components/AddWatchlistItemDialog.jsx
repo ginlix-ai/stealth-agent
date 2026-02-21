@@ -152,7 +152,7 @@ function AddWatchlistItemDialog({
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose?.()}>
-      <DialogContent className="sm:max-w-md text-white border" style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}>
+      <DialogContent className="sm:max-w-md border" style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}>
         {page === 1 ? (
           <>
             <DialogHeader>
@@ -167,8 +167,8 @@ function AddWatchlistItemDialog({
                   placeholder="Search by symbol or company name..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 text-white placeholder:text-gray-500 border"
-                  style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)' }}
+                  className="pl-10 border"
+                  style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
                   autoFocus
                 />
               </div>
@@ -192,7 +192,7 @@ function AddWatchlistItemDialog({
                         key={`${stock.symbol}-${index}`}
                         type="button"
                         onClick={() => handleStockSelect(stock)}
-                        className="w-full text-left px-3 py-2 rounded hover:bg-white/10 transition-colors"
+                        className="w-full text-left px-3 py-2 rounded hover:bg-foreground/10 transition-colors"
                         style={{ color: 'var(--color-text-primary)' }}
                       >
                         <div className="text-sm font-medium">{stock.name}</div>
@@ -210,7 +210,7 @@ function AddWatchlistItemDialog({
                 <button
                   type="button"
                   onClick={handleBack}
-                  className="p-1 rounded hover:bg-white/10"
+                  className="p-1 rounded hover:bg-foreground/10"
                   style={{ color: 'var(--color-text-primary)' }}
                   aria-label="Back"
                 >
@@ -260,21 +260,21 @@ function AddWatchlistItemDialog({
                 {/* Notes Input */}
                 <div>
                   <label className="block text-xs mb-1" style={{ color: 'var(--color-text-secondary)' }}>
-                    Notes <span className="text-red-400">*</span>
+                    Notes <span style={{ color: 'var(--color-loss)' }}>*</span>
                   </label>
                   <Input
                     placeholder="Enter notes about this stock..."
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    className="text-white placeholder:text-gray-500 border"
-                    style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)' }}
+                    className="border"
+                    style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
                   />
                 </div>
 
                 {/* Alert Settings */}
                 <div className="space-y-2">
                   <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                    Alert Settings <span className="text-red-400">*</span>
+                    Alert Settings <span style={{ color: 'var(--color-loss)' }}>*</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -287,8 +287,8 @@ function AddWatchlistItemDialog({
                         placeholder="200.00"
                         value={priceAbove}
                         onChange={(e) => setPriceAbove(e.target.value)}
-                        className="text-white placeholder:text-gray-500 border"
-                        style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)' }}
+                        className="border"
+                        style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
                       />
                     </div>
                     <div>
@@ -301,8 +301,8 @@ function AddWatchlistItemDialog({
                         placeholder="150.00"
                         value={priceBelow}
                         onChange={(e) => setPriceBelow(e.target.value)}
-                        className="text-white placeholder:text-gray-500 border"
-                        style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)' }}
+                        className="border"
+                        style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
                       />
                     </div>
                   </div>

@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar/Sidebar';
 import Main from './components/Main/Main';
 import LoginPage from './pages/Login/LoginPage';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from './contexts/AuthContext';
 import './App.css';
 
@@ -10,6 +11,7 @@ import './App.css';
 function AuthCallback() {
   const { isLoggedIn } = useAuth();
   const navigate = useNavigate();
+  const { t: tAuth } = useTranslation();
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -19,18 +21,19 @@ function AuthCallback() {
 
   return (
     <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: 'var(--color-bg-page)' }}>
-      <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Signing you in...</p>
+      <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{tAuth('auth.signingIn')}</p>
     </div>
   );
 }
 
 function App() {
   const { isLoggedIn, isInitialized } = useAuth();
+  const { t } = useTranslation();
 
   if (!isInitialized) {
     return (
         <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: 'var(--color-bg-page)' }}>
-        <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Loading...</p>
+        <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{t('common.loading')}</p>
       </div>
     );
   }

@@ -31,25 +31,25 @@ function DetailPanel({ toolCallProcess, planData, onClose, onOpenFile, onOpenSub
         className="h-full flex flex-col"
         style={{
           backgroundColor: 'transparent',
-          borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
+          borderLeft: '1px solid var(--color-border-muted)',
         }}
       >
         <div
           className="flex items-center justify-between px-4 py-3 flex-shrink-0"
-          style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}
+          style={{ borderBottom: '1px solid var(--color-border-muted)' }}
         >
           <div className="flex items-center gap-2 min-w-0">
-            <Zap className="h-4 w-4 flex-shrink-0" style={{ color: '#6155F5' }} />
+            <Zap className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
             <span
               className="font-semibold truncate"
-              style={{ color: '#FFFFFF', fontSize: 14 }}
+              style={{ color: 'var(--color-text-primary)', fontSize: 14 }}
             >
               Plan Details
             </span>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-white/10 transition-colors flex-shrink-0"
+            className="p-1 rounded hover:bg-foreground/10 transition-colors flex-shrink-0"
             style={{ color: 'var(--Labels-Secondary)' }}
           >
             <X className="h-4 w-4" />
@@ -85,23 +85,23 @@ function DetailPanel({ toolCallProcess, planData, onClose, onOpenFile, onOpenSub
       className="h-full flex flex-col"
       style={{
         backgroundColor: 'transparent',
-        borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
+        borderLeft: '1px solid var(--color-border-muted)',
       }}
     >
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-3 flex-shrink-0"
-        style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}
+        style={{ borderBottom: '1px solid var(--color-border-muted)' }}
       >
         <div className="flex items-center gap-2 min-w-0">
           {isTaskTool ? (
             <img src={isSubagentCompleted ? iconRobo : iconRoboSing} alt="Subagent" className="w-5 h-5 flex-shrink-0" />
           ) : (
-            <IconComponent className="h-4 w-4 flex-shrink-0" style={{ color: '#6155F5' }} />
+            <IconComponent className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
           )}
           <span
             className="font-semibold truncate"
-            style={{ color: '#FFFFFF', fontSize: 14 }}
+            style={{ color: 'var(--color-text-primary)', fontSize: 14 }}
           >
             {displayName}
           </span>
@@ -118,7 +118,7 @@ function DetailPanel({ toolCallProcess, planData, onClose, onOpenFile, onOpenSub
         </div>
         <button
           onClick={onClose}
-          className="p-1 rounded hover:bg-white/10 transition-colors flex-shrink-0"
+          className="p-1 rounded hover:bg-foreground/10 transition-colors flex-shrink-0"
           style={{ color: 'var(--Labels-Secondary)' }}
         >
           <X className="h-4 w-4" />
@@ -175,13 +175,13 @@ function TaskToolContent({ description, type, subagentId, subagentResult, subage
         <div>
           <div
             className="text-xs font-medium uppercase tracking-wider mb-2 px-1"
-            style={{ color: 'rgba(255, 255, 255, 0.4)' }}
+            style={{ color: 'var(--color-text-tertiary)' }}
           >
             Instructions
           </div>
           <div
             className="rounded-lg px-3 py-3"
-            style={{ backgroundColor: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.06)' }}
+            style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border-muted)' }}
           >
             <Markdown variant="panel" content={description} className="text-sm" />
           </div>
@@ -192,31 +192,31 @@ function TaskToolContent({ description, type, subagentId, subagentResult, subage
       <div>
         <div
           className="text-xs font-medium uppercase tracking-wider mb-2 px-1"
-          style={{ color: 'rgba(255, 255, 255, 0.4)' }}
+          style={{ color: 'var(--color-text-tertiary)' }}
         >
           Result
         </div>
         {subagentResult ? (
           <div
             className="rounded-lg px-3 py-3"
-            style={{ backgroundColor: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.06)' }}
+            style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border-muted)' }}
           >
             <Markdown variant="panel" content={subagentResult} className="text-sm" />
           </div>
         ) : isRunning ? (
           <div
             className="flex items-center gap-2 px-3 py-3 rounded-lg"
-            style={{ backgroundColor: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.06)' }}
+            style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border-muted)' }}
           >
-            <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />
-            <span className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+            <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />
+            <span className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
               Subagent is still running...
             </span>
           </div>
         ) : (
           <div
             className="px-3 py-3 rounded-lg text-sm"
-            style={{ backgroundColor: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.06)', color: 'rgba(255, 255, 255, 0.5)' }}
+            style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border-muted)', color: 'var(--color-text-tertiary)' }}
           >
             No result available
           </div>
@@ -229,22 +229,22 @@ function TaskToolContent({ description, type, subagentId, subagentResult, subage
           onClick={handleGoToSubagent}
           className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg transition-colors hover:brightness-110"
           style={{
-            backgroundColor: 'rgba(97, 85, 245, 0.08)',
-            border: '1px solid rgba(97, 85, 245, 0.2)',
+            backgroundColor: 'var(--color-accent-soft)',
+            border: '1px solid var(--color-accent-soft)',
           }}
         >
           <img src={isRunning ? iconRoboSing : iconRobo} alt="Subagent" className="w-5 h-5 flex-shrink-0" />
           <div className="flex flex-col gap-0.5 min-w-0 flex-1 text-left">
-            <span className="text-xs font-medium" style={{ color: '#FFFFFF', opacity: 0.8 }}>
+            <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
               Go to subagent tab
             </span>
             {description && (
-              <span className="text-xs truncate" style={{ color: '#FFFFFF', opacity: 0.5 }}>
+              <span className="text-xs truncate" style={{ color: 'var(--color-text-tertiary)' }}>
                 {description}
               </span>
             )}
           </div>
-          <ArrowRight className="h-4 w-4 flex-shrink-0" style={{ color: '#6155F5' }} />
+          <ArrowRight className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
         </button>
       )}
     </div>
@@ -339,11 +339,11 @@ function WebSearchCards({ data }) {
         <div
           className="rounded-lg px-4 py-3"
           style={{
-            backgroundColor: 'rgba(97, 85, 245, 0.08)',
-            border: '1px solid rgba(97, 85, 245, 0.2)',
+            backgroundColor: 'var(--color-accent-soft)',
+            border: '1px solid var(--color-accent-soft)',
           }}
         >
-          <p className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.85)', lineHeight: 1.6 }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-primary)', lineHeight: 1.6 }}>
             {answer}
           </p>
         </div>
@@ -353,7 +353,7 @@ function WebSearchCards({ data }) {
       {query && (
         <div
           className="text-xs font-medium uppercase tracking-wider px-1"
-          style={{ color: 'rgba(255, 255, 255, 0.35)' }}
+          style={{ color: 'var(--color-text-tertiary)' }}
         >
           {results.length} result{results.length !== 1 ? 's' : ''} for &ldquo;{query}&rdquo;
         </div>
@@ -368,38 +368,38 @@ function WebSearchCards({ data }) {
           rel="noopener noreferrer"
           className="block rounded-lg px-4 py-3 group"
           style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid rgba(255, 255, 255, 0.06)',
+            backgroundColor: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border-muted)',
             textDecoration: 'none',
             transition: 'border-color 0.15s, background-color 0.15s',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = 'rgba(97, 85, 245, 0.4)';
-            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+            e.currentTarget.style.borderColor = 'var(--color-accent-overlay)';
+            e.currentTarget.style.backgroundColor = 'var(--color-bg-hover)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
-            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.03)';
+            e.currentTarget.style.borderColor = 'var(--color-border-muted)';
+            e.currentTarget.style.backgroundColor = 'var(--color-bg-surface)';
           }}
         >
           {/* Domain + external link icon */}
           <div className="flex items-center justify-between mb-1.5">
             <span
               className="text-xs truncate"
-              style={{ color: 'rgba(255, 255, 255, 0.35)' }}
+              style={{ color: 'var(--color-text-tertiary)' }}
             >
               {item.domain}
             </span>
             <ExternalLink
               className="h-3 w-3 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ color: 'rgba(255, 255, 255, 0.35)' }}
+              style={{ color: 'var(--color-text-tertiary)' }}
             />
           </div>
 
           {/* Title */}
           <div
             className="text-sm font-medium mb-1 leading-snug"
-            style={{ color: '#FFFFFF' }}
+            style={{ color: 'var(--color-text-primary)' }}
           >
             {item.title}
           </div>
@@ -409,7 +409,7 @@ function WebSearchCards({ data }) {
             <div
               className="text-xs leading-relaxed"
               style={{
-                color: 'rgba(255, 255, 255, 0.5)',
+                color: 'var(--color-text-tertiary)',
                 display: '-webkit-box',
                 WebkitLineClamp: 3,
                 WebkitBoxOrient: 'vertical',
@@ -424,7 +424,7 @@ function WebSearchCards({ data }) {
           {item.date && (
             <div
               className="text-xs mt-1.5"
-              style={{ color: 'rgba(255, 255, 255, 0.25)' }}
+              style={{ color: 'var(--color-icon-muted)' }}
             >
               {item.date}
             </div>
@@ -442,26 +442,26 @@ function TruncatedResultMessage({ filePath, preview, onOpenFile }) {
       <div
         className="rounded-lg px-4 py-3"
         style={{
-          backgroundColor: 'rgba(97, 85, 245, 0.1)',
-          border: '1px solid rgba(97, 85, 245, 0.25)',
+          backgroundColor: 'var(--color-accent-soft)',
+          border: '1px solid var(--color-accent-overlay)',
         }}
       >
         <div className="flex items-start gap-3">
-          <FileText className="h-5 w-5 flex-shrink-0 mt-0.5" style={{ color: '#6155F5' }} />
+          <FileText className="h-5 w-5 flex-shrink-0 mt-0.5" style={{ color: 'var(--color-accent-primary)' }} />
           <div className="space-y-2 min-w-0">
-            <p className="text-sm font-medium" style={{ color: '#FFFFFF' }}>
+            <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
               Result too large to display inline
             </p>
-            <p className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+            <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
               The full result has been saved to the workspace filesystem.
             </p>
             {filePath && onOpenFile && (
               <button
                 onClick={() => onOpenFile(filePath)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors hover:bg-white/10"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors hover:bg-foreground/10"
                 style={{
-                  color: '#6155F5',
-                  border: '1px solid rgba(97, 85, 245, 0.4)',
+                  color: 'var(--color-accent-primary)',
+                  border: '1px solid var(--color-accent-overlay)',
                 }}
               >
                 <FileText className="h-3.5 w-3.5" />
@@ -469,7 +469,7 @@ function TruncatedResultMessage({ filePath, preview, onOpenFile }) {
               </button>
             )}
             {filePath && (
-              <p className="text-xs font-mono truncate" style={{ color: 'rgba(255, 255, 255, 0.4)' }}>
+              <p className="text-xs font-mono truncate" style={{ color: 'var(--color-text-tertiary)' }}>
                 {filePath}
               </p>
             )}
@@ -480,7 +480,7 @@ function TruncatedResultMessage({ filePath, preview, onOpenFile }) {
       {/* Preview */}
       {preview && (
         <div className="space-y-2">
-          <p className="text-xs font-medium" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+          <p className="text-xs font-medium" style={{ color: 'var(--color-text-tertiary)' }}>
             Preview
           </p>
           <Markdown variant="panel" content={stripLineNumbers(preview)} className="text-sm" />

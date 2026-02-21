@@ -3,12 +3,14 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Copy, Check } from 'lucide-react';
+import { useTheme } from '@/contexts/ThemeContext';
 import WorkspaceImage from './WorkspaceImage';
 
 // --- CodeBlock component ---
 function CodeBlock({ language, code, compact = false }) {
+  const { theme } = useTheme();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -20,23 +22,23 @@ function CodeBlock({ language, code, compact = false }) {
   return (
     <div style={{ margin: compact ? '4px 0' : '6px 0' }}>
       <div className="rounded-lg overflow-hidden"
-        style={{ backgroundColor: '#282c34', border: '1px solid rgba(255,255,255,0.1)' }}>
+        style={{ backgroundColor: 'var(--color-bg-code)', border: '1px solid var(--color-border-muted)' }}>
         {!compact && (
           <div className="flex items-center justify-between px-3 py-1.5"
-            style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-            <span className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.4)' }}>
+            style={{ borderBottom: '1px solid var(--color-border-muted)' }}>
+            <span className="text-xs font-mono" style={{ color: 'var(--color-text-tertiary)' }}>
               {language || 'text'}
             </span>
             <button onClick={handleCopy}
               className="flex items-center gap-1 text-xs hover:opacity-100 transition-opacity"
-              style={{ color: 'rgba(255,255,255,0.4)', background: 'none', border: 'none', cursor: 'pointer' }}>
+              style={{ color: 'var(--color-text-tertiary)', background: 'none', border: 'none', cursor: 'pointer' }}>
               {copied ? <><Check className="h-3 w-3" /> Copied</> : <><Copy className="h-3 w-3" /> Copy</>}
             </button>
           </div>
         )}
         <SyntaxHighlighter
           language={language || 'text'}
-          style={oneDark}
+          style={theme === 'light' ? oneLight : oneDark}
           customStyle={{
             margin: 0,
             padding: compact ? '0.6rem' : '1rem',
@@ -79,65 +81,65 @@ function extractCodeFromPre(children) {
 
 // --- Shared overrides (used by all variants) ---
 const strong = ({ node, ...props }) => (
-  <strong style={{ color: '#FFFFFF', fontWeight: 700 }} {...props} />
+  <strong style={{ color: 'var(--color-text-primary)', fontWeight: 700 }} {...props} />
 );
 const em = ({ node, ...props }) => (
-  <em className="italic" style={{ color: '#FFFFFF' }} {...props} />
+  <em className="italic" style={{ color: 'var(--color-text-primary)' }} {...props} />
 );
 const del = ({ node, ...props }) => (
-  <del style={{ color: 'rgba(255,255,255,0.5)', textDecoration: 'line-through' }} {...props} />
+  <del style={{ color: 'var(--color-text-tertiary)', textDecoration: 'line-through' }} {...props} />
 );
 const input = ({ node, type, checked, ...props }) => {
   if (type === 'checkbox') {
     return (
       <input type="checkbox" checked={checked} readOnly
-        style={{ marginRight: '6px', accentColor: '#6155F5' }} />
+        style={{ marginRight: '6px', accentColor: 'var(--color-accent-primary)' }} />
     );
   }
   return <input {...props} />;
 };
 const img = ({ node, ...props }) => <WorkspaceImage {...props} />;
 const ul = ({ node, ...props }) => (
-  <ul className="list-disc ml-4 my-1" style={{ color: '#FFFFFF' }} {...props} />
+  <ul className="list-disc ml-4 my-1" style={{ color: 'var(--color-text-primary)' }} {...props} />
 );
 const ol = ({ node, ...props }) => (
-  <ol className="list-decimal ml-4 my-1" style={{ color: '#FFFFFF' }} {...props} />
+  <ol className="list-decimal ml-4 my-1" style={{ color: 'var(--color-text-primary)' }} {...props} />
 );
 const li = ({ node, ...props }) => (
-  <li className="break-words" style={{ color: '#FFFFFF' }} {...props} />
+  <li className="break-words" style={{ color: 'var(--color-text-primary)' }} {...props} />
 );
 
 // ===================== CHAT variant =====================
 const chatUl = ({ node, ...props }) => (
-  <ul className="list-disc ml-6 my-2" style={{ color: '#FFFFFF' }} {...props} />
+  <ul className="list-disc ml-6 my-2" style={{ color: 'var(--color-text-primary)' }} {...props} />
 );
 const chatOl = ({ node, ...props }) => (
-  <ol className="list-decimal ml-6 my-2" style={{ color: '#FFFFFF' }} {...props} />
+  <ol className="list-decimal ml-6 my-2" style={{ color: 'var(--color-text-primary)' }} {...props} />
 );
 const chatLi = ({ node, ...props }) => (
-  <li className="ps-[2px] break-words" style={{ color: '#FFFFFF' }} {...props} />
+  <li className="ps-[2px] break-words" style={{ color: 'var(--color-text-primary)' }} {...props} />
 );
 const chatP = ({ node, ...props }) => (
-  <p className="my-[1px] py-[3px] whitespace-pre-wrap break-words first:mt-0 last:mb-0" style={{ color: '#FFFFFF' }} {...props} />
+  <p className="my-[1px] py-[3px] whitespace-pre-wrap break-words first:mt-0 last:mb-0" style={{ color: 'var(--color-text-primary)' }} {...props} />
 );
 const chatH1 = ({ node, ...props }) => (
-  <h1 className="first:mt-0" style={{ color: '#FFFFFF', fontSize: '1.75em', fontWeight: 700, lineHeight: '1.3', marginTop: '1.5em', marginBottom: '0.5em' }} {...props} />
+  <h1 className="first:mt-0" style={{ color: 'var(--color-text-primary)', fontSize: '1.75em', fontWeight: 700, lineHeight: '1.3', marginTop: '1.5em', marginBottom: '0.5em' }} {...props} />
 );
 const chatH2 = ({ node, ...props }) => (
-  <h2 className="first:mt-0" style={{ color: '#FFFFFF', fontSize: '1.4em', fontWeight: 700, lineHeight: '1.3', marginTop: '1.4em', marginBottom: '0.4em' }} {...props} />
+  <h2 className="first:mt-0" style={{ color: 'var(--color-text-primary)', fontSize: '1.4em', fontWeight: 700, lineHeight: '1.3', marginTop: '1.4em', marginBottom: '0.4em' }} {...props} />
 );
 const chatH3 = ({ node, ...props }) => (
-  <h3 className="first:mt-0" style={{ color: '#FFFFFF', fontSize: '1.2em', fontWeight: 600, lineHeight: '1.3', marginTop: '1.2em', marginBottom: '0.3em' }} {...props} />
+  <h3 className="first:mt-0" style={{ color: 'var(--color-text-primary)', fontSize: '1.2em', fontWeight: 600, lineHeight: '1.3', marginTop: '1.2em', marginBottom: '0.3em' }} {...props} />
 );
 const chatH4 = ({ node, ...props }) => (
-  <h4 className="first:mt-0" style={{ color: '#FFFFFF', fontSize: '1.05em', fontWeight: 600, lineHeight: '1.4', marginTop: '1em', marginBottom: '0.25em' }} {...props} />
+  <h4 className="first:mt-0" style={{ color: 'var(--color-text-primary)', fontSize: '1.05em', fontWeight: 600, lineHeight: '1.4', marginTop: '1em', marginBottom: '0.25em' }} {...props} />
 );
 const chatCode = ({ node, className, children, ...props }) => {
   const isBlock = /language-/.test(className || '');
   if (!isBlock) {
     return (
       <code className="font-mono rounded px-1.5 py-0.5"
-        style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: '#abb2bf', fontSize: '0.85em' }}
+        style={{ backgroundColor: 'var(--color-bg-code)', color: 'var(--color-text-primary)', fontSize: '0.85em' }}
         {...props}>
         {children}
       </code>
@@ -152,19 +154,19 @@ const chatPre = ({ node, children, ...props }) => {
 const chatBlockquote = ({ node, ...props }) => (
   <blockquote
     className="border-l-4 pl-4 my-2 italic"
-    style={{ borderColor: '#6155F5', color: '#FFFFFF', opacity: 0.8 }}
+    style={{ borderColor: 'var(--color-accent-primary)', color: 'var(--color-text-primary)', opacity: 0.8 }}
     {...props}
   />
 );
 const chatA = ({ node, ...props }) => (
-  <a className="underline hover:opacity-80 transition-opacity" style={{ color: '#6155F5' }} target="_blank" rel="noopener noreferrer" {...props} />
+  <a className="underline hover:opacity-80 transition-opacity" style={{ color: 'var(--color-accent-primary)' }} target="_blank" rel="noopener noreferrer" {...props} />
 );
 const chatHr = ({ node, ...props }) => (
-  <hr className="my-4 border-0" style={{ borderTop: '1px solid rgba(255, 255, 255, 0.15)' }} {...props} />
+  <hr className="my-4 border-0" style={{ borderTop: '1px solid var(--color-border-muted)' }} {...props} />
 );
 const chatTable = ({ node, ...props }) => (
   <div className="pt-[8px] pb-[18px]">
-    <div className="overflow-x-auto inline-block border rounded-lg" style={{ borderColor: 'rgba(255, 255, 255, 0.1)', maxWidth: '100%' }}>
+    <div className="overflow-x-auto inline-block border rounded-lg" style={{ borderColor: 'var(--color-border-muted)', maxWidth: '100%' }}>
       <table className="m-0 table-auto border-collapse" {...props} />
     </div>
   </div>
@@ -176,10 +178,10 @@ const chatTh = ({ node, ...props }) => (
   <th
     className="text-left align-top first:border-s-0 last:border-e-0"
     style={{
-      backgroundColor: 'rgba(255, 255, 255, 0.05)',
-      borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-      borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
-      color: '#FFFFFF',
+      backgroundColor: 'var(--color-bg-input)',
+      borderBottom: '1px solid var(--color-border-muted)',
+      borderLeft: '1px solid var(--color-border-muted)',
+      color: 'var(--color-text-primary)',
       fontSize: '0.875rem',
       fontWeight: 600,
       padding: '7px 9px',
@@ -191,9 +193,10 @@ const chatTd = ({ node, ...props }) => (
   <td
     className="text-left first:border-s-0 last:border-e-0"
     style={{
-      borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-      borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
-      color: '#FFFFFF',
+      backgroundColor: 'var(--color-bg-tag)',
+      borderTop: '1px solid var(--color-border-muted)',
+      borderLeft: '1px solid var(--color-border-muted)',
+      color: 'var(--color-text-primary)',
       fontSize: '0.875rem',
       padding: '8px 14px',
     }}
@@ -203,26 +206,26 @@ const chatTd = ({ node, ...props }) => (
 
 // ===================== PANEL variant =====================
 const panelP = ({ node, ...props }) => (
-  <p className="my-1 whitespace-pre-wrap break-words" style={{ color: '#FFFFFF' }} {...props} />
+  <p className="my-1 whitespace-pre-wrap break-words" style={{ color: 'var(--color-text-primary)' }} {...props} />
 );
 const panelH1 = ({ node, ...props }) => (
-  <h1 className="first:mt-0" style={{ color: '#FFFFFF', fontSize: '1.5em', fontWeight: 700, lineHeight: '1.3', marginTop: '1.2em', marginBottom: '0.4em' }} {...props} />
+  <h1 className="first:mt-0" style={{ color: 'var(--color-text-primary)', fontSize: '1.5em', fontWeight: 700, lineHeight: '1.3', marginTop: '1.2em', marginBottom: '0.4em' }} {...props} />
 );
 const panelH2 = ({ node, ...props }) => (
-  <h2 className="first:mt-0" style={{ color: '#FFFFFF', fontSize: '1.25em', fontWeight: 700, lineHeight: '1.3', marginTop: '1.1em', marginBottom: '0.35em' }} {...props} />
+  <h2 className="first:mt-0" style={{ color: 'var(--color-text-primary)', fontSize: '1.25em', fontWeight: 700, lineHeight: '1.3', marginTop: '1.1em', marginBottom: '0.35em' }} {...props} />
 );
 const panelH3 = ({ node, ...props }) => (
-  <h3 className="first:mt-0" style={{ color: '#FFFFFF', fontSize: '1.1em', fontWeight: 600, lineHeight: '1.3', marginTop: '1em', marginBottom: '0.3em' }} {...props} />
+  <h3 className="first:mt-0" style={{ color: 'var(--color-text-primary)', fontSize: '1.1em', fontWeight: 600, lineHeight: '1.3', marginTop: '1em', marginBottom: '0.3em' }} {...props} />
 );
 const panelH4 = ({ node, ...props }) => (
-  <h4 className="first:mt-0" style={{ color: '#FFFFFF', fontSize: '1em', fontWeight: 600, lineHeight: '1.4', marginTop: '0.8em', marginBottom: '0.2em' }} {...props} />
+  <h4 className="first:mt-0" style={{ color: 'var(--color-text-primary)', fontSize: '1em', fontWeight: 600, lineHeight: '1.4', marginTop: '0.8em', marginBottom: '0.2em' }} {...props} />
 );
 const panelCode = ({ node, className, children, ...props }) => {
   const isBlock = /language-/.test(className || '');
   if (!isBlock) {
     return (
       <code className="font-mono rounded px-1.5 py-0.5"
-        style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: '#abb2bf', fontSize: 'inherit' }}
+        style={{ backgroundColor: 'var(--color-bg-code)', color: 'var(--color-text-primary)', fontSize: 'inherit' }}
         {...props}>
         {children}
       </code>
@@ -235,51 +238,51 @@ const panelPre = ({ node, children, ...props }) => {
   return <CodeBlock language={language} code={code} />;
 };
 const panelA = ({ node, ...props }) => (
-  <a className="underline" style={{ color: '#6155F5' }} target="_blank" rel="noopener noreferrer" {...props} />
+  <a className="underline" style={{ color: 'var(--color-accent-primary)' }} target="_blank" rel="noopener noreferrer" {...props} />
 );
 const panelBlockquote = ({ node, ...props }) => (
   <blockquote
     className="pl-3 my-2"
-    style={{ borderLeft: '3px solid rgba(97, 85, 245, 0.5)', color: 'rgba(255,255,255,0.8)' }}
+    style={{ borderLeft: '3px solid var(--color-accent-overlay)', color: 'var(--color-text-primary)' }}
     {...props}
   />
 );
 const panelHr = ({ node, ...props }) => (
-  <hr className="my-3 border-0" style={{ borderTop: '1px solid rgba(255, 255, 255, 0.1)' }} {...props} />
+  <hr className="my-3 border-0" style={{ borderTop: '1px solid var(--color-border-muted)' }} {...props} />
 );
 const panelTable = ({ node, ...props }) => (
-  <div className="my-2 overflow-x-auto rounded" style={{ border: '1px solid rgba(255,255,255,0.2)' }}>
+  <div className="my-2 overflow-x-auto rounded" style={{ border: '1px solid var(--color-border-muted)' }}>
     <table className="w-full border-collapse text-left" style={{ minWidth: '100%' }} {...props} />
   </div>
 );
-const panelThead = ({ node, ...props }) => <thead style={{ backgroundColor: 'rgba(0,0,0,0.25)' }} {...props} />;
-const panelTr = ({ node, ...props }) => <tr className="border-b border-white/10 last:border-b-0" {...props} />;
+const panelThead = ({ node, ...props }) => <thead style={{ backgroundColor: 'var(--color-bg-input)' }} {...props} />;
+const panelTr = ({ node, ...props }) => <tr className="last:border-b-0" style={{ borderBottom: '1px solid var(--color-border-muted)' }} {...props} />;
 const panelTh = ({ node, ...props }) => (
-  <th className="px-3 py-2 whitespace-nowrap" style={{ color: '#FFFFFF', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.2)' }} {...props} />
+  <th className="px-3 py-2 whitespace-nowrap" style={{ color: 'var(--color-text-primary)', fontWeight: 600, borderBottom: '1px solid var(--color-border-muted)' }} {...props} />
 );
 const panelTd = ({ node, ...props }) => (
-  <td className="px-3 py-2 break-words align-top" style={{ color: '#FFFFFF' }} {...props} />
+  <td className="px-3 py-2 break-words align-top" style={{ color: 'var(--color-text-primary)' }} {...props} />
 );
 
 // ===================== COMPACT variant =====================
 const compactP = ({ node, ...props }) => (
-  <p className="my-[1px] py-[3px] whitespace-pre-wrap break-words first:mt-0 last:mb-0" style={{ color: '#FFFFFF' }} {...props} />
+  <p className="my-[1px] py-[3px] whitespace-pre-wrap break-words first:mt-0 last:mb-0" style={{ color: 'var(--color-text-primary)' }} {...props} />
 );
 const compactH1 = ({ node, ...props }) => (
-  <h1 className="first:mt-0" style={{ color: '#FFFFFF', fontSize: '1.25em', fontWeight: 700, lineHeight: '1.3', marginTop: '0.8em', marginBottom: '0.2em' }} {...props} />
+  <h1 className="first:mt-0" style={{ color: 'var(--color-text-primary)', fontSize: '1.25em', fontWeight: 700, lineHeight: '1.3', marginTop: '0.8em', marginBottom: '0.2em' }} {...props} />
 );
 const compactH2 = ({ node, ...props }) => (
-  <h2 className="first:mt-0" style={{ color: '#FFFFFF', fontSize: '1.15em', fontWeight: 700, lineHeight: '1.3', marginTop: '0.7em', marginBottom: '0.15em' }} {...props} />
+  <h2 className="first:mt-0" style={{ color: 'var(--color-text-primary)', fontSize: '1.15em', fontWeight: 700, lineHeight: '1.3', marginTop: '0.7em', marginBottom: '0.15em' }} {...props} />
 );
 const compactH3 = ({ node, ...props }) => (
-  <h3 className="first:mt-0" style={{ color: '#FFFFFF', fontSize: '1.05em', fontWeight: 600, lineHeight: '1.3', marginTop: '0.6em', marginBottom: '0.1em' }} {...props} />
+  <h3 className="first:mt-0" style={{ color: 'var(--color-text-primary)', fontSize: '1.05em', fontWeight: 600, lineHeight: '1.3', marginTop: '0.6em', marginBottom: '0.1em' }} {...props} />
 );
 const compactCode = ({ node, className, children, ...props }) => {
   const isBlock = /language-/.test(className || '');
   if (!isBlock) {
     return (
       <code className="font-mono rounded px-1.5 py-0.5"
-        style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: '#abb2bf', fontSize: 'inherit' }}
+        style={{ backgroundColor: 'var(--color-bg-code)', color: 'var(--color-text-primary)', fontSize: 'inherit' }}
         {...props}>
         {children}
       </code>
@@ -312,17 +315,17 @@ const PANEL_COMPONENTS = {
 
 // Compact table components — reuse panel styles for consistency
 const compactTable = ({ node, ...props }) => (
-  <div className="my-1 overflow-x-auto rounded" style={{ border: '1px solid rgba(255,255,255,0.15)' }}>
+  <div className="my-1 overflow-x-auto rounded" style={{ border: '1px solid var(--color-border-muted)' }}>
     <table className="w-full border-collapse text-left" style={{ minWidth: '100%', fontSize: '0.85em' }} {...props} />
   </div>
 );
-const compactThead = ({ node, ...props }) => <thead style={{ backgroundColor: 'rgba(0,0,0,0.25)' }} {...props} />;
-const compactTr = ({ node, ...props }) => <tr className="border-b border-white/10 last:border-b-0" {...props} />;
+const compactThead = ({ node, ...props }) => <thead style={{ backgroundColor: 'var(--color-bg-input)' }} {...props} />;
+const compactTr = ({ node, ...props }) => <tr className="last:border-b-0" style={{ borderBottom: '1px solid var(--color-border-muted)' }} {...props} />;
 const compactTh = ({ node, ...props }) => (
-  <th className="px-2 py-1.5 whitespace-nowrap" style={{ color: '#FFFFFF', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.15)' }} {...props} />
+  <th className="px-2 py-1.5 whitespace-nowrap" style={{ color: 'var(--color-text-primary)', fontWeight: 600, borderBottom: '1px solid var(--color-border-muted)' }} {...props} />
 );
 const compactTd = ({ node, ...props }) => (
-  <td className="px-2 py-1.5 break-words align-top" style={{ color: '#FFFFFF' }} {...props} />
+  <td className="px-2 py-1.5 break-words align-top" style={{ color: 'var(--color-text-primary)' }} {...props} />
 );
 
 const COMPACT_COMPONENTS = {
@@ -336,17 +339,17 @@ const COMPACT_COMPONENTS = {
 const VARIANTS = {
   chat: {
     className: 'leading-[1.5] break-words max-w-none overflow-hidden',
-    style: { color: '#FFFFFF' },
+    style: { color: 'var(--color-text-primary)' },
     components: CHAT_COMPONENTS,
   },
   panel: {
     className: '',
-    style: { color: '#FFFFFF', opacity: 0.9 },
+    style: { color: 'var(--color-text-primary)', opacity: 0.9 },
     components: PANEL_COMPONENTS,
   },
   compact: {
     className: '',
-    style: { color: '#FFFFFF', opacity: 0.9 },
+    style: { color: 'var(--color-text-primary)', opacity: 0.9 },
     components: COMPACT_COMPONENTS,
   },
 };

@@ -1,6 +1,7 @@
 import { Search, HelpCircle, User, Mail } from 'lucide-react';
 import UserConfigPanel from './UserConfigPanel';
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getCurrentUser, searchStocks } from '../utils/api';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -9,6 +10,7 @@ import './DashboardHeader.css';
 const DashboardHeader = ({ title = 'LangAlpha', onStockSearch, onModifyPreferences, onStartOnboarding }) => {
   const navigate = useNavigate();
   const { isLoggedIn } = useAuth();
+  const { t } = useTranslation();
   const [isUserPanelOpen, setIsUserPanelOpen] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [showHelpPopover, setShowHelpPopover] = useState(false);
@@ -131,7 +133,7 @@ const DashboardHeader = ({ title = 'LangAlpha', onStockSearch, onModifyPreferenc
 
   return (
     <>
-      <div className="flex items-center justify-between px-5 py-1.5" style={{ backgroundColor: 'var(--color-bg-elevated)', borderBottom: '1px solid var(--color-border-muted)' }}>
+      <div className="flex items-center justify-between px-5 py-1.5" style={{ backgroundColor: 'var(--color-bg-card-gradient, var(--color-bg-elevated))', borderBottom: '1px solid var(--color-bg-card-border, var(--color-border-muted))', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}>
         <h1 className="dashboard-title-font text-base font-medium" style={{ color: 'var(--color-text-primary)', letterSpacing: '0.15px' }}>{title}</h1>
         <div className="flex items-center gap-4 flex-1 max-w-md mx-8">
           <div className="dashboard-search-wrapper" ref={dropdownRef}>
@@ -139,14 +141,14 @@ const DashboardHeader = ({ title = 'LangAlpha', onStockSearch, onModifyPreferenc
               onSubmit={handleSubmit} 
               className="dashboard-search-form flex items-center gap-2 h-11 px-3 rounded-xl border transition-colors"
               style={{
-                backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                borderColor: 'rgba(255, 255, 255, 0.1)',
+                backgroundColor: 'var(--color-bg-input)',
+                borderColor: 'var(--color-border-muted)',
               }}
             >
               <Search className="dashboard-search-icon" style={{ color: 'var(--color-icon-muted)' }} />
               <input
                 type="text"
-                placeholder="Search by symbol or company name..."
+                placeholder={t('dashboard.searchPlaceholder')}
                 value={searchValue}
                 onChange={(e) => setSearchValue(e.target.value)}
                 onFocus={() => searchValue.trim() && setShowDropdown(true)}
@@ -163,11 +165,11 @@ const DashboardHeader = ({ title = 'LangAlpha', onStockSearch, onModifyPreferenc
               <div className="dashboard-search-dropdown">
                 {searchLoading ? (
                   <div className="dashboard-search-dropdown-item dashboard-search-dropdown-loading">
-                    Searching...
+                    {t('dashboard.searching')}
                   </div>
                 ) : searchResults.length === 0 ? (
                   <div className="dashboard-search-dropdown-item dashboard-search-dropdown-empty">
-                    No results found
+                    {t('dashboard.noResults')}
                   </div>
                 ) : (
                   searchResults.slice(0, 12).map((stock, index) => (
@@ -207,7 +209,7 @@ const DashboardHeader = ({ title = 'LangAlpha', onStockSearch, onModifyPreferenc
                   className="text-sm font-medium mb-3"
                   style={{ color: 'var(--color-text-primary)' }}
                 >
-                  If you have any questions or suggestions, please contact us through the following methods
+                  {t('dashboard.contactMessage')}
                 </p>
                 <div
                   className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors hover:opacity-80 mb-2"

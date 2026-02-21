@@ -130,7 +130,7 @@ function AddPortfolioHoldingDialog({
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose?.()}>
-      <DialogContent className="sm:max-w-md text-white border" style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}>
+      <DialogContent className="sm:max-w-md border" style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}>
         {page === 1 ? (
           <>
             <DialogHeader>
@@ -145,8 +145,8 @@ function AddPortfolioHoldingDialog({
                   placeholder="Search by symbol or company name..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 text-white placeholder:text-gray-500 border"
-                  style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)' }}
+                  className="pl-10 border"
+                  style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
                   autoFocus
                 />
               </div>
@@ -170,7 +170,7 @@ function AddPortfolioHoldingDialog({
                         key={`${stock.symbol}-${index}`}
                         type="button"
                         onClick={() => handleStockSelect(stock)}
-                        className="w-full text-left px-3 py-2 rounded hover:bg-white/10 transition-colors"
+                        className="w-full text-left px-3 py-2 rounded hover:bg-foreground/10 transition-colors"
                         style={{ color: 'var(--color-text-primary)' }}
                       >
                         <div className="text-sm font-medium">{stock.name}</div>
@@ -188,7 +188,7 @@ function AddPortfolioHoldingDialog({
                 <button
                   type="button"
                   onClick={handleBack}
-                  className="p-1 rounded hover:bg-white/10"
+                  className="p-1 rounded hover:bg-foreground/10"
                   style={{ color: 'var(--color-text-primary)' }}
                   aria-label="Back"
                 >
@@ -226,7 +226,7 @@ function AddPortfolioHoldingDialog({
                 {/* Quantity Input */}
                 <div>
                   <label className="block text-xs mb-1" style={{ color: 'var(--color-text-secondary)' }}>
-                    Quantity <span className="text-red-400">*</span>
+                    Quantity <span style={{ color: 'var(--color-loss)' }}>*</span>
                   </label>
                   <Input
                     type="number"
@@ -235,15 +235,15 @@ function AddPortfolioHoldingDialog({
                     placeholder="e.g. 10.5"
                     value={quantity}
                     onChange={(e) => setQuantity(e.target.value)}
-                    className="text-white placeholder:text-gray-500 border"
-                    style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)' }}
+                    className="border"
+                    style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
                   />
                 </div>
 
                 {/* Average Cost Input */}
                 <div>
                   <label className="block text-xs mb-1" style={{ color: 'var(--color-text-secondary)' }}>
-                    Average Cost Per Share <span className="text-red-400">*</span>
+                    Average Cost Per Share <span style={{ color: 'var(--color-loss)' }}>*</span>
                   </label>
                   <Input
                     type="number"
@@ -252,8 +252,8 @@ function AddPortfolioHoldingDialog({
                     placeholder="e.g. 175.50"
                     value={averageCost}
                     onChange={(e) => setAverageCost(e.target.value)}
-                    className="text-white placeholder:text-gray-500 border"
-                    style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)' }}
+                    className="border"
+                    style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
                   />
                 </div>
 
@@ -266,8 +266,8 @@ function AddPortfolioHoldingDialog({
                     placeholder="e.g. Robinhood"
                     value={accountName}
                     onChange={(e) => setAccountName(e.target.value)}
-                    className="text-white placeholder:text-gray-500 border"
-                    style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)' }}
+                    className="border"
+                    style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
                   />
                 </div>
 
@@ -280,8 +280,8 @@ function AddPortfolioHoldingDialog({
                     placeholder="Optional"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    className="text-white placeholder:text-gray-500 border"
-                    style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)' }}
+                    className="border"
+                    style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
                   />
                 </div>
 

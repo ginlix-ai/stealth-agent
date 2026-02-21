@@ -8,9 +8,9 @@ const RADIUS = (SIZE - STROKE_WIDTH) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 function getColor(pct) {
-  if (pct > 0.85) return '#ef4444';
-  if (pct > 0.60) return '#eab308';
-  return '#22c55e';
+  if (pct > 0.85) return 'var(--color-loss)';
+  if (pct > 0.60) return 'var(--color-warning)';
+  return 'var(--color-success)';
 }
 
 function fmt(n) {
@@ -33,7 +33,7 @@ export function TokenUsageRing({ tokenUsage }) {
       <div>Total input&ensp;<span style={{ opacity: 0.7 }}>{fmt(totalInput)}</span></div>
       <div>Total output&ensp;<span style={{ opacity: 0.7 }}>{fmt(totalOutput)}</span></div>
       <div>Last output&ensp;<span style={{ opacity: 0.7 }}>{fmt(lastOutput)}</span></div>
-      <div style={{ borderTop: '1px solid rgba(255,255,255,0.15)', marginTop: 4, paddingTop: 4 }}>
+      <div style={{ borderTop: '1px solid var(--color-border-muted)', marginTop: 4, paddingTop: 4 }}>
         Effective window&ensp;<span style={{ opacity: 0.7 }}>{fmt(total)} / {fmt(threshold)}</span>
         <span style={{ marginLeft: 6, color }}>{Math.round(pct * 100)}%</span>
       </div>
@@ -52,7 +52,7 @@ export function TokenUsageRing({ tokenUsage }) {
             cy={SIZE / 2}
             r={RADIUS}
             fill="none"
-            stroke="rgba(255,255,255,0.08)"
+            stroke="var(--color-border-muted)"
             strokeWidth={STROKE_WIDTH}
           />
           <motion.circle

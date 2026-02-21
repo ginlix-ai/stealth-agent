@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Dialog,
   DialogContent,
@@ -10,33 +11,33 @@ import {
 import { Button } from '@/components/ui/button';
 
 export default function ConfirmDeleteDialog({ open, onOpenChange, onConfirm, automationName, loading }) {
+  const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-md text-white border"
+        className="sm:max-w-md border"
         style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}
       >
         <DialogHeader>
-          <DialogTitle className="text-white">Delete Automation</DialogTitle>
+          <DialogTitle style={{ color: 'var(--color-text-primary)' }}>{t('automation.deleteAutomation')}</DialogTitle>
           <DialogDescription style={{ color: 'var(--color-text-secondary)' }}>
-            Are you sure you want to delete <strong className="text-white">{automationName}</strong>?
-            This action cannot be undone.
+            {t('automation.deleteConfirmMsg', { name: automationName })}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2 sm:gap-0">
           <Button
             variant="ghost"
             onClick={() => onOpenChange(false)}
-            className="text-white"
+            style={{ color: 'var(--color-text-primary)' }}
           >
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             variant="destructive"
             onClick={onConfirm}
             disabled={loading}
           >
-            {loading ? 'Deleting...' : 'Delete'}
+            {loading ? t('automation.deleting') : t('common.delete')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo, Suspense } fr
 import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download, Upload, Folder, ChevronRight, ChevronDown, ArrowUpDown, AlertTriangle, Trash2, CheckSquare, Square, HardDrive, Printer, Minus, Plus } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { readWorkspaceFile, downloadWorkspaceFile, downloadWorkspaceFileAsArrayBuffer, triggerFileDownload, uploadWorkspaceFile, deleteWorkspaceFiles, backupWorkspaceFiles, getBackupStatus } from '../utils/api';
 import { stripLineNumbers } from './toolDisplayConfig';
 import Markdown from './Markdown';
@@ -152,7 +152,7 @@ function groupFilesByDirectory(filePaths) {
 function DocumentLoadingFallback() {
   return (
     <div className="flex items-center justify-center py-12">
-      <RefreshCw className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} />
+      <RefreshCw className="h-5 w-5 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />
     </div>
   );
 }
@@ -160,11 +160,11 @@ function DocumentLoadingFallback() {
 function DocumentErrorFallback({ workspaceId, filePath }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-12">
-      <AlertTriangle className="h-6 w-6" style={{ color: 'rgba(255,255,255,0.4)' }} />
-      <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>Unable to preview this file</p>
+      <AlertTriangle className="h-6 w-6" style={{ color: 'var(--color-text-tertiary)' }} />
+      <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>Unable to preview this file</p>
       <button
         className="text-xs px-3 py-1.5 rounded"
-        style={{ background: 'rgba(97, 85, 245, 0.2)', color: '#a39bff', border: '1px solid rgba(97, 85, 245, 0.3)' }}
+        style={{ background: 'var(--color-accent-soft)', color: 'var(--color-accent-primary)', border: '1px solid var(--color-accent-overlay)' }}
         onClick={async () => {
           try {
             await triggerFileDownload(workspaceId, filePath);
@@ -588,7 +588,7 @@ function FilePanel({
               <ArrowLeft className="h-4 w-4" />
             </button>
           ) : null}
-          <span className="text-sm font-semibold truncate" style={{ color: '#FFFFFF' }}>
+          <span className="text-sm font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
             {selectedFile ? fileName : targetDirectory ? `${targetDirectory}/` : 'Workspace Files'}
           </span>
         </div>
@@ -637,7 +637,7 @@ function FilePanel({
           )}
           {!selectedFile && selectMode && (
             <>
-              <span className="text-xs" style={{ color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap' }}>
+              <span className="text-xs" style={{ color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>
                 {selectedPaths.size} selected
               </span>
               <button
@@ -661,7 +661,7 @@ function FilePanel({
                   className="file-panel-icon-btn"
                   title="Delete selected"
                   disabled={selectedPaths.size === 0 || deleteLoading}
-                  style={selectedPaths.size > 0 ? { color: '#f87171' } : undefined}
+                  style={selectedPaths.size > 0 ? { color: 'var(--color-icon-danger)' } : undefined}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -905,7 +905,7 @@ function FilePanel({
         {/* Drag overlay */}
         {isDragOver && !selectedFile && (
           <div className="file-panel-drag-overlay">
-            <Upload className="h-8 w-8" style={{ color: 'rgba(97, 85, 245, 0.9)' }} />
+            <Upload className="h-8 w-8" style={{ color: 'var(--color-accent-primary)' }} />
             <span>Drop file to upload</span>
           </div>
         )}
@@ -916,7 +916,7 @@ function FilePanel({
             fileLoading ? (
               <div className="p-4">
                 <div className="flex items-center justify-center py-12">
-                  <RefreshCw className="h-5 w-5 animate-spin" style={{ color: 'rgba(255,255,255,0.5)' }} />
+                  <RefreshCw className="h-5 w-5 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />
                 </div>
               </div>
             ) : fileMime === 'pdf' ? (
@@ -968,7 +968,7 @@ function FilePanel({
                 ) : (
                   <SyntaxHighlighter
                     language={EXT_TO_LANG[getFileExtension(selectedFile)] || 'text'}
-                    style={oneDark}
+                    style={typeof window !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light' ? oneLight : oneDark}
                     customStyle={{ margin: 0, padding: 0, backgroundColor: 'transparent', fontSize: '12px', lineHeight: '1.6' }}
                     codeTagProps={{ style: { backgroundColor: 'transparent' } }}
                     wrapLongLines
@@ -984,21 +984,21 @@ function FilePanel({
               {filesLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <div key={i} className="file-panel-item animate-pulse">
-                    <div className="h-4 w-4 rounded" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }} />
-                    <div className="h-4 flex-1 rounded" style={{ backgroundColor: 'rgba(255,255,255,0.1)', width: `${50 + i * 10}%` }} />
+                    <div className="h-4 w-4 rounded" style={{ backgroundColor: 'var(--color-border-muted)' }} />
+                    <div className="h-4 flex-1 rounded" style={{ backgroundColor: 'var(--color-border-muted)', width: `${50 + i * 10}%` }} />
                   </div>
                 ))
               ) : filesError ? (
                 <div className="px-4 py-8 text-center">
-                  <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>{filesError}</p>
+                  <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>{filesError}</p>
                 </div>
               ) : files.length === 0 ? (
                 <div className="px-4 py-8 text-center">
-                  <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>No files yet</p>
+                  <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>No files yet</p>
                 </div>
               ) : filteredSortedFiles.length === 0 ? (
                 <div className="px-4 py-8 text-center">
-                  <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>No {filterType.toLowerCase()} files</p>
+                  <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>No {filterType.toLowerCase()} files</p>
                 </div>
               ) : (
                 groupedFiles.map(({ dir, files: groupFiles }) => {
@@ -1014,17 +1014,17 @@ function FilePanel({
                         >
                           {selectMode ? (
                             groupFiles.every((f) => selectedPaths.has(f))
-                              ? <CheckSquare className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#6155F5' }} />
-                              : <Square className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                              ? <CheckSquare className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
+                              : <Square className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
                           ) : isCollapsed
-                            ? <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
-                            : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                            ? <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
+                            : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
                           }
-                          <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.45)' }} />
-                          <span className="text-xs font-medium truncate" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                          <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
+                          <span className="text-xs font-medium truncate" style={{ color: 'var(--color-text-tertiary)' }}>
                             {dir}/
                           </span>
-                          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                          <span className="text-xs" style={{ color: 'var(--color-icon-muted)' }}>
                             {groupFiles.length}
                           </span>
                         </div>
@@ -1036,17 +1036,17 @@ function FilePanel({
                         >
                           {selectMode ? (
                             groupFiles.every((f) => selectedPaths.has(f))
-                              ? <CheckSquare className="h-3.5 w-3.5 flex-shrink-0" style={{ color: '#6155F5' }} />
-                              : <Square className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                              ? <CheckSquare className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
+                              : <Square className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
                           ) : isCollapsed
-                            ? <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
-                            : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                            ? <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
+                            : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
                           }
-                          <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.45)' }} />
-                          <span className="text-xs font-medium truncate" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                          <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
+                          <span className="text-xs font-medium truncate" style={{ color: 'var(--color-text-tertiary)' }}>
                             /
                           </span>
-                          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                          <span className="text-xs" style={{ color: 'var(--color-icon-muted)' }}>
                             {groupFiles.length}
                           </span>
                         </div>
@@ -1064,12 +1064,12 @@ function FilePanel({
                           >
                             {selectMode ? (
                               isSelected
-                                ? <CheckSquare className="h-4 w-4 flex-shrink-0" style={{ color: '#6155F5' }} />
-                                : <Square className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }} />
+                                ? <CheckSquare className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
+                                : <Square className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
                             ) : (
-                              <Icon className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.5)' }} />
+                              <Icon className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
                             )}
-                            <span className="text-sm truncate" style={{ color: '#FFFFFF' }}>{name}</span>
+                            <span className="text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>{name}</span>
                             {!selectMode && (backedUpSet.has(filePath) || modifiedSet.has(filePath)) && (
                               <span
                                 className={`file-panel-backup-dot ${backedUpSet.has(filePath) ? 'backed-up' : 'modified'}`}

@@ -45,13 +45,13 @@ function PortfolioCard({
         </CardHeader>
 
       <Dialog open={!!editRow} onOpenChange={(open) => !open && onEditClose?.()}>
-        <DialogContent className="sm:max-w-sm text-white border" style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}>
+        <DialogContent className="sm:max-w-sm border" style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}>
           <DialogHeader>
             <DialogTitle className="dashboard-title-font" style={{ color: 'var(--color-text-primary)' }}>Edit holding — {editRow?.symbol}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3 py-2" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onEditSubmit?.(); } }}>
             <div>
-              <label className="text-xs text-gray-400 block mb-1">Quantity *</label>
+              <label className="text-xs block mb-1" style={{ color: 'var(--color-text-secondary)' }}>Quantity *</label>
               <Input
                 type="number"
                 min="0"
@@ -59,12 +59,12 @@ function PortfolioCard({
                 placeholder="e.g. 10.5"
                 value={editForm.quantity ?? ''}
                 onChange={(e) => onEditFormChange?.({ ...editForm, quantity: e.target.value })}
-                className="text-white placeholder:text-gray-500 border"
-                style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)' }}
+                className="border"
+                style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
               />
             </div>
             <div>
-              <label className="text-xs text-gray-400 block mb-1">Average Cost Per Share *</label>
+              <label className="text-xs block mb-1" style={{ color: 'var(--color-text-secondary)' }}>Average Cost Per Share *</label>
               <Input
                 type="number"
                 min="0"
@@ -72,23 +72,23 @@ function PortfolioCard({
                 placeholder="e.g. 175.50"
                 value={editForm.averageCost ?? ''}
                 onChange={(e) => onEditFormChange?.({ ...editForm, averageCost: e.target.value })}
-                className="text-white placeholder:text-gray-500 border"
-                style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)' }}
+                className="border"
+                style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
               />
             </div>
             <div>
-              <label className="text-xs text-gray-400 block mb-1">Notes</label>
+              <label className="text-xs block mb-1" style={{ color: 'var(--color-text-secondary)' }}>Notes</label>
               <Input
                 placeholder="Optional"
                 value={editForm.notes ?? ''}
                 onChange={(e) => onEditFormChange?.({ ...editForm, notes: e.target.value })}
-                className="text-white placeholder:text-gray-500 border"
-                style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)' }}
+                className="border"
+                style={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}
               />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onEditClose} className="px-3 py-1.5 rounded text-sm border hover:bg-white/10" style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-default)' }}>
+            <button type="button" onClick={onEditClose} className="px-3 py-1.5 rounded text-sm border hover:bg-foreground/10" style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border-default)' }}>
               Cancel
             </button>
             <button type="button" onClick={onEditSubmit} className="px-3 py-1.5 rounded text-sm font-medium hover:opacity-90" style={{ backgroundColor: 'var(--color-accent-primary)', color: 'var(--color-text-on-accent)' }}>
@@ -115,7 +115,7 @@ function PortfolioCard({
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
                       <td colSpan={hasRealHoldings ? 5 : 4} className="py-2.5 px-2">
-                        <div className="h-4 w-3/4 rounded bg-white/10 animate-pulse" />
+                        <div className="h-4 w-3/4 rounded bg-foreground/10 animate-pulse" />
                       </td>
                     </tr>
                   ))
@@ -147,10 +147,10 @@ function PortfolioCard({
                               <>
                                 <div className="fixed inset-0 z-40" aria-hidden onClick={() => setMenuOpenId(null)} />
                                 <div className="absolute right-0 top-full z-50 mt-0.5 min-w-[120px] rounded border py-1 shadow-lg" style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}>
-                                  <button type="button" onClick={(e) => { e.stopPropagation(); handleEdit(row); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-white/10" style={{ color: 'var(--color-text-primary)' }}>
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); handleEdit(row); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-foreground/10" style={{ color: 'var(--color-text-primary)' }}>
                                     <Pencil className="h-3.5 w-3.5" style={{ color: 'var(--color-text-secondary)' }} /> Edit
                                   </button>
-                                  <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(String(row.user_portfolio_id)); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-white/10" style={{ color: 'var(--color-text-primary)' }}>
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(String(row.user_portfolio_id)); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-foreground/10" style={{ color: 'var(--color-text-primary)' }}>
                                     <Trash2 className="h-3.5 w-3.5" style={{ color: 'var(--color-text-secondary)' }} /> Delete
                                   </button>
                                 </div>

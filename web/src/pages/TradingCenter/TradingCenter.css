@@ -20,7 +20,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background-color: #0f1422;
+  background-color: var(--color-bg-card);
   min-width: 0;
   overflow: hidden;
 }
@@ -37,7 +37,7 @@
   display: flex;
   flex-direction: column;
   background-color: var(--color-bg-page);
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 1px solid var(--color-border-muted);
   padding: 12px;
   box-sizing: border-box;
   overflow: hidden;
@@ -89,11 +89,11 @@ body.col-resizing * {
   flex: 1;
   min-height: 0;
   border-radius: 8px;
-  background: 
-    radial-gradient(ellipse 80% 50% at 50% 20%, rgba(102, 126, 234, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%),
-    linear-gradient(180deg, rgba(26, 31, 53, 0.4) 0%, rgba(15, 20, 34, 0.2) 100%);
-  border: 1px solid rgba(42, 47, 69, 0.6);
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 20%, var(--color-accent-soft) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 80% 80%, var(--color-accent-soft) 0%, transparent 50%),
+    var(--color-bg-card);
+  border: 1px solid var(--color-border-muted);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -105,13 +105,13 @@ body.col-resizing * {
 .trading-chat-empty-title {
   font-size: 15px;
   font-weight: 600;
-  color: rgba(226, 232, 240, 0.9);
+  color: var(--color-text-primary);
   margin: 0 0 8px 0;
 }
 
 .trading-chat-empty-hint {
   font-size: 13px;
-  color: rgba(139, 143, 163, 0.9);
+  color: var(--color-text-secondary);
   line-height: 1.5;
   margin: 0;
   max-width: 280px;
@@ -126,11 +126,11 @@ body.col-resizing * {
 }
 
 .trading-quick-query-card {
-  background: rgba(97, 85, 245, 0.08);
+  background: var(--color-accent-soft);
   border: 1px solid rgba(97, 85, 245, 0.25);
   border-radius: 10px;
   padding: 10px 14px;
-  color: rgba(200, 196, 255, 0.9);
+  color: var(--color-text-primary);
   font-size: 13px;
   line-height: 1.4;
   text-align: left;
@@ -154,7 +154,7 @@ body.col-resizing * {
   border-radius: 50%;
   border: 1px solid rgba(97, 85, 245, 0.2);
   background: rgba(97, 85, 245, 0.06);
-  color: rgba(200, 196, 255, 0.6);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
@@ -162,7 +162,7 @@ body.col-resizing * {
 .trading-quick-query-shuffle:hover {
   background: rgba(97, 85, 245, 0.18);
   border-color: rgba(97, 85, 245, 0.4);
-  color: rgba(200, 196, 255, 0.95);
+  color: var(--color-text-primary);
 }
 
 /* Scrollbar styling consistent with Dashboard */
@@ -176,10 +176,10 @@ body.col-resizing * {
 }
 
 .trading-center-container::-webkit-scrollbar-thumb {
-  background: #2a2f45;
+  background: var(--color-border-muted);
   border-radius: 4px;
 }
 
 .trading-center-container::-webkit-scrollbar-thumb:hover {
-  background: #3a3f55;
+  background: var(--color-border-default);
 }

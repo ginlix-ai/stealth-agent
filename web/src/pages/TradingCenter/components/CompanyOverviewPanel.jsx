@@ -11,9 +11,9 @@ import {
 } from '../../ChatAgent/components/charts/MarketDataCharts';
 import './CompanyOverviewPanel.css';
 
-const GREEN = '#10b981';
-const RED = '#ef4444';
-const TEXT_COLOR = '#8b8fa3';
+const GREEN = 'var(--color-profit)';
+const RED = 'var(--color-loss)';
+const TEXT_COLOR = 'var(--color-text-secondary)';
 
 const formatNumber = (num) => {
   if (num == null) return 'N/A';
@@ -28,7 +28,7 @@ function QuoteStat({ label, value }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
       <span style={{ fontSize: 12, color: TEXT_COLOR, opacity: 0.7 }}>{label}</span>
-      <span style={{ fontSize: 12, color: '#fff' }}>{value}</span>
+      <span style={{ fontSize: 12, color: 'var(--color-text-primary)' }}>{value}</span>
     </div>
   );
 }
@@ -40,13 +40,13 @@ function QuoteSummary({ data }) {
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
-        <span style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>
+        <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-text-primary)' }}>
           {name || symbol}
         </span>
         <span style={{ fontSize: 13, color: TEXT_COLOR }}>{symbol}</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
-        <span style={{ fontSize: 22, fontWeight: 700, color: '#fff' }}>
+        <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text-primary)' }}>
           ${quote.price?.toFixed(2) || 'N/A'}
         </span>
         {quote.change != null && (

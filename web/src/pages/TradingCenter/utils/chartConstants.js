@@ -1,7 +1,56 @@
 // --- Chart theme constants ---
+/** @deprecated Use getChartTheme(theme).bg instead */
 export const CHART_BG = '#0f1422';
+/** @deprecated Use getChartTheme(theme).text instead */
 export const CHART_TEXT = '#8b8fa3';
+/** @deprecated Use getChartTheme(theme).grid instead */
 export const CHART_GRID = '#1a1f35';
+
+// Light theme overrides
+export const CHART_THEME = {
+  dark: {
+    bg: '#0f1422',
+    text: '#8b8fa3',
+    grid: '#1a1f35',
+    upColor: '#10b981',
+    downColor: '#ef4444',
+    volumeUp: 'rgba(16,185,129,0.3)',
+    volumeDown: 'rgba(239,68,68,0.3)',
+    watermark: 'rgba(139,143,163,0.08)',
+    rsiLine: '#667eea',
+    rsiTop: 'rgba(102,126,234,0.3)',
+    rsiBottom: 'rgba(102,126,234,0.02)',
+    baselineUp: '#10b981',
+    baselineUpFill1: 'rgba(16,185,129,0.2)',
+    baselineUpFill2: 'rgba(16,185,129,0.02)',
+    baselineDown: '#ef4444',
+    baselineDownFill1: 'rgba(239,68,68,0.02)',
+    baselineDownFill2: 'rgba(239,68,68,0.2)',
+  },
+  light: {
+    bg: '#FFFCF9',
+    text: '#7A756F',
+    grid: '#E8E2DB',
+    upColor: '#16A34A',
+    downColor: '#DC2626',
+    volumeUp: 'rgba(22,163,74,0.25)',
+    volumeDown: 'rgba(220,38,38,0.25)',
+    watermark: 'rgba(45,43,40,0.04)',
+    rsiLine: '#5548D9',
+    rsiTop: 'rgba(85,72,217,0.2)',
+    rsiBottom: 'rgba(85,72,217,0.02)',
+    baselineUp: '#16A34A',
+    baselineUpFill1: 'rgba(22,163,74,0.15)',
+    baselineUpFill2: 'rgba(22,163,74,0.02)',
+    baselineDown: '#DC2626',
+    baselineDownFill1: 'rgba(220,38,38,0.02)',
+    baselineDownFill2: 'rgba(220,38,38,0.15)',
+  },
+};
+
+export function getChartTheme(theme) {
+  return CHART_THEME[theme] || CHART_THEME.dark;
+}
 
 export const INTERVALS = [
   { key: '1min',  label: '1m'  },

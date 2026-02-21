@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Input } from '../../components/ui/input';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
 import WavesBackground from './WavesBackground';
 import './LoginPage.css';
@@ -46,6 +47,7 @@ function LoginPage() {
   const [signupName, setSignupName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const { t } = useTranslation();
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -93,7 +95,7 @@ function LoginPage() {
           <LogoIcon className="login-page__logo-icon" />
           <div>
             <h1 className="login-page__title">LangAlpha</h1>
-            <p className="login-page__subtitle">Welcome</p>
+            <p className="login-page__subtitle">{t('auth.welcome')}</p>
           </div>
         </div>
 
@@ -104,7 +106,7 @@ function LoginPage() {
             className="login-page__tab"
             data-active={mode === 'login'}
           >
-            Login
+            {t('auth.login')}
           </button>
           <button
             type="button"
@@ -112,31 +114,31 @@ function LoginPage() {
             className="login-page__tab"
             data-active={mode === 'signup'}
           >
-            Sign up
+            {t('auth.signup')}
           </button>
         </div>
 
         {mode === 'login' && (
           <form onSubmit={handleLogin} className="login-page__form">
             <div className="login-page__field">
-              <label className="login-page__label">Email</label>
+              <label className="login-page__label">{t('common.email')}</label>
               <Input
                 type="email"
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="Enter your email"
+                placeholder={t('auth.enterEmail')}
                 className="login-page__input"
                 disabled={isSubmitting}
                 required
               />
             </div>
             <div className="login-page__field">
-              <label className="login-page__label">Password</label>
+              <label className="login-page__label">{t('common.password')}</label>
               <Input
                 type="password"
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
-                placeholder="Enter your password"
+                placeholder={t('auth.enterPassword')}
                 className="login-page__input"
                 disabled={isSubmitting}
                 required
@@ -148,7 +150,7 @@ function LoginPage() {
               disabled={isSubmitting}
               className="login-page__submit"
             >
-              {isSubmitting ? 'Logging in...' : 'Login'}
+              {isSubmitting ? t('auth.loggingIn') : t('auth.login')}
             </button>
           </form>
         )}
@@ -156,36 +158,36 @@ function LoginPage() {
         {mode === 'signup' && (
           <form onSubmit={handleSignup} className="login-page__form">
             <div className="login-page__field">
-              <label className="login-page__label">Name</label>
+              <label className="login-page__label">{t('common.name')}</label>
               <Input
                 type="text"
                 value={signupName}
                 onChange={(e) => setSignupName(e.target.value)}
-                placeholder="Enter your name"
+                placeholder={t('auth.enterName')}
                 className="login-page__input"
                 disabled={isSubmitting}
                 required
               />
             </div>
             <div className="login-page__field">
-              <label className="login-page__label">Email</label>
+              <label className="login-page__label">{t('common.email')}</label>
               <Input
                 type="email"
                 value={signupEmail}
                 onChange={(e) => setSignupEmail(e.target.value)}
-                placeholder="Enter your email"
+                placeholder={t('auth.enterEmail')}
                 className="login-page__input"
                 disabled={isSubmitting}
                 required
               />
             </div>
             <div className="login-page__field">
-              <label className="login-page__label">Password</label>
+              <label className="login-page__label">{t('common.password')}</label>
               <Input
                 type="password"
                 value={signupPassword}
                 onChange={(e) => setSignupPassword(e.target.value)}
-                placeholder="Choose a password"
+                placeholder={t('auth.choosePassword')}
                 className="login-page__input"
                 disabled={isSubmitting}
                 required
@@ -198,13 +200,13 @@ function LoginPage() {
               disabled={isSubmitting}
               className="login-page__submit"
             >
-              {isSubmitting ? 'Creating account...' : 'Sign up'}
+              {isSubmitting ? t('auth.creatingAccount') : t('auth.signup')}
             </button>
           </form>
         )}
 
         <div className="login-page__divider">
-          <span className="login-page__divider-text">or continue with</span>
+          <span className="login-page__divider-text">{t('auth.orContinueWith')}</span>
         </div>
 
         <div className="login-page__oauth-buttons">

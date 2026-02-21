@@ -42,20 +42,20 @@ function ErrorDisplay({ parsed }) {
     <div
       className="flex gap-3 px-4 py-3 rounded-lg text-sm"
       style={{
-        backgroundColor: 'rgba(220, 38, 38, 0.08)',
-        border: '1px solid rgba(220, 38, 38, 0.2)',
+        backgroundColor: 'var(--color-loss-soft)',
+        border: '1px solid var(--color-border-loss)',
       }}
     >
       <AlertTriangle
         className="h-5 w-5 flex-shrink-0 mt-0.5"
-        style={{ color: 'rgba(255, 120, 120, 0.9)' }}
+        style={{ color: 'var(--color-loss)' }}
       />
       <div className="min-w-0 space-y-1">
-        <div className="font-medium" style={{ color: 'rgba(255, 180, 180, 0.95)' }}>
+        <div className="font-medium" style={{ color: 'var(--color-loss)' }}>
           {parsed.title}
         </div>
         {parsed.detail && (
-          <div style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
+          <div style={{ color: 'var(--color-text-tertiary)' }}>
             {parsed.detail}
           </div>
         )}
@@ -63,8 +63,8 @@ function ErrorDisplay({ parsed }) {
           <div
             className="inline-block px-2 py-0.5 rounded text-xs mt-1"
             style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.06)',
-              color: 'rgba(255, 255, 255, 0.45)',
+              backgroundColor: 'var(--color-border-muted)',
+              color: 'var(--color-text-tertiary)',
             }}
           >
             {parsed.model}

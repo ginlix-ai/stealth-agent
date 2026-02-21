@@ -140,7 +140,7 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
           >
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              className="flex items-center gap-2 transition-colors hover:bg-white/5 w-full rounded-md"
+              className="flex items-center gap-2 transition-colors hover:bg-foreground/5 w-full rounded-md"
               style={{
                 padding: '5px 10px',
                 fontSize: '13px',
@@ -174,7 +174,7 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
                   <div
                     className="mt-1 ml-2 space-y-0.5 rounded-md"
                     style={{
-                      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                      borderLeft: '2px solid var(--color-border-muted)',
                       padding: '4px 0',
                     }}
                   >
@@ -244,7 +244,7 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
                         {item._liveState === 'active' ? (
                           <TextShimmer
                             as="span"
-                            className="font-medium truncate text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:#ffffff]"
+                            className="font-medium truncate text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:var(--color-text-primary)]"
                             duration={1.5}
                           >
                             {item.reasoningTitle
@@ -368,12 +368,12 @@ function ToolCallLiveRow({ tc, liveState }) {
     <motion.div
       className="flex items-center gap-2 px-3 rounded-md"
       animate={{
-        backgroundColor: isInProgress ? 'rgba(97, 85, 245, 0.1)' : 'rgba(255, 255, 255, 0.04)',
+        backgroundColor: isInProgress ? 'var(--color-accent-soft)' : 'var(--color-border-muted)',
         opacity: isInProgress ? 1 : 0.6,
       }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
       style={{
-        border: '1px solid rgba(255, 255, 255, 0.08)',
+        border: '1px solid var(--color-border-muted)',
         fontSize: '13px',
         color: 'var(--Labels-Secondary)',
         paddingTop: '6px',
@@ -389,7 +389,7 @@ function ToolCallLiveRow({ tc, liveState }) {
               animate={{ scale: 1, opacity: 1 }}
               transition={SPRING_SNAPPY}
               className="h-3 w-3 absolute -top-0.5 -right-0.5 flex items-center justify-center"
-              style={{ color: 'rgba(34, 197, 94, 0.7)' }}
+              style={{ color: 'var(--color-profit-muted)' }}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
@@ -402,7 +402,7 @@ function ToolCallLiveRow({ tc, liveState }) {
       {isInProgress ? (
         <TextShimmer
           as="span"
-          className="font-medium text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:#ffffff]"
+          className="font-medium text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:var(--color-text-primary)]"
           duration={1.5}
         >
           {`${displayName} ${progressText || ''}`}
@@ -436,7 +436,7 @@ function PreparingToolCallRow({ tc }) {
     >
       <DotLoader
         className="flex-shrink-0 gap-px"
-        dotClassName="bg-white/15 [&.active]:bg-white size-[1.5px]"
+        dotClassName="bg-foreground/15 [&.active]:bg-foreground size-[1.5px]"
       />
       <IconComponent className="h-4 w-4 flex-shrink-0" />
       <span className="font-medium">{displayName}</span>
@@ -456,7 +456,7 @@ function ReasoningRow({ item }) {
     <div>
       <button
         onClick={() => hasContent && setExpanded(!expanded)}
-        className={`flex items-center gap-2 px-3 py-1 w-full text-left rounded ${hasContent ? 'transition-colors hover:bg-white/5 cursor-pointer' : ''}`}
+        className={`flex items-center gap-2 px-3 py-1 w-full text-left rounded ${hasContent ? 'transition-colors hover:bg-foreground/5 cursor-pointer' : ''}`}
         style={{ fontSize: '13px', color: 'var(--Labels-Tertiary)' }}
       >
         <Brain className="h-3.5 w-3.5 flex-shrink-0" style={{ opacity: 0.7 }} />
@@ -489,7 +489,7 @@ function ReasoningRow({ item }) {
               variant="compact"
               content={item.content}
               className="ml-3 pl-3 pr-2 py-1 text-xs"
-              style={{ borderLeft: '2px solid rgba(97, 85, 245, 0.3)' }}
+              style={{ borderLeft: '2px solid var(--color-accent-overlay)' }}
             />
           </motion.div>
         )}
@@ -515,7 +515,7 @@ function ToolCallRow({ item, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2 px-3 py-1 w-full text-left transition-colors hover:bg-white/5 rounded"
+      className="flex items-center gap-2 px-3 py-1 w-full text-left transition-colors hover:bg-foreground/5 rounded"
       style={{ fontSize: '13px', color: 'var(--Labels-Tertiary)' }}
     >
       <IconComponent className="h-3.5 w-3.5 flex-shrink-0" style={{ opacity: 0.7 }} />
@@ -557,7 +557,7 @@ function EditToolRow({ item, onOpenFile }) {
           <button
             onClick={() => filePath && onOpenFile?.(filePath)}
             className="truncate transition-colors hover:underline"
-            style={{ opacity: 0.6, color: '#6155F5', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
+            style={{ opacity: 0.6, color: 'var(--color-accent-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}
           >
             — {fileName}
           </button>
@@ -592,16 +592,16 @@ function EditToolRow({ item, onOpenFile }) {
               WebkitMaskImage: 'linear-gradient(black var(--mask-stop), transparent var(--mask-stop))',
             }}
           >
-            <div className="ml-6 mr-2 mt-1 mb-1 rounded overflow-hidden" style={{ fontSize: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="ml-6 mr-2 mt-1 mb-1 rounded overflow-hidden" style={{ fontSize: '12px', border: '1px solid var(--color-border-muted)' }}>
               {oldStr && (
-                <div style={{ backgroundColor: 'rgba(220, 38, 38, 0.1)' }}>
+                <div style={{ backgroundColor: 'var(--color-loss-soft)' }}>
                   {oldStr.split('\n').map((line, i) => (
                     <div key={`old-${i}`} className="flex" style={{ minHeight: '20px' }}>
                       <span
                         className="flex-shrink-0 select-none text-right px-2"
-                        style={{ color: 'rgba(220, 38, 38, 0.6)', width: '20px', userSelect: 'none' }}
+                        style={{ color: 'var(--color-loss-muted)', width: '20px', userSelect: 'none' }}
                       >−</span>
-                      <pre className="flex-1 font-mono whitespace-pre-wrap break-all m-0 pr-2" style={{ color: 'rgba(255, 150, 150, 0.85)' }}>
+                      <pre className="flex-1 font-mono whitespace-pre-wrap break-all m-0 pr-2" style={{ color: 'var(--color-loss)' }}>
                         {line}
                       </pre>
                     </div>
@@ -609,14 +609,14 @@ function EditToolRow({ item, onOpenFile }) {
                 </div>
               )}
               {newStr && (
-                <div style={{ backgroundColor: 'rgba(34, 197, 94, 0.08)' }}>
+                <div style={{ backgroundColor: 'var(--color-profit-soft)' }}>
                   {newStr.split('\n').map((line, i) => (
                     <div key={`new-${i}`} className="flex" style={{ minHeight: '20px' }}>
                       <span
                         className="flex-shrink-0 select-none text-right px-2"
-                        style={{ color: 'rgba(34, 197, 94, 0.6)', width: '20px', userSelect: 'none' }}
+                        style={{ color: 'var(--color-profit-muted)', width: '20px', userSelect: 'none' }}
                       >+</span>
-                      <pre className="flex-1 font-mono whitespace-pre-wrap break-all m-0 pr-2" style={{ color: 'rgba(150, 255, 150, 0.85)' }}>
+                      <pre className="flex-1 font-mono whitespace-pre-wrap break-all m-0 pr-2" style={{ color: 'var(--color-profit)' }}>
                         {line}
                       </pre>
                     </div>

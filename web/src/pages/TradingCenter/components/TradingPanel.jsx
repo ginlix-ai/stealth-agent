@@ -66,12 +66,12 @@ const TradingPanel = ({ messages = [], isLoading = false, error = null }) => {
       >
         {messages.length === 0 ? (
           <div className="trading-chat-empty-state" style={{ height: '100%' }}>
-            <LogoLoading size={60} color="rgba(97, 85, 245, 0.5)" />
+            <LogoLoading size={60} color="var(--color-accent-overlay)" />
             <p className="trading-chat-empty-text" style={{ marginTop: 16 }}>
               Start a conversation by typing a message below
             </p>
             {error && (
-              <div style={{ color: '#ef4444', padding: '12px', fontSize: '14px' }}>
+              <div style={{ color: 'var(--color-loss)', padding: '12px', fontSize: '14px' }}>
                 Error: {error}
               </div>
             )}
@@ -90,9 +90,9 @@ const TradingPanel = ({ messages = [], isLoading = false, error = null }) => {
                 margin: '8px 0',
                 padding: '10px 14px',
                 borderRadius: '8px',
-                background: 'rgba(239, 68, 68, 0.08)',
-                border: '1px solid rgba(239, 68, 68, 0.2)',
-                color: '#ef4444',
+                background: 'var(--color-loss-soft)',
+                border: '1px solid var(--color-border-loss)',
+                color: 'var(--color-loss)',
                 fontSize: '13px',
                 lineHeight: '1.5',
               }}>

@@ -6,10 +6,10 @@ import { cronToHuman } from '../utils/cron';
 import { formatRelativeTime, formatDateTime } from '../utils/time';
 
 const STATUS_GLOW = {
-  active: 'rgba(34, 197, 94, 0.08)',
-  paused: 'rgba(234, 179, 8, 0.08)',
-  disabled: 'rgba(239, 68, 68, 0.08)',
-  completed: 'rgba(59, 130, 246, 0.06)',
+  active: 'var(--color-success-soft)',
+  paused: 'var(--color-warning-soft)',
+  disabled: 'var(--color-loss-soft)',
+  completed: 'var(--color-info-soft)',
 };
 
 export default function AutomationRow({ automation, index, onClick }) {
@@ -48,7 +48,7 @@ export default function AutomationRow({ automation, index, onClick }) {
         ) : (
           <Timer className="w-4 h-4 shrink-0" style={{ color: 'var(--color-text-secondary)' }} />
         )}
-        <span className="text-sm text-white truncate font-medium">{automation.name}</span>
+        <span className="text-sm truncate font-medium" style={{ color: 'var(--color-text-primary)' }}>{automation.name}</span>
       </div>
 
       {/* Schedule */}

@@ -221,7 +221,7 @@ function ToolCallMessageContent({
       <div className="mt-2">
         <Tag
           {...(isClickable ? { onClick: () => onOpenFile(filePath) } : {})}
-          className={isClickable ? 'transition-colors hover:bg-white/10' : ''}
+          className={isClickable ? 'transition-colors hover:bg-foreground/10' : ''}
           style={{
             boxSizing: 'border-box',
             display: 'flex',
@@ -229,14 +229,14 @@ function ToolCallMessageContent({
             gap: '8px',
             fontSize: '14px',
             lineHeight: '20px',
-            color: displayProcess.isFailed ? '#FF383C' : 'var(--Labels-Secondary)',
+            color: displayProcess.isFailed ? 'var(--color-loss)' : 'var(--Labels-Secondary)',
             padding: '4px 12px',
             borderRadius: '6px',
             backgroundColor: displayProcess.isInProgress
-              ? 'rgba(97, 85, 245, 0.15)'
+              ? 'var(--color-accent-soft)'
               : 'transparent',
             border: displayProcess.isInProgress
-              ? '1px solid rgba(255, 255, 255, 0.1)'
+              ? '1px solid var(--color-border-muted)'
               : 'none',
             ...(isClickable ? { cursor: 'pointer', width: '100%', textAlign: 'left' } : {}),
           }}
@@ -245,7 +245,7 @@ function ToolCallMessageContent({
           <div className="flex-shrink-0" style={{ marginTop: '2px' }}>
             <IconComponent
               className="h-4 w-4"
-              style={{ color: displayProcess.isFailed ? '#FF383C' : 'var(--Labels-Secondary)' }}
+              style={{ color: displayProcess.isFailed ? 'var(--color-loss)' : 'var(--Labels-Secondary)' }}
             />
           </div>
 
@@ -261,7 +261,7 @@ function ToolCallMessageContent({
             ) : displayProcess.isInProgress ? (
               <TextShimmer
                 as="span"
-                className="font-medium text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:#ffffff]"
+                className="font-medium text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:var(--color-text-primary)]"
                 duration={1.5}
               >
                 {`${displayName} ${getInProgressText(rawToolName, displayProcess.toolCall) || ''}`}
@@ -295,7 +295,7 @@ function ToolCallMessageContent({
       {/* Tool call indicator button */}
       <button
         onClick={handleToggle}
-        className="transition-colors hover:bg-white/10"
+        className="transition-colors hover:bg-foreground/10"
         style={{
           boxSizing: 'border-box',
           display: 'flex',
@@ -303,14 +303,14 @@ function ToolCallMessageContent({
           gap: '8px',
           fontSize: '14px',
           lineHeight: '20px',
-          color: isFailed ? '#FF383C' : 'var(--Labels-Secondary)',
+          color: isFailed ? 'var(--color-loss)' : 'var(--Labels-Secondary)',
           padding: '4px 12px',
           borderRadius: '6px',
           backgroundColor: displayProcess.isInProgress
-            ? 'rgba(97, 85, 245, 0.15)'
+            ? 'var(--color-accent-soft)'
             : 'transparent',
           border: displayProcess.isInProgress
-            ? '1px solid rgba(255, 255, 255, 0.1)'
+            ? '1px solid var(--color-border-muted)'
             : 'none',
           width: '100%',
         }}
@@ -320,7 +320,7 @@ function ToolCallMessageContent({
         <div className="flex-shrink-0">
           <IconComponent
             className="h-4 w-4"
-            style={{ color: displayProcess.isFailed ? '#FF383C' : 'var(--Labels-Secondary)' }}
+            style={{ color: displayProcess.isFailed ? 'var(--color-loss)' : 'var(--Labels-Secondary)' }}
           />
         </div>
 
@@ -328,7 +328,7 @@ function ToolCallMessageContent({
         {displayProcess.isInProgress ? (
           <TextShimmer
             as="span"
-            className="font-medium text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:#ffffff]"
+            className="font-medium text-[13px] [--base-color:var(--Labels-Secondary)] [--base-gradient-color:var(--color-text-primary)]"
             duration={1.5}
           >
             {`${displayName} ${getInProgressText(rawToolName, displayProcess.toolCall) || ''}`}
@@ -386,31 +386,31 @@ function ToolCallMessageContent({
               return (
                 <div key={idx} className="text-xs">
                   {processes.length > 1 && (
-                    <p className="mb-2" style={{ color: '#FFFFFF', opacity: 0.8 }}>
+                    <p className="mb-2" style={{ color: 'var(--color-text-primary)' }}>
                       Result ({idx + 1}/{processes.length}):
                     </p>
                   )}
                   <div
                     className="px-3 py-2 rounded"
                     style={{
-                      backgroundColor: 'rgba(97, 85, 245, 0.1)',
-                      border: '1px solid rgba(97, 85, 245, 0.25)',
-                      color: '#FFFFFF',
+                      backgroundColor: 'var(--color-accent-soft)',
+                      border: '1px solid var(--color-border-muted)',
+                      color: 'var(--color-text-primary)',
                     }}
                   >
                     <div className="flex items-start gap-2">
-                      <FileText className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: '#6155F5' }} />
+                      <FileText className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: 'var(--color-accent-primary)' }} />
                       <div className="space-y-1.5 min-w-0">
-                        <p className="text-xs font-medium" style={{ color: '#FFFFFF' }}>
+                        <p className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
                           Result too large to display inline
                         </p>
                         {truncated.filePath && onOpenFile && (
                           <button
                             onClick={() => onOpenFile(truncated.filePath)}
-                            className="flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors hover:bg-white/10"
+                            className="flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors hover:bg-foreground/10"
                             style={{
-                              color: '#6155F5',
-                              border: '1px solid rgba(97, 85, 245, 0.4)',
+                              color: 'var(--color-accent-primary)',
+                              border: '1px solid var(--color-accent-overlay)',
                             }}
                           >
                             <FileText className="h-3 w-3" />
@@ -418,7 +418,7 @@ function ToolCallMessageContent({
                           </button>
                         )}
                         {truncated.filePath && (
-                          <p className="text-xs font-mono truncate" style={{ color: 'rgba(255, 255, 255, 0.4)' }}>
+                          <p className="text-xs font-mono truncate" style={{ color: 'var(--color-text-tertiary)' }}>
                             {truncated.filePath}
                           </p>
                         )}
@@ -435,7 +435,7 @@ function ToolCallMessageContent({
             return (
               <div key={idx} className="text-xs">
                 {processes.length > 1 && (
-                  <p className="mb-2" style={{ color: '#FFFFFF', opacity: 0.8 }}>
+                  <p className="mb-2" style={{ color: 'var(--color-text-primary)' }}>
                     Result ({idx + 1}/{processes.length}):
                   </p>
                 )}
@@ -444,8 +444,8 @@ function ToolCallMessageContent({
                   content={displayContent}
                   className="px-3 py-2 rounded text-xs"
                   style={{
-                    backgroundColor: isError ? 'rgba(255, 56, 60, 0.15)' : 'rgba(15, 237, 190, 0.08)',
-                    border: `1px solid ${isError ? 'rgba(255, 56, 60, 0.3)' : 'rgba(15, 237, 190, 0.25)'}`,
+                    backgroundColor: isError ? 'var(--color-loss-soft)' : 'var(--color-accent-soft)',
+                    border: `1px solid ${isError ? 'var(--color-border-loss)' : 'var(--color-border-muted)'}`,
                   }}
                 />
               </div>

@@ -47,7 +47,7 @@ function WatchlistCard({
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
                       <td colSpan={5} className="py-2.5 px-2">
-                        <div className="h-4 w-3/4 rounded bg-white/10 animate-pulse" />
+                        <div className="h-4 w-3/4 rounded bg-foreground/10 animate-pulse" />
                       </td>
                     </tr>
                   ))
@@ -82,7 +82,7 @@ function WatchlistCard({
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); handleDelete(String(item.watchlist_item_id)); }}
-                                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-white/10"
+                                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-foreground/10"
                                     style={{ color: 'var(--color-text-primary)' }}
                                   >
                                     <Trash2 className="h-3.5 w-3.5" style={{ color: 'var(--color-text-secondary)' }} />

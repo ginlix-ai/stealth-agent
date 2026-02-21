@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Upload, FileText, CheckCircle2, Loader2, Circle, AlertCircle } from 'lucide-react';
 import { Input } from '../../../components/ui/input';
 import { uploadWorkspaceFile } from '../utils/api';
@@ -23,6 +24,7 @@ function formatFileSize(bytes) {
  * @param {Function} onComplete  - Called with workspace_id when everything is finished
  */
 function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
+  const { t } = useTranslation();
   // Form state
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -51,7 +53,7 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
 
     const oversized = incoming.filter((f) => f.size > MAX_FILE_SIZE);
     if (oversized.length > 0) {
-      setError(`${oversized.map((f) => f.name).join(', ')} exceeds 50 MB limit`);
+      setError(`${oversized.map((f) => f.name).join(', ')} ${t('workspace.exceedsLimit')}`);
     }
 
     const valid = incoming.filter((f) => f.size <= MAX_FILE_SIZE);
@@ -102,7 +104,7 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) {
-      setError('Workspace name is required');
+      setError(t('workspace.workspaceNameRequired'));
       return;
     }
 
@@ -116,7 +118,7 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
       setCreatedWorkspace(workspace);
     } catch (err) {
       setCreationStep('error');
-      setProgressError(err.message || 'Failed to create workspace');
+      setProgressError(err.message || t('workspace.failedCreateWorkspace'));
       return;
     }
 
@@ -225,7 +227,7 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
           {/* Header */}
           <div className="cwm-header">
             <h2 className="cwm-title">
-              {creationStep === 'done' ? 'Workspace Ready' : 'Creating Workspace'}
+              {creationStep === 'done' ? t('workspace.workspaceReady') : t('workspace.creatingWorkspace')}
             </h2>
             {canClose && (
               <button className="cwm-close-btn" onClick={handleOpenWorkspace}>
@@ -239,7 +241,7 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
             <div className="cwm-steps">
               {/* Step 1: Initialize */}
               <StepRow
-                label="Initializing workspace"
+                label={t('workspace.initializingWorkspace')}
                 status={
                   creationStep === 'creating' ? 'active'
                     : creationStep === 'error' && !createdWorkspace ? 'error'
@@ -250,7 +252,7 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
               {/* Step 2: Upload (only if files queued) */}
               {queuedFiles.length > 0 && (
                 <StepRow
-                  label="Uploading files"
+                  label={t('workspace.uploadingFiles')}
                   status={
                     creationStep === 'uploading' ? 'active'
                       : creationStep === 'done' ? (failedCount > 0 ? 'error' : 'done')
@@ -263,7 +265,7 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
 
               {/* Step 3: Ready */}
               <StepRow
-                label="Ready"
+                label={t('workspace.ready')}
                 status={creationStep === 'done' ? 'done' : 'pending'}
               />
             </div>
@@ -280,7 +282,7 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
                         <FileText className="h-4 w-4 cwm-file-icon" />
                         <span className="cwm-upload-file-name">{file.name}</span>
                         <span className={`cwm-upload-file-status cwm-upload-file-status--${status}`}>
-                          {status === 'done' ? 'Done' : status === 'failed' ? 'Failed' : status === 'uploading' ? `${currentUploadProgress}%` : ''}
+                          {status === 'done' ? t('common.done') : status === 'failed' ? t('common.failed') : status === 'uploading' ? `${currentUploadProgress}%` : ''}
                         </span>
                       </div>
                       {isCurrentlyUploading && (
@@ -313,13 +315,13 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
             <div className="cwm-actions">
               {creationStep === 'done' && (
                 <button className="cwm-btn-create" onClick={handleOpenWorkspace}>
-                  Open Workspace
+                  {t('workspace.openWorkspace')}
                 </button>
               )}
               {creationStep === 'error' && (
                 <>
-                  <button className="cwm-btn-cancel" onClick={resetAndClose}>Cancel</button>
-                  <button className="cwm-btn-create" onClick={handleRetry}>Retry</button>
+                  <button className="cwm-btn-cancel" onClick={resetAndClose}>{t('common.cancel')}</button>
+                  <button className="cwm-btn-create" onClick={handleRetry}>{t('common.retry')}</button>
                 </>
               )}
             </div>
@@ -335,7 +337,7 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
       <div className="cwm-modal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="cwm-header">
-          <h2 className="cwm-title">Create New Workspace</h2>
+          <h2 className="cwm-title">{t('workspace.createNewWorkspace')}</h2>
           <button className="cwm-close-btn" onClick={resetAndClose}>
             <X className="h-5 w-5" />
           </button>
@@ -346,13 +348,13 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
           {/* Name */}
           <div className="cwm-field">
             <label className="cwm-label">
-              Workspace Name <span className="cwm-label-required">*</span>
+              {t('workspace.workspaceName')} <span className="cwm-label-required">*</span>
             </label>
             <Input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Enter workspace name"
+              placeholder={t('workspace.enterWorkspaceName')}
               className="w-full"
               style={{
                 backgroundColor: 'var(--color-bg-card)',
@@ -366,12 +368,12 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
           {/* Description */}
           <div className="cwm-field">
             <label className="cwm-label">
-              Description <span className="cwm-label-optional">(Optional)</span>
+              {t('common.description')} <span className="cwm-label-optional">{t('common.optional')}</span>
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Enter workspace description"
+              placeholder={t('workspace.enterWorkspaceDesc')}
               rows={3}
               className="cwm-textarea"
             />
@@ -379,8 +381,8 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
 
           {/* File dropzone */}
           <div className="cwm-dropzone-wrapper">
-            <div className="cwm-dropzone-label">Files <span className="cwm-label-optional">(Optional)</span></div>
-            <div className="cwm-dropzone-sublabel">Uploaded after workspace is created · 50 MB max per file</div>
+            <div className="cwm-dropzone-label">{t('workspace.files')} <span className="cwm-label-optional">{t('common.optional')}</span></div>
+            <div className="cwm-dropzone-sublabel">{t('workspace.filesUploadNote')}</div>
             <div
               className={`cwm-dropzone ${isDragging ? 'cwm-dropzone-active' : ''}`}
               onClick={() => fileInputRef.current?.click()}
@@ -391,7 +393,7 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
             >
               <Upload className="h-6 w-6 cwm-dropzone-icon" />
               <div className="cwm-dropzone-text">
-                Drag files here or <span>click to browse</span>
+                {t('workspace.dragFilesHere')}<span>{t('workspace.clickToBrowse')}</span>
               </div>
               <input
                 ref={fileInputRef}
@@ -432,10 +434,10 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
           {/* Actions */}
           <div className="cwm-actions">
             <button type="button" className="cwm-btn-cancel" onClick={resetAndClose}>
-              Cancel
+              {t('common.cancel')}
             </button>
             <button type="submit" className="cwm-btn-create" disabled={!name.trim()}>
-              Create
+              {t('common.create')}
             </button>
           </div>
         </form>

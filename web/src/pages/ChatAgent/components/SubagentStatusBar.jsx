@@ -61,15 +61,15 @@ function SubagentStatusBar({ agent, threadId, onInstructionSent }) {
 
   const getStatusIcon = () => {
     if (derivedCurrentTool) {
-      return <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />;
+      return <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />;
     }
     if (isActive) {
-      return <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'rgba(255, 255, 255, 0.4)' }} />;
+      return <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />;
     }
     if (isCompleted) {
-      return <CheckCircle2 className="h-4 w-4" style={{ color: '#6155F5' }} />;
+      return <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--color-accent-primary)' }} />;
     }
-    return <Circle className="h-4 w-4" style={{ color: 'rgba(255, 255, 255, 0.3)' }} />;
+    return <Circle className="h-4 w-4" style={{ color: 'var(--color-icon-muted)' }} />;
   };
 
   const getStatusText = () => {
@@ -123,8 +123,8 @@ function SubagentStatusBar({ agent, threadId, onInstructionSent }) {
       <div
         className="flex items-center gap-3 px-4 py-3 rounded-lg"
         style={{
-          backgroundColor: 'rgba(255, 255, 255, 0.03)',
-          border: '1px solid rgba(255, 255, 255, 0.06)',
+          backgroundColor: 'var(--color-border-muted)',
+          border: '1px solid var(--color-border-muted)',
         }}
       >
         {/* Agent avatar */}
@@ -135,8 +135,8 @@ function SubagentStatusBar({ agent, threadId, onInstructionSent }) {
           )}
           style={{
             backgroundColor: isActive && !isCompleted
-              ? 'rgba(97, 85, 245, 0.25)'
-              : 'rgba(255, 255, 255, 0.1)',
+              ? 'var(--color-accent-soft)'
+              : 'var(--color-border-muted)',
           }}
         >
           <img
@@ -150,14 +150,14 @@ function SubagentStatusBar({ agent, threadId, onInstructionSent }) {
         {/* Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-white truncate">
+            <span className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
               {agent.name}
             </span>
             <span
               className="text-xs px-1.5 py-0.5 rounded"
               style={{
-                backgroundColor: 'rgba(255, 255, 255, 0.06)',
-                color: 'rgba(255, 255, 255, 0.5)',
+                backgroundColor: 'var(--color-border-muted)',
+                color: 'var(--color-text-tertiary)',
               }}
             >
               {agent.type}
@@ -167,7 +167,7 @@ function SubagentStatusBar({ agent, threadId, onInstructionSent }) {
             <div
               className="mt-0.5"
               style={{
-                color: 'rgba(255, 255, 255, 0.5)',
+                color: 'var(--color-text-tertiary)',
                 display: '-webkit-box',
                 WebkitLineClamp: 2,
                 WebkitBoxOrient: 'vertical',
@@ -183,7 +183,7 @@ function SubagentStatusBar({ agent, threadId, onInstructionSent }) {
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
           <div className="flex items-center gap-1.5">
             {getStatusIcon()}
-            <span className="text-xs whitespace-nowrap" style={{ color: isCompleted ? '#6155F5' : 'rgba(255, 255, 255, 0.5)' }}>
+            <span className="text-xs whitespace-nowrap" style={{ color: isCompleted ? 'var(--color-accent-primary)' : 'var(--color-text-tertiary)' }}>
               {getStatusText()}
             </span>
           </div>
@@ -195,17 +195,17 @@ function SubagentStatusBar({ agent, threadId, onInstructionSent }) {
               }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs transition-colors"
               style={{
-                backgroundColor: 'rgba(97, 85, 245, 0.15)',
-                color: 'rgba(255, 255, 255, 0.7)',
-                border: '1px solid rgba(97, 85, 245, 0.25)',
+                backgroundColor: 'var(--color-accent-soft)',
+                color: 'var(--color-text-tertiary)',
+                border: '1px solid var(--color-accent-overlay)',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'rgba(97, 85, 245, 0.25)';
-                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.9)';
+                e.currentTarget.style.backgroundColor = 'var(--color-accent-soft)';
+                e.currentTarget.style.color = 'var(--color-text-primary)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'rgba(97, 85, 245, 0.15)';
-                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)';
+                e.currentTarget.style.backgroundColor = 'var(--color-accent-soft)';
+                e.currentTarget.style.color = 'var(--color-text-tertiary)';
               }}
             >
               <MessageSquarePlus className="h-3.5 w-3.5" />
@@ -220,8 +220,8 @@ function SubagentStatusBar({ agent, threadId, onInstructionSent }) {
         <div
           className="flex items-center gap-2 px-3 py-2 rounded-lg"
           style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid rgba(97, 85, 245, 0.3)',
+            backgroundColor: 'var(--color-border-muted)',
+            border: '1px solid var(--color-accent-overlay)',
           }}
         >
           <input
@@ -232,16 +232,17 @@ function SubagentStatusBar({ agent, threadId, onInstructionSent }) {
             onKeyDown={handleKeyDown}
             placeholder="Add instruction for this agent..."
             disabled={sending}
-            className="flex-1 bg-transparent text-sm text-white placeholder-white/30 outline-none"
+            className="flex-1 bg-transparent text-sm placeholder-foreground/30 outline-none"
+            style={{ color: 'var(--color-text-primary)' }}
           />
           <div className="flex items-center gap-1">
             <button
               onClick={() => { setInputOpen(false); setInputValue(''); }}
               disabled={sending}
               className="p-1 rounded transition-colors"
-              style={{ color: 'rgba(255, 255, 255, 0.4)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255, 255, 255, 0.4)'; }}
+              style={{ color: 'var(--color-text-tertiary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
             >
               <X className="h-4 w-4" />
             </button>
@@ -250,13 +251,13 @@ function SubagentStatusBar({ agent, threadId, onInstructionSent }) {
               disabled={!inputValue.trim() || sending}
               className="p-1 rounded transition-colors"
               style={{
-                color: inputValue.trim() && !sending ? '#6155F5' : 'rgba(255, 255, 255, 0.2)',
+                color: inputValue.trim() && !sending ? 'var(--color-accent-primary)' : 'var(--color-icon-muted)',
               }}
               onMouseEnter={(e) => {
-                if (inputValue.trim() && !sending) e.currentTarget.style.color = '#7B6FFF';
+                if (inputValue.trim() && !sending) e.currentTarget.style.color = 'var(--color-accent-primary)';
               }}
               onMouseLeave={(e) => {
-                if (inputValue.trim() && !sending) e.currentTarget.style.color = '#6155F5';
+                if (inputValue.trim() && !sending) e.currentTarget.style.color = 'var(--color-accent-primary)';
               }}
             >
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

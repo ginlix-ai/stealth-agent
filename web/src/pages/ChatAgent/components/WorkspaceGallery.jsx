@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Loader2, Search, ArrowDownUp, MoreHorizontal, Zap, MessageSquareText } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import CreateWorkspaceModal from './CreateWorkspaceModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import MorphingPageDots from '../../../components/ui/morphing-page-dots';
@@ -24,6 +25,7 @@ const PAGE_SIZE = 20;
  * @param {Function} onWorkspaceSelect - Callback when a workspace is selected (receives workspaceId)
  */
 function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
+  const { t } = useTranslation();
   const [workspaces, setWorkspaces] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -108,7 +110,7 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
       }
     } catch (err) {
       console.error('Error loading workspaces:', err);
-      setError('Failed to load workspaces. Please refresh the page.');
+      setError(t('workspace.failedLoadWorkspaces'));
     } finally {
       setIsLoading(false);
     }
@@ -187,7 +189,7 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
 
     if (!workspaceId) {
       console.error('No workspace ID found in workspace object:', workspaceToDelete);
-      setDeleteError('Invalid workspace. Please try again.');
+      setDeleteError(t('workspace.invalidWorkspace'));
       return;
     }
 
@@ -220,7 +222,7 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
       setDeleteModal({ isOpen: false, workspace: null });
     } catch (err) {
       console.error('Error deleting workspace:', err);
-      const errorMessage = err.message || 'Failed to delete workspace. Please try again.';
+      const errorMessage = err.message || t('workspace.failedDeleteWorkspace');
       setDeleteError(errorMessage);
       // Keep modal open so user can see the error
     } finally {
@@ -262,9 +264,9 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: '#6155F5' }} />
-          <p className="text-sm" style={{ color: '#FFFFFF', opacity: 0.65 }}>
-            Loading workspaces...
+          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--color-accent-primary)' }} />
+          <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+            {t('workspace.loadingWorkspaces')}
           </p>
         </div>
       </div>
@@ -275,18 +277,18 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-4 max-w-md text-center px-4">
-          <p className="text-sm" style={{ color: '#FF383C' }}>
+          <p className="text-sm" style={{ color: 'var(--color-loss)' }}>
             {error}
           </p>
           <button
             onClick={loadWorkspaces}
             className="px-4 py-2 rounded-md text-sm font-medium transition-colors"
             style={{
-              backgroundColor: '#6155F5',
-              color: '#FFFFFF',
+              backgroundColor: 'var(--color-accent-primary)',
+              color: 'var(--color-text-on-accent)',
             }}
           >
-            Retry
+            {t('common.retry')}
           </button>
         </div>
       </div>
@@ -308,8 +310,8 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
       {/* Header */}
       <header className="flex w-full h-16 md:h-24 md:items-end mx-auto max-w-4xl flex-shrink-0 px-4 md:px-8">
         <div className="flex w-full items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold hidden md:block dashboard-title-font" style={{ color: '#FFFFFF' }}>
-            Workspaces
+          <h1 className="text-2xl font-semibold hidden md:block dashboard-title-font" style={{ color: 'var(--color-text-primary)' }}>
+            {t('workspace.workspaces')}
           </h1>
           <div></div>
           {hasWorkspaces && (
@@ -317,12 +319,12 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
               onClick={() => setIsModalOpen(true)}
               className="flex items-center gap-1.5 px-4 py-2 h-9 rounded-lg transition-all hover:scale-[1.01] active:scale-[0.985]"
               style={{
-                backgroundColor: '#6155F5',
-                color: '#FFFFFF',
+                backgroundColor: 'var(--color-accent-primary)',
+                color: 'var(--color-text-on-accent)',
               }}
             >
               <Plus className="h-4 w-4" />
-              <span className="text-sm font-medium">New workspace</span>
+              <span className="text-sm font-medium">{t('workspace.newWorkspace')}</span>
             </button>
           )}
         </div>
@@ -330,7 +332,7 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
 
       {/* Main Content */}
       <main className="mx-auto mt-4 w-full flex-1 px-4 md:px-8 lg:mt-6 max-w-4xl min-h-0 flex flex-col pb-0">
-        <h1 className="text-xl font-semibold mb-4 md:hidden dashboard-title-font" style={{ color: '#FFFFFF' }}>
+        <h1 className="text-xl font-semibold mb-4 md:hidden dashboard-title-font" style={{ color: 'var(--color-text-primary)' }}>
           Workspaces
         </h1>
 
@@ -342,15 +344,15 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
               <div
                 className="flex items-center gap-2 h-11 px-3 rounded-xl border transition-colors"
                 style={{
-                  backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                  borderColor: 'rgba(255, 255, 255, 0.1)',
+                  backgroundColor: 'var(--color-bg-input)',
+                  borderColor: 'var(--color-border-muted)',
                 }}
               >
-                <Search className="h-5 w-5 flex-shrink-0" style={{ color: '#FFFFFF', opacity: 0.4 }} />
+                <Search className="h-5 w-5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
                 <input
                   className="w-full bg-transparent outline-none text-sm"
-                  style={{ color: '#FFFFFF' }}
-                  placeholder="Search workspaces..."
+                  style={{ color: 'var(--color-text-primary)' }}
+                  placeholder={t('workspace.searchWorkspaces')}
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
                 />
@@ -361,17 +363,17 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
             <div className="flex w-full gap-4 justify-between items-center">
               <div></div>
               <div className="flex items-center gap-2.5">
-                <span className="text-sm hidden md:inline" style={{ color: '#FFFFFF', opacity: 0.5 }}>
-                  Sort by
+                <span className="text-sm hidden md:inline" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {t('workspace.sortBy')}
                 </span>
                 <button
                   onClick={() => setSortBy(sortBy === 'activity' ? 'name' : 'activity')}
-                  className="flex items-center gap-1 md:gap-1.5 px-2 md:px-3 py-1 h-9 rounded-lg border transition-colors hover:bg-white/5"
-                  style={{ borderColor: 'rgba(255, 255, 255, 0.1)', color: '#FFFFFF', opacity: 0.7 }}
+                  className="flex items-center gap-1 md:gap-1.5 px-2 md:px-3 py-1 h-9 rounded-lg border transition-colors hover:bg-foreground/5"
+                  style={{ borderColor: 'var(--color-border-muted)', color: 'var(--color-text-tertiary)' }}
                 >
                   <ArrowDownUp className="h-4 w-4 md:hidden" />
-                  <span className="text-sm hidden md:inline">{sortBy === 'activity' ? 'Activity' : 'Name'}</span>
-                  <span className="text-sm md:hidden">{sortBy === 'activity' ? 'Activity' : 'Name'}</span>
+                  <span className="text-sm hidden md:inline">{sortBy === 'activity' ? t('workspace.activity') : t('common.name')}</span>
+                  <span className="text-sm md:hidden">{sortBy === 'activity' ? t('workspace.activity') : t('common.name')}</span>
                 </button>
               </div>
             </div>
@@ -383,16 +385,16 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
             // Empty state
             <div className="flex flex-col items-center justify-center py-16">
               {searchQuery ? (
-                <p className="text-sm" style={{ color: '#FFFFFF', opacity: 0.65 }}>
-                  No workspaces found
+                <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {t('workspace.noWorkspacesFound')}
                 </p>
               ) : (
                 <>
-                  <p className="text-lg font-medium mb-2" style={{ color: '#FFFFFF' }}>
-                    Welcome to LangAlpha
+                  <p className="text-lg font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>
+                    {t('workspace.welcomeTitle')}
                   </p>
-                  <p className="text-sm mb-8" style={{ color: '#FFFFFF', opacity: 0.55 }}>
-                    Get started by setting up your preferences or creating a workspace.
+                  <p className="text-sm mb-8" style={{ color: 'var(--color-text-tertiary)' }}>
+                    {t('workspace.welcomeDesc')}
                   </p>
                   <div className="flex flex-col sm:flex-row items-center gap-3">
                     <button
@@ -412,23 +414,23 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
                       }}
                       className="flex items-center gap-2 px-6 py-3 rounded-lg transition-all hover:scale-[1.01] active:scale-[0.985]"
                       style={{
-                        backgroundColor: '#6155F5',
-                        color: '#FFFFFF',
+                        backgroundColor: 'var(--color-accent-primary)',
+                        color: 'var(--color-text-on-accent)',
                       }}
                     >
                       <MessageSquareText className="h-5 w-5" />
-                      <span className="font-medium">Start Onboarding</span>
+                      <span className="font-medium">{t('settings.startOnboarding')}</span>
                     </button>
                     <button
                       onClick={() => setIsModalOpen(true)}
-                      className="flex items-center gap-2 px-6 py-3 rounded-lg border transition-all hover:bg-white/5 hover:scale-[1.01] active:scale-[0.985]"
+                      className="flex items-center gap-2 px-6 py-3 rounded-lg border transition-all hover:bg-foreground/5 hover:scale-[1.01] active:scale-[0.985]"
                       style={{
-                        borderColor: 'rgba(255, 255, 255, 0.15)',
-                        color: '#FFFFFF',
+                        borderColor: 'var(--color-border-muted)',
+                        color: 'var(--color-text-primary)',
                       }}
                     >
                       <Plus className="h-5 w-5" />
-                      <span className="font-medium">Create Workspace</span>
+                      <span className="font-medium">{t('workspace.createWorkspace')}</span>
                     </button>
                   </div>
                 </>
@@ -447,28 +449,30 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
                       className="relative flex cursor-pointer flex-col overflow-hidden rounded-xl py-4 pl-5 pr-4 transition-all ease-in-out hover:shadow-sm active:scale-[0.98] h-full w-full"
                       style={{
                         background: workspace.status === 'flash'
-                          ? 'linear-gradient(to bottom, rgba(97, 85, 245, 0.08), rgba(97, 85, 245, 0.02))'
-                          : 'linear-gradient(to bottom, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01))',
+                          ? 'linear-gradient(to bottom, var(--color-accent-soft), var(--color-bg-subtle))'
+                          : 'var(--color-bg-card-gradient, linear-gradient(to bottom, var(--color-border-muted), var(--color-border-muted)))',
                         border: workspace.status === 'flash'
-                          ? '0.5px solid rgba(97, 85, 245, 0.3)'
-                          : '0.5px solid rgba(255, 255, 255, 0.1)',
+                          ? '0.5px solid var(--color-accent-overlay)'
+                          : '0.5px solid var(--color-bg-card-border, var(--color-border-muted))',
+                        backdropFilter: 'blur(8px)',
+                        WebkitBackdropFilter: 'blur(8px)',
                       }}
                     >
                       <div className="flex flex-col flex-grow gap-4">
                         <div className="flex items-center pr-10 overflow-hidden gap-2">
                           {workspace.status === 'flash' && (
-                            <Zap className="h-4 w-4 flex-shrink-0" style={{ color: '#6155F5' }} />
+                            <Zap className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
                           )}
-                          <div className="font-medium truncate" style={{ color: '#FFFFFF' }}>
+                          <div className="font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
                             {workspace.name}
                           </div>
                         </div>
-                        <div className="text-sm line-clamp-3 flex-grow" style={{ color: '#FFFFFF', opacity: 0.6 }}>
+                        <div className="text-sm line-clamp-3 flex-grow" style={{ color: 'var(--color-text-tertiary)' }}>
                           {workspace.description || ''}
                         </div>
-                        <div className="text-xs mt-auto pt-3 flex justify-between" style={{ color: '#FFFFFF', opacity: 0.4 }}>
+                        <div className="text-xs mt-auto pt-3 flex justify-between" style={{ color: 'var(--color-text-tertiary)' }}>
                           <span>
-                            Updated {workspace.updated_at ? new Date(workspace.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'recently'}
+                            Updated {workspace.updated_at ? new Date(workspace.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : t('workspace.recently')}
                           </span>
                         </div>
                       </div>
@@ -481,8 +485,10 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
                             e.stopPropagation();
                             handleDeleteClick(workspace);
                           }}
-                          className="h-8 w-8 rounded-md transition-colors hover:bg-white/10 flex items-center justify-center"
-                          style={{ color: '#FFFFFF', opacity: 0.7 }}
+                          className="h-8 w-8 rounded-md transition-colors flex items-center justify-center"
+                          style={{ color: 'var(--color-text-tertiary)' }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-border-muted)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
                         >
                           <MoreHorizontal className="h-5 w-5" />
                         </button>

@@ -38,8 +38,8 @@ function MorphingPageDots({ totalPages, activeIndex, onChange }) {
       <button
         onClick={() => onChange(Math.max(0, activeIndex - 1))}
         disabled={activeIndex === 0}
-        className="p-1 rounded-md transition-colors hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed"
-        style={{ color: '#FFFFFF' }}
+        className="p-1 rounded-md transition-colors hover:bg-foreground/10 disabled:opacity-20 disabled:cursor-not-allowed"
+        style={{ color: 'var(--color-text-primary)' }}
         aria-label="Previous page"
       >
         <ChevronLeft className="h-4 w-4" />
@@ -48,7 +48,7 @@ function MorphingPageDots({ totalPages, activeIndex, onChange }) {
       {/* Dots */}
       <div className="flex items-center gap-1.5">
         {startPage > 0 && (
-          <span className="text-xs px-1" style={{ color: '#FFFFFF', opacity: 0.3 }}>...</span>
+          <span className="text-xs px-1" style={{ color: 'var(--color-icon-muted)' }}>...</span>
         )}
         {visiblePages.map((pageIndex) => {
           const isActive = pageIndex === activeIndex;
@@ -58,7 +58,7 @@ function MorphingPageDots({ totalPages, activeIndex, onChange }) {
               onClick={() => onChange(pageIndex)}
               className="rounded-full transition-colors"
               style={{
-                backgroundColor: isActive ? '#6155F5' : 'rgba(255, 255, 255, 0.2)',
+                backgroundColor: isActive ? 'var(--color-accent-primary)' : 'var(--color-border-muted)',
               }}
               animate={{
                 width: isActive ? 24 : 8,
@@ -75,7 +75,7 @@ function MorphingPageDots({ totalPages, activeIndex, onChange }) {
           );
         })}
         {endPage < totalPages && (
-          <span className="text-xs px-1" style={{ color: '#FFFFFF', opacity: 0.3 }}>...</span>
+          <span className="text-xs px-1" style={{ color: 'var(--color-icon-muted)' }}>...</span>
         )}
       </div>
 
@@ -83,8 +83,8 @@ function MorphingPageDots({ totalPages, activeIndex, onChange }) {
       <button
         onClick={() => onChange(Math.min(totalPages - 1, activeIndex + 1))}
         disabled={activeIndex === totalPages - 1}
-        className="p-1 rounded-md transition-colors hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed"
-        style={{ color: '#FFFFFF' }}
+        className="p-1 rounded-md transition-colors hover:bg-foreground/10 disabled:opacity-20 disabled:cursor-not-allowed"
+        style={{ color: 'var(--color-text-primary)' }}
         aria-label="Next page"
       >
         <ChevronRight className="h-4 w-4" />

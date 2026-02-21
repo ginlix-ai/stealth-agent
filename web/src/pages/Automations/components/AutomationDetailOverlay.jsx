@@ -32,7 +32,7 @@ function StatCard({ label, value, sub }) {
       <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--color-text-secondary)' }}>
         {label}
       </p>
-      <p className="text-sm text-white font-medium">{value}</p>
+      <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{value}</p>
       {sub && (
         <p className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>
           {sub}
@@ -78,15 +78,15 @@ export default function AutomationDetailOverlay({
           {/* Header */}
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
-              {isCron ? <Clock className="w-5 h-5 shrink-0 text-gray-400" /> : <Timer className="w-5 h-5 shrink-0 text-gray-400" />}
-              <h2 className="text-lg font-semibold text-white truncate">{automation.name}</h2>
+              {isCron ? <Clock className="w-5 h-5 shrink-0" style={{ color: 'var(--color-text-secondary)' }} /> : <Timer className="w-5 h-5 shrink-0" style={{ color: 'var(--color-text-secondary)' }} />}
+              <h2 className="text-lg font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>{automation.name}</h2>
               <StatusBadge status={automation.status} />
             </div>
             <button
               onClick={onClose}
-              className="p-1 rounded hover:bg-white/10 transition-colors shrink-0"
+              className="p-1 rounded hover:bg-foreground/10 transition-colors shrink-0"
             >
-              <X className="w-4 h-4 text-gray-400" />
+              <X className="w-4 h-4" style={{ color: 'var(--color-text-secondary)' }} />
             </button>
           </div>
 
@@ -98,7 +98,8 @@ export default function AutomationDetailOverlay({
                 variant="ghost"
                 onClick={() => onPause(automation.automation_id)}
                 disabled={mutationsLoading}
-                className="text-yellow-400 hover:bg-yellow-400/10 text-xs h-7 px-2.5"
+                className="hover:bg-[var(--color-warning-soft)] text-xs h-7 px-2.5"
+                style={{ color: 'var(--color-warning)' }}
               >
                 <Pause className="w-3 h-3 mr-1" /> Pause
               </Button>
@@ -108,7 +109,8 @@ export default function AutomationDetailOverlay({
                 variant="ghost"
                 onClick={() => onResume(automation.automation_id)}
                 disabled={mutationsLoading}
-                className="text-emerald-400 hover:bg-emerald-400/10 text-xs h-7 px-2.5"
+                className="hover:bg-[var(--color-profit-soft)] text-xs h-7 px-2.5"
+                style={{ color: 'var(--color-profit)' }}
               >
                 <Play className="w-3 h-3 mr-1" /> Resume
               </Button>
@@ -118,7 +120,8 @@ export default function AutomationDetailOverlay({
               variant="ghost"
               onClick={() => onTrigger(automation.automation_id)}
               disabled={mutationsLoading}
-              className="text-blue-400 hover:bg-blue-400/10 text-xs h-7 px-2.5"
+              className="hover:bg-[var(--color-info-soft)] text-xs h-7 px-2.5"
+              style={{ color: 'var(--color-info)' }}
             >
               <Zap className="w-3 h-3 mr-1" /> Trigger Now
             </Button>
@@ -126,7 +129,8 @@ export default function AutomationDetailOverlay({
               size="sm"
               variant="ghost"
               onClick={() => onEdit(automation)}
-              className="text-gray-300 hover:bg-white/10 text-xs h-7 px-2.5"
+              className="hover:bg-foreground/10 text-xs h-7 px-2.5"
+              style={{ color: 'var(--color-text-secondary)' }}
             >
               <Pencil className="w-3 h-3 mr-1" /> Edit
             </Button>
@@ -134,7 +138,8 @@ export default function AutomationDetailOverlay({
               size="sm"
               variant="ghost"
               onClick={() => onDelete(automation)}
-              className="text-red-400 hover:bg-red-400/10 text-xs h-7 px-2.5"
+              className="hover:bg-[var(--color-loss-soft)] text-xs h-7 px-2.5"
+              style={{ color: 'var(--color-loss)' }}
             >
               <Trash2 className="w-3 h-3 mr-1" /> Delete
             </Button>
@@ -148,8 +153,8 @@ export default function AutomationDetailOverlay({
                 const threadId = latestThreadExecution.conversation_thread_id;
                 navigate(wsId ? `/chat/${wsId}/${threadId}` : `/chat/${threadId}`);
               }}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors hover:bg-white/5"
-              style={{ borderColor: 'var(--color-border-default)', color: '#6155F5' }}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors hover:bg-foreground/5"
+              style={{ borderColor: 'var(--color-border-default)', color: 'var(--color-accent-primary)' }}
             >
               <ExternalLink className="w-3.5 h-3.5" />
               View Latest Result
@@ -186,7 +191,7 @@ export default function AutomationDetailOverlay({
             <div
               className="rounded-lg px-3 py-2.5 text-sm whitespace-pre-wrap"
               style={{
-                backgroundColor: 'rgba(255,255,255,0.04)',
+                backgroundColor: 'var(--color-bg-input)',
                 color: 'var(--color-text-secondary)',
               }}
             >
@@ -202,21 +207,21 @@ export default function AutomationDetailOverlay({
             <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
               <div className="flex justify-between">
                 <span style={{ color: 'var(--color-text-secondary)' }}>Agent Mode</span>
-                <span className="text-white uppercase font-mono text-xs">{automation.agent_mode}</span>
+                <span className="uppercase font-mono text-xs" style={{ color: 'var(--color-text-primary)' }}>{automation.agent_mode}</span>
               </div>
               <div className="flex justify-between">
                 <span style={{ color: 'var(--color-text-secondary)' }}>Thread Strategy</span>
-                <span className="text-white text-xs">{automation.thread_strategy}</span>
+                <span className="text-xs" style={{ color: 'var(--color-text-primary)' }}>{automation.thread_strategy}</span>
               </div>
               {automation.workspace_id && (
                 <div className="flex justify-between">
                   <span style={{ color: 'var(--color-text-secondary)' }}>Workspace</span>
-                  <span className="text-white text-xs truncate max-w-[160px]">{automation.workspace_id.slice(0, 8)}...</span>
+                  <span className="text-xs truncate max-w-[160px]" style={{ color: 'var(--color-text-primary)' }}>{automation.workspace_id.slice(0, 8)}...</span>
                 </div>
               )}
               <div className="flex justify-between">
                 <span style={{ color: 'var(--color-text-secondary)' }}>Failures</span>
-                <span className="text-white text-xs">{automation.failure_count} / {automation.max_failures}</span>
+                <span className="text-xs" style={{ color: 'var(--color-text-primary)' }}>{automation.failure_count} / {automation.max_failures}</span>
               </div>
             </div>
           </div>

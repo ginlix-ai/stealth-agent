@@ -10,6 +10,14 @@
     <title>LangAlpha</title>
   </head>
   <body>
+    <script>
+      (function(){
+        var t = localStorage.getItem('theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        document.documentElement.setAttribute('data-theme', t);
+        var favicon = document.querySelector('link[rel="icon"]');
+        if (favicon) favicon.href = t === 'light' ? '/logo-favicon.svg' : '/logo-favicon-dark.svg';
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

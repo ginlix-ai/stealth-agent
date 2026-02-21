@@ -10,7 +10,7 @@ function OptionCheckbox({ id, label, checked, onChange, disabled }) {
     <label
       htmlFor={id}
       className={`flex items-center gap-3.5 cursor-pointer group py-2.5 px-3 rounded-lg transition-colors duration-200 ${
-        disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[rgba(255,255,255,0.04)]'
+        disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[var(--color-border-muted)]'
       }`}
     >
       <div className="relative flex items-center justify-center">
@@ -28,8 +28,8 @@ function OptionCheckbox({ id, label, checked, onChange, disabled }) {
             transition-colors duration-200
             ${
               checked
-                ? 'bg-white border-white'
-                : 'bg-transparent border-[rgba(255,255,255,0.2)] group-hover:border-[rgba(255,255,255,0.4)]'
+                ? 'bg-[var(--color-btn-primary-bg)] border-[var(--color-btn-primary-bg)]'
+                : 'bg-transparent border-[var(--color-border-muted)] group-hover:border-[var(--color-border-muted)]'
             }
           `}
           whileHover={!disabled ? { scale: 1.08 } : {}}
@@ -43,7 +43,7 @@ function OptionCheckbox({ id, label, checked, onChange, disabled }) {
                 exit={{ scale: 0, opacity: 0 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 25 }}
               >
-                <Check className="w-3.5 h-3.5 text-black stroke-[3]" />
+                <Check className="w-3.5 h-3.5 stroke-[3]" style={{ color: 'var(--color-btn-primary-text)' }} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -51,7 +51,7 @@ function OptionCheckbox({ id, label, checked, onChange, disabled }) {
       </div>
       <span
         className="text-sm font-medium tracking-wide transition-colors duration-200"
-        style={{ color: checked ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.7)' }}
+        style={{ color: checked ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)' }}
       >
         {label}
       </span>
@@ -68,18 +68,18 @@ function OptionRadio({ label, onClick, disabled }) {
       onClick={onClick}
       disabled={disabled}
       className={`flex items-center gap-3.5 w-full text-left py-2.5 px-3 rounded-lg transition-colors duration-200 ${
-        disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-[rgba(255,255,255,0.04)]'
+        disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-[var(--color-border-muted)]'
       }`}
       whileHover={!disabled ? { x: 2 } : {}}
       whileTap={!disabled ? { scale: 0.99 } : {}}
     >
       <div
         className="w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center transition-colors duration-200"
-        style={{ borderColor: 'rgba(255,255,255,0.2)' }}
+        style={{ borderColor: 'var(--color-border-muted)' }}
       />
       <span
         className="text-sm font-medium tracking-wide"
-        style={{ color: 'rgba(255,255,255,0.7)' }}
+        style={{ color: 'var(--color-text-tertiary)' }}
       >
         {label}
       </span>
@@ -98,15 +98,15 @@ function ResolvedOption({ label, isSelected, isMulti }) {
         className="w-[22px] h-[22px] flex items-center justify-center border-2 transition-colors duration-200"
         style={{
           borderRadius: isMulti ? '6px' : '50%',
-          backgroundColor: isSelected ? 'white' : 'transparent',
-          borderColor: isSelected ? 'white' : 'rgba(255,255,255,0.12)',
+          backgroundColor: isSelected ? 'var(--color-btn-primary-bg)' : 'transparent',
+          borderColor: isSelected ? 'var(--color-btn-primary-bg)' : 'var(--color-border-muted)',
         }}
       >
-        {isSelected && <Check className="w-3.5 h-3.5 text-black stroke-[3]" />}
+        {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" style={{ color: 'var(--color-btn-primary-text)' }} />}
       </div>
       <span
         className="text-sm tracking-wide"
-        style={{ color: isSelected ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.3)' }}
+        style={{ color: isSelected ? 'var(--color-text-primary)' : 'var(--color-icon-muted)' }}
       >
         {label}
       </span>
@@ -158,17 +158,17 @@ function UserQuestionCard({ questionData, onAnswer, onSkip }) {
           >
             <ChevronRight
               className="h-3.5 w-3.5 flex-shrink-0"
-              style={{ color: 'rgba(255,255,255,0.25)' }}
+              style={{ color: 'var(--color-icon-muted)' }}
             />
           </motion.div>
           {isAnswered ? (
-            <Check className="h-4 w-4 flex-shrink-0" style={{ color: '#8B83F0' }} />
+            <Check className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-light)' }} />
           ) : (
-            <SkipForward className="h-4 w-4 flex-shrink-0" style={{ color: 'rgba(255, 255, 255, 0.35)' }} />
+            <SkipForward className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-icon-muted)' }} />
           )}
           <span
             className="text-sm"
-            style={{ color: isAnswered ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.45)' }}
+            style={{ color: isAnswered ? 'var(--color-text-tertiary)' : 'var(--color-text-tertiary)' }}
           >
             {isAnswered ? `Answered: ${answer || '(no answer)'}` : 'Question skipped'}
           </span>
@@ -187,8 +187,8 @@ function UserQuestionCard({ questionData, onAnswer, onSkip }) {
               <div className="pt-2 pb-1 pl-6">
                 {/* Question */}
                 <div className="flex items-center gap-2 pb-2">
-                  <HelpCircle className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }} />
-                  <p className="text-sm" style={{ color: 'rgba(255, 255, 255, 0.5)' }}>
+                  <HelpCircle className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-icon-muted)' }} />
+                  <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
                     {question}
                   </p>
                 </div>
@@ -210,8 +210,8 @@ function UserQuestionCard({ questionData, onAnswer, onSkip }) {
                 {/* Show custom answer if it didn't match any option */}
                 {isCustomAnswer && (
                   <div className="flex items-center gap-2 pt-1 px-3">
-                    <span className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Custom:</span>
-                    <span className="text-sm" style={{ color: 'rgba(255,255,255,0.7)' }}>{answer}</span>
+                    <span className="text-xs" style={{ color: 'var(--color-icon-muted)' }}>Custom:</span>
+                    <span className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>{answer}</span>
                   </div>
                 )}
               </div>
@@ -258,8 +258,8 @@ function UserQuestionCard({ questionData, onAnswer, onSkip }) {
     >
       {/* Question text */}
       <div className="flex items-center gap-2 pb-2">
-        <HelpCircle className="h-4 w-4 flex-shrink-0" style={{ color: '#8B83F0' }} />
-        <p className="text-[15px] font-medium" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+        <HelpCircle className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-light)' }} />
+        <p className="text-[15px] font-medium" style={{ color: 'var(--color-text-primary)' }}>
           {question}
         </p>
       </div>
@@ -305,8 +305,8 @@ function UserQuestionCard({ questionData, onAnswer, onSkip }) {
             onClick={handleSubmitMulti}
             className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-md font-medium transition-colors hover:brightness-110"
             style={{
-              backgroundColor: 'white',
-              color: '#1a1b2e',
+              backgroundColor: 'var(--color-btn-primary-bg)',
+              color: 'var(--color-btn-primary-text)',
             }}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -325,11 +325,11 @@ function UserQuestionCard({ questionData, onAnswer, onSkip }) {
           value={otherText}
           onChange={(e) => setOtherText(e.target.value)}
           onKeyDown={handleOtherKeyDown}
-          className="flex-1 text-sm px-3 py-2 rounded-md outline-none transition-colors duration-200 focus:border-[rgba(139,131,240,0.4)]"
+          className="flex-1 text-sm px-3 py-2 rounded-md outline-none transition-colors duration-200 focus:border-[var(--color-accent-overlay)]"
           style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            color: 'rgba(255, 255, 255, 0.8)',
+            backgroundColor: 'var(--color-border-muted)',
+            border: '1px solid var(--color-border-muted)',
+            color: 'var(--color-text-primary)',
           }}
         />
         <AnimatePresence>
@@ -341,8 +341,8 @@ function UserQuestionCard({ questionData, onAnswer, onSkip }) {
               onClick={handleSubmitOther}
               className="p-2 rounded-md transition-colors hover:brightness-110"
               style={{
-                backgroundColor: 'white',
-                color: '#1a1b2e',
+                backgroundColor: 'var(--color-btn-primary-bg)',
+                color: 'var(--color-btn-primary-text)',
               }}
               whileTap={{ scale: 0.92 }}
             >
@@ -359,15 +359,15 @@ function UserQuestionCard({ questionData, onAnswer, onSkip }) {
           className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors"
           style={{
             backgroundColor: 'transparent',
-            color: 'rgba(255, 255, 255, 0.35)',
+            color: 'var(--color-icon-muted)',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.06)';
-            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)';
+            e.currentTarget.style.backgroundColor = 'var(--color-border-muted)';
+            e.currentTarget.style.color = 'var(--color-text-tertiary)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.backgroundColor = 'transparent';
-            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.35)';
+            e.currentTarget.style.color = 'var(--color-icon-muted)';
           }}
         >
           <SkipForward className="h-3.5 w-3.5" />

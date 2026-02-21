@@ -5,7 +5,7 @@ import React from 'react';
  *
  * Animated logo loading spinner with draw → hold → reverse erase animation.
  */
-function LogoLoading({ size = 60, color = 'white', className = '', style = {} }) {
+function LogoLoading({ size = 60, color = 'currentColor', className = '', style = {} }) {
   return (
     <div
       className={`logo-loading-wrap ${className}`}
@@ -25,7 +25,7 @@ function LogoLoading({ size = 60, color = 'white', className = '', style = {} })
         style={{
           width: '100%',
           height: '100%',
-          filter: 'drop-shadow(0 0 6px rgba(255,255,255,0.3))',
+          filter: 'drop-shadow(0 0 6px var(--color-accent-overlay))',
         }}
       >
         <path

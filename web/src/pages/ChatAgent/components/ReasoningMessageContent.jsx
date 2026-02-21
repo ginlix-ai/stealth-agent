@@ -35,7 +35,7 @@ function ReasoningMessageContent({ reasoningContent, isReasoning, reasoningCompl
       {/* Reasoning indicator button */}
       <button
         onClick={handleToggle}
-        className="transition-colors hover:bg-white/10"
+        className="transition-colors hover:bg-foreground/10"
         style={{
           boxSizing: 'border-box',
           display: 'flex',
@@ -47,10 +47,10 @@ function ReasoningMessageContent({ reasoningContent, isReasoning, reasoningCompl
           padding: '4px 12px',
           borderRadius: '6px',
           backgroundColor: isReasoning
-            ? 'rgba(97, 85, 245, 0.15)'
+            ? 'var(--color-accent-soft)'
             : 'transparent',
           border: isReasoning
-            ? '1px solid rgba(255, 255, 255, 0.1)'
+            ? '1px solid var(--color-border-muted)'
             : 'none',
           width: '100%',
         }}
@@ -102,7 +102,7 @@ function ReasoningMessageContent({ reasoningContent, isReasoning, reasoningCompl
           variant="compact"
           content={reasoningContent}
           className="mt-2 pl-3 pr-0 py-1 text-xs"
-          style={{ borderLeft: '3px solid rgba(97, 85, 245, 0.5)' }}
+          style={{ borderLeft: '3px solid var(--color-accent-overlay)' }}
         />
       )}
     </div>

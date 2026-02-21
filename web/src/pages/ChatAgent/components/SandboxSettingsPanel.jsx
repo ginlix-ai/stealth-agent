@@ -147,7 +147,7 @@ export default function SandboxSettingsPanel({ onClose, workspaceId }) {
         {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-1 rounded-full transition-colors hover:bg-white/10"
+          className="absolute top-4 right-4 p-1 rounded-full transition-colors hover:bg-foreground/10"
           style={{ color: 'var(--color-text-primary)' }}
         >
           <X className="h-5 w-5" />
@@ -238,7 +238,7 @@ function LoadingSkeleton() {
         <div
           key={i}
           className="h-16 rounded-lg animate-pulse"
-          style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+          style={{ backgroundColor: 'var(--color-border-muted)' }}
         />
       ))}
     </div>
@@ -251,7 +251,7 @@ function ErrorState({ message, onRetry }) {
       <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{message}</p>
       <button
         onClick={onRetry}
-        className="px-4 py-2 text-sm rounded-md transition-colors hover:bg-white/10"
+        className="px-4 py-2 text-sm rounded-md transition-colors hover:bg-foreground/10"
         style={{ color: 'var(--color-accent-primary)', border: '1px solid var(--color-accent-primary)' }}
       >
         Retry
@@ -281,7 +281,7 @@ function OverviewTab({ stats, isRunning, actionLoading, onStartStop }) {
           <div
             key={label}
             className="flex items-center gap-3 p-3 rounded-lg"
-            style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
+            style={{ backgroundColor: 'var(--color-border-muted)', border: '1px solid var(--color-border-muted)' }}
           >
             <Icon className="h-5 w-5 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
             <div>
@@ -295,12 +295,12 @@ function OverviewTab({ stats, isRunning, actionLoading, onStartStop }) {
       {/* Status + metadata */}
       <div
         className="flex items-center justify-between p-3 rounded-lg"
-        style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
+        style={{ backgroundColor: 'var(--color-border-muted)', border: '1px solid var(--color-border-muted)' }}
       >
         <div className="flex items-center gap-3">
           <div
             className="w-2.5 h-2.5 rounded-full"
-            style={{ backgroundColor: isRunning ? '#22c55e' : '#ef4444' }}
+            style={{ backgroundColor: isRunning ? 'var(--color-profit)' : 'var(--color-loss)' }}
           />
           <div>
             <div className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
@@ -315,7 +315,7 @@ function OverviewTab({ stats, isRunning, actionLoading, onStartStop }) {
         </div>
         <div className="flex items-center gap-2">
           {stats.auto_stop_interval != null && (
-            <span className="text-xs px-2 py-1 rounded" style={{ color: 'var(--color-text-tertiary)', backgroundColor: 'rgba(255,255,255,0.06)' }}>
+            <span className="text-xs px-2 py-1 rounded" style={{ color: 'var(--color-text-tertiary)', backgroundColor: 'var(--color-border-muted)' }}>
               Auto-stop: {Math.round(stats.auto_stop_interval / 60)}m
             </span>
           )}
@@ -323,8 +323,8 @@ function OverviewTab({ stats, isRunning, actionLoading, onStartStop }) {
             <button
               onClick={() => onStartStop('stop')}
               disabled={actionLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors hover:bg-white/10 disabled:opacity-50"
-              style={{ color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors hover:bg-foreground/10 disabled:opacity-50"
+              style={{ color: 'var(--color-loss)', border: '1px solid var(--color-border-loss)' }}
             >
               {actionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Square className="h-3 w-3" />}
               Stop
@@ -333,8 +333,8 @@ function OverviewTab({ stats, isRunning, actionLoading, onStartStop }) {
             <button
               onClick={() => onStartStop('start')}
               disabled={actionLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors hover:bg-white/10 disabled:opacity-50"
-              style={{ color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors hover:bg-foreground/10 disabled:opacity-50"
+              style={{ color: 'var(--color-profit)', border: '1px solid var(--color-profit-border)' }}
             >
               {actionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
               Start
@@ -380,12 +380,12 @@ function StorageTab({ stats, showDirBreakdown, onToggleBreakdown }) {
           <span>{disk.used} used</span>
           <span>{disk.available} available</span>
         </div>
-        <div className="h-3 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+        <div className="h-3 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-border-muted)' }}>
           <div
             className="h-full rounded-full transition-all"
             style={{
               width: `${pct}%`,
-              backgroundColor: pct > 80 ? '#ef4444' : 'var(--color-accent-primary)',
+              backgroundColor: pct > 80 ? 'var(--color-loss)' : 'var(--color-accent-primary)',
             }}
           />
         </div>
@@ -413,7 +413,7 @@ function StorageTab({ stats, showDirBreakdown, onToggleBreakdown }) {
                 <div
                   key={d.path}
                   className="flex justify-between py-1.5 px-3 rounded text-sm"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+                  style={{ backgroundColor: 'var(--color-border-muted)' }}
                 >
                   <span className="font-mono truncate" style={{ color: 'var(--color-text-primary)' }}>{d.path}/</span>
                   <span className="flex-shrink-0 ml-4" style={{ color: 'var(--color-text-tertiary)' }}>{d.size}</span>
@@ -470,7 +470,7 @@ function PackagesTab({
               <div
                 key={p.name}
                 className="flex justify-between items-center py-1.5 px-3 rounded text-sm"
-                style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+                style={{ backgroundColor: 'var(--color-border-muted)' }}
               >
                 <div className="flex items-center gap-2">
                   <span style={{ color: isDefault ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)' }}>
@@ -479,7 +479,7 @@ function PackagesTab({
                   {isDefault && (
                     <span
                       className="text-[10px] px-1.5 py-0.5 rounded"
-                      style={{ color: 'var(--color-text-tertiary)', backgroundColor: 'rgba(255,255,255,0.06)' }}
+                      style={{ color: 'var(--color-text-tertiary)', backgroundColor: 'var(--color-border-muted)' }}
                     >
                       default
                     </span>
@@ -517,7 +517,7 @@ function PackagesTab({
             disabled={installing || !installInput.trim()}
             className="flex items-center gap-1.5 px-4 py-2 text-sm rounded-md transition-colors disabled:opacity-50"
             style={{
-              color: '#fff',
+              color: 'var(--color-text-on-accent)',
               backgroundColor: 'var(--color-accent-primary)',
             }}
           >
@@ -531,8 +531,8 @@ function PackagesTab({
           <div
             className="text-xs p-2 rounded font-mono whitespace-pre-wrap max-h-32 overflow-y-auto"
             style={{
-              backgroundColor: 'rgba(255,255,255,0.04)',
-              color: installResult.success ? 'var(--color-text-secondary)' : '#ef4444',
+              backgroundColor: 'var(--color-border-muted)',
+              color: installResult.success ? 'var(--color-text-secondary)' : 'var(--color-loss)',
             }}
           >
             {installResult.error || installResult.output || 'Done'}
@@ -562,7 +562,7 @@ function ToolsTab({ stats, refreshing, refreshResult, onRefresh }) {
               <div
                 key={name}
                 className="flex items-center gap-2.5 py-2 px-3 rounded text-sm"
-                style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+                style={{ backgroundColor: 'var(--color-border-muted)' }}
               >
                 <Server className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
                 <span style={{ color: 'var(--color-text-primary)' }}>{name}</span>
@@ -587,7 +587,7 @@ function ToolsTab({ stats, refreshing, refreshResult, onRefresh }) {
               <div
                 key={skill.name}
                 className="flex items-start gap-2.5 py-2 px-3 rounded text-sm"
-                style={{ backgroundColor: 'rgba(255,255,255,0.03)' }}
+                style={{ backgroundColor: 'var(--color-border-muted)' }}
               >
                 <BookOpen className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: 'var(--color-accent-primary)' }} />
                 <div className="min-w-0">
@@ -620,7 +620,7 @@ function ToolsTab({ stats, refreshing, refreshResult, onRefresh }) {
           style={{
             color: 'var(--color-text-primary)',
             border: '1px solid var(--color-border-muted)',
-            backgroundColor: 'rgba(255,255,255,0.04)',
+            backgroundColor: 'var(--color-border-muted)',
           }}
         >
           {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -631,8 +631,8 @@ function ToolsTab({ stats, refreshing, refreshResult, onRefresh }) {
           <div
             className="text-xs p-3 rounded"
             style={{
-              backgroundColor: 'rgba(255,255,255,0.04)',
-              color: refreshResult.status === 'error' ? '#ef4444' : 'var(--color-text-secondary)',
+              backgroundColor: 'var(--color-border-muted)',
+              color: refreshResult.status === 'error' ? 'var(--color-loss)' : 'var(--color-text-secondary)',
             }}
           >
             {refreshResult.status === 'error' ? (

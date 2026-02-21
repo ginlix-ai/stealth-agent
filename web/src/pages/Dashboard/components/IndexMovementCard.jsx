@@ -30,9 +30,9 @@ function IndexMovementCard({ indices = [], loading = false }) {
                   className="flex-1 flex flex-col gap-2 p-4 rounded-lg min-w-0 animate-pulse"
                   style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-default)' }}
                 >
-                  <div className="h-4 rounded bg-white/10" style={{ width: '60%' }} />
-                  <div className="h-4 rounded bg-white/10" style={{ width: '80%' }} />
-                  <div className="h-4 rounded bg-white/10" style={{ width: '50%' }} />
+                  <div className="h-4 rounded bg-foreground/10" style={{ width: '60%' }} />
+                  <div className="h-4 rounded bg-foreground/10" style={{ width: '80%' }} />
+                  <div className="h-4 rounded bg-foreground/10" style={{ width: '50%' }} />
                 </div>
               ))
             : indices.map((index, idx) => {

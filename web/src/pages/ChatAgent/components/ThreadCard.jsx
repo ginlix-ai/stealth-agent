@@ -32,10 +32,10 @@ function ThreadCard({ thread, onClick, onDelete, onRename }) {
   };
   return (
     <div
-      className="group relative cursor-pointer transition-colors rounded-lg px-4 py-3 flex items-center gap-3 hover:bg-white/5"
+      className="group relative cursor-pointer transition-colors rounded-lg px-4 py-3 flex items-center gap-3 hover:bg-foreground/5"
       onClick={onClick}
       style={{
-        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+        borderBottom: '1px solid var(--color-border-muted)',
       }}
     >
       {/* Thread icon/indicator */}
@@ -43,20 +43,20 @@ function ThreadCard({ thread, onClick, onDelete, onRename }) {
         className="w-2 h-2 rounded-full flex-shrink-0"
         style={{
           backgroundColor: thread.current_status === 'completed'
-            ? '#0FEDBE'
+            ? 'var(--color-profit)'
             : thread.current_status === 'in_progress'
-            ? '#6155F5'
-            : 'rgba(255, 255, 255, 0.3)',
+            ? 'var(--color-accent-primary)'
+            : 'var(--color-text-tertiary)',
         }}
       />
 
       {/* Thread title and info */}
       <div className="flex-1 min-w-0">
-        <h3 className="text-sm font-normal truncate" style={{ color: '#FFFFFF' }}>
+        <h3 className="text-sm font-normal truncate" style={{ color: 'var(--color-text-primary)' }}>
           {thread.title || `Thread ${thread.thread_index !== undefined ? thread.thread_index + 1 : ''}`}
         </h3>
         {thread.updated_at && (
-          <p className="text-xs mt-0.5" style={{ color: '#FFFFFF', opacity: 0.4 }}>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
             {new Date(thread.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
           </p>
         )}
@@ -69,8 +69,8 @@ function ThreadCard({ thread, onClick, onDelete, onRename }) {
           {onRename && (
             <button
               onClick={handleRenameClick}
-              className="p-1.5 rounded-md transition-colors hover:bg-white/10"
-              style={{ color: '#FFFFFF', opacity: 0.5 }}
+              className="p-1.5 rounded-md transition-colors hover:bg-foreground/10"
+              style={{ color: 'var(--color-text-tertiary)' }}
               title="Rename thread"
             >
               <Edit2 className="h-3.5 w-3.5" />
@@ -80,8 +80,8 @@ function ThreadCard({ thread, onClick, onDelete, onRename }) {
           {onDelete && (
             <button
               onClick={handleDeleteClick}
-              className="p-1.5 rounded-md transition-colors hover:bg-red-500/20"
-              style={{ color: '#FF383C' }}
+              className="p-1.5 rounded-md transition-colors hover:bg-[var(--color-danger-hover-bg)]"
+              style={{ color: 'var(--color-loss)' }}
               title="Delete thread"
             >
               <Trash2 className="h-3.5 w-3.5" />

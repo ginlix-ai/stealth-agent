@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { ExternalLink, FileText, Calendar, Building2, Layers, Newspaper } from 'lucide-react';
 import { api } from '../../../../api/client';
 
-const TEXT_COLOR = '#8b8fa3';
-const ACCENT = '#6155F5';
+const TEXT_COLOR = 'var(--color-text-tertiary)';
+const ACCENT = 'var(--color-accent-primary)';
 const API_BASE = api.defaults.baseURL;
 
 function InfoRow({ icon: Icon, label, value }) {
@@ -12,7 +12,7 @@ function InfoRow({ icon: Icon, label, value }) {
     <div className="flex items-center gap-2 py-1">
       <Icon className="h-3.5 w-3.5 flex-shrink-0" style={{ color: TEXT_COLOR }} />
       <span className="text-xs" style={{ color: TEXT_COLOR }}>{label}</span>
-      <span className="text-xs ml-auto" style={{ color: '#fff' }}>{value}</span>
+      <span className="text-xs ml-auto" style={{ color: 'var(--color-text-primary)' }}>{value}</span>
     </div>
   );
 }
@@ -22,9 +22,9 @@ function ItemChip({ label }) {
     <span
       className="inline-block text-xs px-2 py-0.5 rounded-full"
       style={{
-        backgroundColor: 'rgba(97, 85, 245, 0.12)',
-        color: 'rgba(255, 255, 255, 0.75)',
-        border: '1px solid rgba(97, 85, 245, 0.2)',
+        backgroundColor: 'var(--color-accent-soft)',
+        color: 'var(--color-text-tertiary)',
+        border: '1px solid var(--color-accent-soft)',
       }}
     >
       {label}
@@ -49,11 +49,11 @@ function AnnualQuarterlyView({ data }) {
         <div className="flex items-baseline gap-3 mb-2">
           <span
             className="text-xs font-bold px-2 py-0.5 rounded"
-            style={{ backgroundColor: 'rgba(97, 85, 245, 0.15)', color: ACCENT }}
+            style={{ backgroundColor: 'var(--color-accent-soft)', color: ACCENT }}
           >
             {data.symbol}
           </span>
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>
+          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)' }}>
             {data.filing_type} Filing
           </span>
         </div>
@@ -61,7 +61,7 @@ function AnnualQuarterlyView({ data }) {
         {/* Metadata rows */}
         <div
           className="rounded-lg px-3 py-2"
-          style={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.06)' }}
+          style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border-muted)' }}
         >
           <InfoRow icon={Calendar} label="Filing Date" value={data.filing_date} />
           <InfoRow icon={Calendar} label="Period End" value={data.period_end} />
@@ -80,7 +80,7 @@ function AnnualQuarterlyView({ data }) {
       {proxyUrl && (
         <div className="flex flex-col flex-1 min-h-0">
           <div className="flex items-center justify-between mb-2 flex-shrink-0">
-            <span className="text-xs font-medium uppercase tracking-wider" style={{ color: 'rgba(255, 255, 255, 0.4)' }}>
+            <span className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--color-text-tertiary)' }}>
               SEC Filing Document
             </span>
             <a
@@ -96,12 +96,12 @@ function AnnualQuarterlyView({ data }) {
           </div>
           <div
             className="relative rounded-lg overflow-hidden flex-1 min-h-0"
-            style={{ border: '1px solid rgba(255, 255, 255, 0.1)' }}
+            style={{ border: '1px solid var(--color-border-muted)' }}
           >
             {iframeLoading && (
               <div
                 className="absolute inset-0 flex items-center justify-center"
-                style={{ backgroundColor: 'rgba(15, 20, 34, 0.9)' }}
+                style={{ backgroundColor: 'var(--color-bg-overlay-strong)' }}
               >
                 <div className="flex items-center gap-2">
                   <div className="h-4 w-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: `${ACCENT} transparent ${ACCENT} ${ACCENT}` }} />
@@ -115,7 +115,7 @@ function AnnualQuarterlyView({ data }) {
               className="w-full h-full"
               style={{
                 border: 'none',
-                backgroundColor: '#fff',
+                backgroundColor: 'var(--color-bg-chart-placeholder)',
               }}
               onLoad={() => setIframeLoading(false)}
               sandbox="allow-same-origin allow-scripts"
@@ -140,11 +140,11 @@ function EightKListView({ data }) {
         <div className="flex items-baseline gap-3 mb-1">
           <span
             className="text-xs font-bold px-2 py-0.5 rounded"
-            style={{ backgroundColor: 'rgba(97, 85, 245, 0.15)', color: ACCENT }}
+            style={{ backgroundColor: 'var(--color-accent-soft)', color: ACCENT }}
           >
             {data.symbol}
           </span>
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>
+          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)' }}>
             8-K Filings
           </span>
         </div>
@@ -159,21 +159,21 @@ function EightKListView({ data }) {
           key={i}
           className="rounded-lg px-4 py-3"
           style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid rgba(255, 255, 255, 0.06)',
+            backgroundColor: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border-muted)',
           }}
         >
           {/* Date + press release indicator */}
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Calendar className="h-3.5 w-3.5" style={{ color: TEXT_COLOR }} />
-              <span className="text-sm font-medium" style={{ color: '#fff' }}>
+              <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
                 {filing.filing_date}
               </span>
               {filing.has_press_release && (
                 <span
                   className="text-xs px-1.5 py-0.5 rounded"
-                  style={{ backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981', fontSize: 10 }}
+                  style={{ backgroundColor: 'var(--color-profit-soft)', color: 'var(--color-profit)', fontSize: 10 }}
                 >
                   Press Release
                 </span>

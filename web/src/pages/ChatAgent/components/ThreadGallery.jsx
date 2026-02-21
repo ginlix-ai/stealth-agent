@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, Loader2, Folder, FileText, Zap } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import ThreadCard from './ThreadCard';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import RenameThreadModal from './RenameThreadModal';
@@ -12,7 +13,9 @@ import { getWorkspaceThreads, getWorkspace, deleteThread, updateThreadTitle } fr
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
 import { removeStoredThreadId } from '../hooks/utils/threadStorage';
 import { saveChatSession } from '../hooks/utils/chatSessionRestore';
-import iconComputer from '../../../assets/img/icon-computer.svg';
+import iconComputerLight from '../../../assets/img/icon-computer.svg';
+import iconComputerDark from '../../../assets/img/icon-computer-dark.svg';
+import { useTheme } from '../../../contexts/ThemeContext';
 import '../../Dashboard/Dashboard.css';
 
 /**
@@ -30,7 +33,10 @@ import '../../Dashboard/Dashboard.css';
  * @param {Function} onThreadSelect - Callback when a thread is selected (receives workspaceId and threadId)
  */
 function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
+  const { t } = useTranslation();
   const location = useLocation();
+  const { theme } = useTheme();
+  const iconComputer = theme === 'light' ? iconComputerDark : iconComputerLight;
   const [threads, setThreads] = useState([]);
   const [workspaceName, setWorkspaceName] = useState(
     location.state?.workspaceName || ''
@@ -169,7 +175,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
       setTotalThreads(total);
       setHasMore(freshThreads.length < total);
 
-      const freshName = workspaceData?.name || workspaceName || 'Workspace';
+      const freshName = workspaceData?.name || workspaceName || t('thread.workspace');
       if (needsName && workspaceData?.name) {
         setWorkspaceName(freshName);
       }
@@ -192,7 +198,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
       }
     } catch (err) {
       console.error('Error loading threads:', err);
-      setError('Failed to load threads. Please refresh the page.');
+      setError(t('thread.failedLoadThreads'));
     } finally {
       setIsLoading(false);
     }
@@ -294,7 +300,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
 
     if (!threadId) {
       console.error('No thread ID found in thread object:', threadToDelete);
-      setDeleteError('Invalid thread. Please try again.');
+      setDeleteError(t('thread.invalidThread'));
       return;
     }
 
@@ -328,7 +334,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
       setDeleteModal({ isOpen: false, thread: null });
     } catch (err) {
       console.error('Error deleting thread:', err);
-      const errorMessage = err.response?.data?.detail || err.message || 'Failed to delete thread. Please try again.';
+      const errorMessage = err.response?.data?.detail || err.message || t('thread.failedDeleteThread');
       setDeleteError(errorMessage);
       // Keep modal open so user can see the error
     } finally {
@@ -365,7 +371,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
 
     if (!threadId) {
       console.error('No thread ID found in thread object:', threadToRename);
-      setRenameError('Invalid thread. Please try again.');
+      setRenameError(t('thread.invalidThread'));
       return;
     }
 
@@ -388,7 +394,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
       setRenameModal({ isOpen: false, thread: null });
     } catch (err) {
       console.error('Error renaming thread:', err);
-      const errorMessage = err.response?.data?.detail || err.message || 'Failed to rename thread. Please try again.';
+      const errorMessage = err.response?.data?.detail || err.message || t('thread.failedRenameThread');
       setRenameError(errorMessage);
       // Keep modal open so user can see the error
     } finally {
@@ -488,9 +494,9 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin" style={{ color: '#6155F5' }} />
-          <p className="text-sm" style={{ color: '#FFFFFF', opacity: 0.65 }}>
-            Loading threads...
+          <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'var(--color-accent-primary)' }} />
+          <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+            {t('thread.loadingThreads')}
           </p>
         </div>
       </div>
@@ -501,18 +507,18 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-4 max-w-md text-center px-4">
-          <p className="text-sm" style={{ color: '#FF383C' }}>
+          <p className="text-sm" style={{ color: 'var(--color-loss)' }}>
             {error}
           </p>
           <button
             onClick={loadData}
             className="px-4 py-2 rounded-md text-sm font-medium transition-colors"
             style={{
-              backgroundColor: '#6155F5',
-              color: '#FFFFFF',
+              backgroundColor: 'var(--color-accent-primary)',
+              color: 'var(--color-text-on-accent)',
             }}
           >
-            Retry
+            {t('common.retry')}
           </button>
         </div>
       </div>
@@ -535,9 +541,11 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
         <div className="flex-shrink-0 px-6 py-4">
           <button
             onClick={onBack}
-            className="p-2 rounded-md transition-colors hover:bg-white/10"
-            style={{ color: '#FFFFFF' }}
-            title="Back to workspaces"
+            className="p-2 rounded-md transition-colors"
+            style={{ color: 'var(--color-text-primary)' }}
+            title={t('thread.backToWorkspaces')}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-border-muted)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
@@ -554,21 +562,21 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
                 onClick={!isFlash ? () => setShowSandboxPanel(true) : undefined}
               >
                 {isFlash ? (
-                  <Zap className="w-10 h-10" style={{ color: '#6155F5' }} />
+                  <Zap className="w-10 h-10" style={{ color: 'var(--color-accent-primary)' }} />
                 ) : (
                   <img src={iconComputer} alt="Workspace" className="w-10 h-10" />
                 )}
               </div>
               <h1
                 className="text-xl font-medium mt-3 text-center dashboard-title-font"
-                style={{ color: '#FFFFFF' }}
+                style={{ color: 'var(--color-text-primary)' }}
               >
                 {workspaceName}
               </h1>
-              <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: '#FFFFFF', opacity: 0.5 }}>
-                <span>Workspace</span>
+              <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                <span>{t('thread.workspace')}</span>
                 <div className="size-[3px] rounded-full bg-current opacity-50"></div>
-                <span>{totalThreads ?? threads.length} {(totalThreads ?? threads.length) === 1 ? 'thread' : 'threads'}</span>
+                <span>{totalThreads ?? threads.length} {(totalThreads ?? threads.length) === 1 ? t('thread.thread') : t('thread.threads')}</span>
               </div>
             </div>
 
@@ -584,20 +592,22 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
             {/* Files Card — hidden for flash workspaces (no sandbox) */}
             {!isFlash && <div className="w-full">
               <div
-                className="flex-1 min-w-0 flex flex-col ps-[16px] pt-[12px] pb-[14px] pe-[20px] rounded-[12px] border cursor-pointer hover:bg-white/5 transition-colors"
+                className="flex-1 min-w-0 flex flex-col ps-[16px] pt-[12px] pb-[14px] pe-[20px] rounded-[12px] border cursor-pointer hover:bg-foreground/5 transition-colors"
                 style={{
-                  borderColor: 'rgba(255, 255, 255, 0.06)',
-                  backgroundColor: 'rgba(255, 255, 255, 0.03)'
+                  borderColor: 'var(--color-bg-card-border, var(--color-border-muted))',
+                  backgroundColor: 'var(--color-bg-card-gradient, var(--color-border-muted))',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
                 }}
                 onClick={handleToggleFilePanel}
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5">
-                    <Folder className="h-4 w-4" style={{ color: '#6155F5' }} />
-                    <span className="text-sm font-medium" style={{ color: '#FFFFFF' }}>Files</span>
+                    <Folder className="h-4 w-4" style={{ color: 'var(--color-accent-primary)' }} />
+                    <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{t('workspace.files')}</span>
                   </div>
-                  <div className="text-xs" style={{ color: '#FFFFFF', opacity: 0.5 }}>
-                    {showFilePanel ? 'Close' : 'View all'}
+                  <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    {showFilePanel ? t('common.close') : t('thread.viewAll')}
                   </div>
                 </div>
                 {/* Show first two file names — clicking a name opens that file directly */}
@@ -608,8 +618,8 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
                       return (
                         <div
                           key={index}
-                          className="flex items-center gap-2 text-[13px] rounded-md px-1 py-1 -mx-1 transition-colors hover:bg-white/5"
-                          style={{ color: '#FFFFFF', opacity: 0.7 }}
+                          className="flex items-center gap-2 text-[13px] rounded-md px-1 py-1 -mx-1 transition-colors hover:bg-foreground/5"
+                          style={{ color: 'var(--color-text-tertiary)' }}
                           onClick={(e) => {
                             e.stopPropagation();
                             setFilePanelTargetFile(filePath);
@@ -629,19 +639,19 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
             {/* Threads Section */}
             <div className="w-full flex flex-col gap-4 pb-8">
               <div className="flex items-center justify-between">
-                <h2 className="text-base font-medium" style={{ color: '#FFFFFF' }}>
-                  Tasks
+                <h2 className="text-base font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                  {t('thread.tasks')}
                 </h2>
               </div>
 
               {threads.length === 0 ? (
                 // Empty state
                 <div className="flex flex-col items-center justify-center py-12">
-                  <p className="text-sm mb-2" style={{ color: '#FFFFFF', opacity: 0.65 }}>
-                    No threads yet
+                  <p className="text-sm mb-2" style={{ color: 'var(--color-text-tertiary)' }}>
+                    {t('thread.noThreadsYet')}
                   </p>
-                  <p className="text-xs text-center max-w-md" style={{ color: '#FFFFFF', opacity: 0.45 }}>
-                    Start a conversation to create your first thread
+                  <p className="text-xs text-center max-w-md" style={{ color: 'var(--color-text-tertiary)' }}>
+                    {t('thread.startConversation')}
                   </p>
                 </div>
               ) : (
@@ -659,7 +669,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
                   {/* Loading spinner for infinite scroll */}
                   {isLoadingMore && (
                     <div className="flex items-center justify-center py-4">
-                      <Loader2 className="h-5 w-5 animate-spin" style={{ color: '#6155F5' }} />
+                      <Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--color-accent-primary)' }} />
                     </div>
                   )}
                 </div>
@@ -673,7 +683,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
       {showFilePanel && !isFlash && (
         <>
           <div
-            className="w-[4px] bg-transparent hover:bg-white/20 cursor-col-resize flex-shrink-0 transition-colors"
+            className="w-[4px] bg-transparent hover:bg-foreground/20 cursor-col-resize flex-shrink-0 transition-colors"
             onMouseDown={handleDividerMouseDown}
           />
           <div className="flex-shrink-0" style={{ width: filePanelWidth }}>

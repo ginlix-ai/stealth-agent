@@ -5,12 +5,13 @@ import './TradingChart.css';
 import { fetchStockData } from '../utils/api';
 import { calculateMA, calculateRSI } from '../utils/chartHelpers';
 import {
-  CHART_BG, CHART_TEXT, CHART_GRID,
+  CHART_BG, CHART_TEXT, CHART_GRID, getChartTheme,
   INTERVALS, INITIAL_LOAD_DAYS, SCROLL_CHUNK_DAYS,
   SCROLL_LOAD_THRESHOLD, RANGE_CHANGE_DEBOUNCE_MS,
   MA_CONFIGS, DEFAULT_ENABLED_MA, RSI_PERIODS, BARS_PER_DAY,
   OVERLAY_COLORS, OVERLAY_LABELS,
 } from '../utils/chartConstants';
+import { useTheme } from '@/contexts/ThemeContext';
 import CrosshairTooltip from './CrosshairTooltip';
 import TradingViewWidget from './TradingViewWidget';
 import { useChartAnnotations } from '../hooks/useChartAnnotations';
@@ -27,6 +28,8 @@ const TradingChart = React.memo(forwardRef(({
   overlayData,
   stockMeta,
 }, ref) => {
+  const { theme } = useTheme();
+  const ct = getChartTheme(theme);
   const chartContainerRef = useRef();
   const rsiChartContainerRef = useRef();
   const lightWrapperRef = useRef();
@@ -72,6 +75,10 @@ const TradingChart = React.memo(forwardRef(({
   // Keep refs synced with state
   useEffect(() => { enabledMaPeriodsRef.current = enabledMaPeriods; }, [enabledMaPeriods]);
   useEffect(() => { rsiPeriodRef.current = rsiPeriod; }, [rsiPeriod]);
+
+  // Keep chart theme ref synced for stable callbacks
+  const ctRef = useRef(ct);
+  useEffect(() => { ctRef.current = ct; }, [ct]);
 
   // Refs for scroll-based loading
   const allDataRef = useRef([]);
@@ -123,7 +130,7 @@ const TradingChart = React.memo(forwardRef(({
       return revealForCapture(async () => {
         try {
           const canvas = await html2canvas(chartContainerRef.current, {
-            backgroundColor: CHART_BG,
+            backgroundColor: ct.bg,
             scale: 2,
             logging: false,
           });
@@ -144,7 +151,7 @@ const TradingChart = React.memo(forwardRef(({
       return revealForCapture(async () => {
         try {
           const canvas = await html2canvas(container, {
-            backgroundColor: CHART_BG,
+            backgroundColor: ct.bg,
             scale: 1,
             logging: false,
           });
@@ -208,7 +215,7 @@ const TradingChart = React.memo(forwardRef(({
         time: d.time,
         value: d.volume || 0,
         color: i > 0 && d.close >= data[i - 1].close
-          ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)',
+          ? ctRef.current.volumeUp : ctRef.current.volumeDown,
       })));
     }
 
@@ -336,31 +343,32 @@ const TradingChart = React.memo(forwardRef(({
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
+    const t0 = getChartTheme(theme);
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: CHART_BG },
-        textColor: CHART_TEXT,
+        background: { type: ColorType.Solid, color: t0.bg },
+        textColor: t0.text,
       },
       autoSize: true,
       grid: {
-        vertLines: { color: CHART_GRID },
-        horzLines: { color: CHART_GRID },
+        vertLines: { color: t0.grid },
+        horzLines: { color: t0.grid },
       },
       watermark: {
         visible: true,
         text: symbol,
         fontSize: 48,
-        color: 'rgba(139,143,163,0.08)',
+        color: t0.watermark,
         horzAlign: 'center',
         vertAlign: 'center',
       },
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: {
-        borderColor: CHART_GRID,
+        borderColor: t0.grid,
         scaleMargins: { top: 0.1, bottom: 0.2 },
       },
       timeScale: {
-        borderColor: CHART_GRID,
+        borderColor: t0.grid,
         timeVisible: true,
         secondsVisible: false,
         handleScroll: {
@@ -374,11 +382,11 @@ const TradingChart = React.memo(forwardRef(({
     chartRef.current = chart;
 
     candlestickSeriesRef.current = chart.addCandlestickSeries({
-      upColor: '#10b981',
-      downColor: '#ef4444',
+      upColor: t0.upColor,
+      downColor: t0.downColor,
       borderVisible: false,
-      wickUpColor: '#10b981',
-      wickDownColor: '#ef4444',
+      wickUpColor: t0.upColor,
+      wickDownColor: t0.downColor,
     });
 
     // Volume histogram series
@@ -452,23 +460,24 @@ const TradingChart = React.memo(forwardRef(({
     // RSI chart (deferred so DOM is ready)
     const rsiTimeout = setTimeout(() => {
       if (!rsiChartContainerRef.current || rsiChartRef.current) return;
+      const t0 = getChartTheme(theme);
       const rsiChart = createChart(rsiChartContainerRef.current, {
         layout: {
-          background: { type: ColorType.Solid, color: CHART_BG },
-          textColor: CHART_TEXT,
+          background: { type: ColorType.Solid, color: t0.bg },
+          textColor: t0.text,
         },
         autoSize: true,
         grid: {
-          vertLines: { color: CHART_GRID },
-          horzLines: { color: CHART_GRID },
+          vertLines: { color: t0.grid },
+          horzLines: { color: t0.grid },
         },
         rightPriceScale: {
-          borderColor: CHART_GRID,
+          borderColor: t0.grid,
           visible: true,
           scaleMargins: { top: 0.1, bottom: 0.1 },
         },
         timeScale: {
-          borderColor: CHART_GRID,
+          borderColor: t0.grid,
           timeVisible: true,
           secondsVisible: false,
         },
@@ -476,9 +485,9 @@ const TradingChart = React.memo(forwardRef(({
       rsiChartRef.current = rsiChart;
       // RSI as area series with gradient
       rsiSeriesRef.current = rsiChart.addAreaSeries({
-        lineColor: '#667eea',
-        topColor: 'rgba(102,126,234,0.3)',
-        bottomColor: 'rgba(102,126,234,0.02)',
+        lineColor: t0.rsiLine,
+        topColor: t0.rsiTop,
+        bottomColor: t0.rsiBottom,
         lineWidth: 2,
         priceFormat: { type: 'price', precision: 0, minMove: 1 },
       });
@@ -519,13 +528,61 @@ const TradingChart = React.memo(forwardRef(({
           visible: true,
           text: symbol,
           fontSize: 48,
-          color: 'rgba(139,143,163,0.08)',
+          color: ct.watermark,
           horzAlign: 'center',
           vertAlign: 'center',
         },
       });
     }
-  }, [symbol]);
+  }, [symbol, ct.watermark]);
+
+  // --- Effect: Re-apply theme colors when theme changes ---
+  useEffect(() => {
+    const chart = chartRef.current;
+    const rsiChart = rsiChartRef.current;
+    if (chart) {
+      chart.applyOptions({
+        layout: { background: { type: ColorType.Solid, color: ct.bg }, textColor: ct.text },
+        grid: { vertLines: { color: ct.grid }, horzLines: { color: ct.grid } },
+        rightPriceScale: { borderColor: ct.grid },
+        timeScale: { borderColor: ct.grid },
+        watermark: { color: ct.watermark },
+      });
+      if (candlestickSeriesRef.current) {
+        candlestickSeriesRef.current.applyOptions({
+          upColor: ct.upColor, downColor: ct.downColor,
+          wickUpColor: ct.upColor, wickDownColor: ct.downColor,
+        });
+      }
+      if (baselineSeriesRef.current) {
+        baselineSeriesRef.current.applyOptions({
+          topLineColor: ct.baselineUp, topFillColor1: ct.baselineUpFill1, topFillColor2: ct.baselineUpFill2,
+          bottomLineColor: ct.baselineDown, bottomFillColor1: ct.baselineDownFill1, bottomFillColor2: ct.baselineDownFill2,
+        });
+      }
+      // Re-color volume bars
+      if (volumeSeriesRef.current && allDataRef.current.length > 0) {
+        const data = allDataRef.current;
+        volumeSeriesRef.current.setData(data.map((d, i) => ({
+          time: d.time, value: d.volume || 0,
+          color: i > 0 && d.close >= data[i - 1].close ? ct.volumeUp : ct.volumeDown,
+        })));
+      }
+    }
+    if (rsiChart) {
+      rsiChart.applyOptions({
+        layout: { background: { type: ColorType.Solid, color: ct.bg }, textColor: ct.text },
+        grid: { vertLines: { color: ct.grid }, horzLines: { color: ct.grid } },
+        rightPriceScale: { borderColor: ct.grid },
+        timeScale: { borderColor: ct.grid },
+      });
+      if (rsiSeriesRef.current) {
+        rsiSeriesRef.current.applyOptions({
+          lineColor: ct.rsiLine, topColor: ct.rsiTop, bottomColor: ct.rsiBottom,
+        });
+      }
+    }
+  }, [ct]);
 
   // --- Effect: Price scale mode ---
   useEffect(() => {
@@ -568,12 +625,12 @@ const TradingChart = React.memo(forwardRef(({
       if (!baselineSeriesRef.current) {
         baselineSeriesRef.current = chart.addBaselineSeries({
           baseValue: { type: 'price', price: basePrice },
-          topLineColor: '#10b981',
-          topFillColor1: 'rgba(16,185,129,0.2)',
-          topFillColor2: 'rgba(16,185,129,0.02)',
-          bottomLineColor: '#ef4444',
-          bottomFillColor1: 'rgba(239,68,68,0.02)',
-          bottomFillColor2: 'rgba(239,68,68,0.2)',
+          topLineColor: ct.baselineUp,
+          topFillColor1: ct.baselineUpFill1,
+          topFillColor2: ct.baselineUpFill2,
+          bottomLineColor: ct.baselineDown,
+          bottomFillColor1: ct.baselineDownFill1,
+          bottomFillColor2: ct.baselineDownFill2,
           lineWidth: 2,
         });
       } else {
@@ -813,7 +870,7 @@ const TradingChart = React.memo(forwardRef(({
                     key={p}
                     type="button"
                     className={`indicator-toggle-btn${rsiPeriod === p ? ' indicator-toggle-active' : ''}`}
-                    style={rsiPeriod === p ? { color: '#667eea', borderColor: '#667eea' } : undefined}
+                    style={rsiPeriod === p ? { color: 'var(--color-accent-primary)', borderColor: 'var(--color-accent-primary)' } : undefined}
                     onClick={() => handleChangeRsiPeriod(p)}
                   >
                     {p}
@@ -847,7 +904,7 @@ const TradingChart = React.memo(forwardRef(({
                 </span>
               ))}
               <span className="indicator-item">
-                <span className="indicator-color" style={{ backgroundColor: '#667eea' }} />
+                <span className="indicator-color" style={{ backgroundColor: 'var(--color-accent-primary)' }} />
                 RSI ({rsiPeriod}): {rsiValue ?? '\u2014'}
               </span>
             </div>

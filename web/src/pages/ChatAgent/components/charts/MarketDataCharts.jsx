@@ -7,24 +7,30 @@ import {
   LineChart, Line, ReferenceLine,
 } from 'recharts';
 import { fetchStockData } from '../../../TradingCenter/utils/api';
+import { useTheme } from '../../../../contexts/ThemeContext';
 
 // ─── Shared Constants ───────────────────────────────────────────────
 
-const CHART_BG = '#0f1422';
-const GRID_COLOR = '#1a1f35';
-const TEXT_COLOR = '#8b8fa3';
-const GREEN = '#10b981';
-const RED = '#ef4444';
+// CSS-variable colors for recharts (SVG) and DOM elements
+const GRID_COLOR = 'var(--color-border-default)';
+const TEXT_COLOR = 'var(--color-text-secondary)';
+// Resolved hex colors for canvas charts (lightweight-charts cannot resolve CSS variables)
+const CANVAS_THEMES = {
+  dark:  { bg: '#0f1422', grid: '#1a1f35', text: '#8b8fa3', up: '#0FEDBE', down: '#FF383C', upA: 'rgba(15, 237, 190, 0.3)', downA: 'rgba(255, 56, 60, 0.3)' },
+  light: { bg: '#FFFCF9', grid: '#DDD7D0', text: '#7A756F', up: '#16A34A', down: '#DC2626', upA: 'rgba(22, 163, 74, 0.3)', downA: 'rgba(220, 38, 38, 0.3)' },
+};
+const GREEN = 'var(--color-profit)';
+const RED = 'var(--color-loss)';
 const MA_BLUE = '#3b82f6';
 const MA_ORANGE = '#f59e0b';
 
-const PIE_COLORS = ['#6155F5', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6'];
+const PIE_COLORS = ['var(--color-accent-primary)', 'var(--color-profit)', '#f59e0b', 'var(--color-loss)', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6'];
 const ANALYST_COLORS = {
-  'Strong Buy': '#10b981',
+  'Strong Buy': 'var(--color-profit)',
   'Buy': '#34d399',
   'Hold': '#f59e0b',
   'Sell': '#f87171',
-  'Strong Sell': '#ef4444',
+  'Strong Sell': 'var(--color-loss)',
 };
 
 const formatNumber = (num) => {
@@ -94,7 +100,7 @@ function OpenInTradingLink({ symbol }) {
       style={{
         marginLeft: 'auto',
         fontSize: 11,
-        color: '#6155F5',
+        color: 'var(--color-accent-primary)',
         background: 'none',
         border: 'none',
         cursor: 'pointer',
@@ -114,10 +120,10 @@ function OpenInTradingLink({ symbol }) {
 const DarkTooltip = ({ active, payload, label, formatter }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: '#1a1f35', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '8px 12px' }}>
+    <div style={{ background: 'var(--color-bg-card)', border: '1px solid var(--color-border-muted)', borderRadius: 6, padding: '8px 12px' }}>
       <p style={{ color: TEXT_COLOR, fontSize: 12, margin: 0 }}>{label}</p>
       {payload.map((entry, i) => (
-        <p key={i} style={{ color: entry.color || '#fff', fontSize: 12, margin: '2px 0 0' }}>
+        <p key={i} style={{ color: entry.color || 'var(--color-text-primary)', fontSize: 12, margin: '2px 0 0' }}>
           {formatter ? formatter(entry.value) : entry.value}
         </p>
       ))}
@@ -128,6 +134,8 @@ const DarkTooltip = ({ active, payload, label, formatter }) => {
 // ─── StockPriceChart ────────────────────────────────────────────────
 
 export function StockPriceChart({ data }) {
+  const { theme } = useTheme();
+  const ct = CANVAS_THEMES[theme] || CANVAS_THEMES.dark;
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const candleSeriesRef = useRef(null);
@@ -158,7 +166,7 @@ export function StockPriceChart({ data }) {
         time: d.time,
         value: d.volume || 0,
         color: i > 0 && d.close >= chartData[i - 1].close
-          ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)',
+          ? ct.upA : ct.downA,
       })));
     }
     // Update MAs
@@ -176,7 +184,7 @@ export function StockPriceChart({ data }) {
       }
       series.setData(maData);
     });
-  }, []);
+  }, [ct]);
 
   // Scroll-load handler
   const handleScrollLoadMore = useCallback(async () => {
@@ -229,19 +237,19 @@ export function StockPriceChart({ data }) {
 
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: CHART_BG },
-        textColor: TEXT_COLOR,
+        background: { type: ColorType.Solid, color: ct.bg },
+        textColor: ct.text,
       },
       width: containerRef.current.clientWidth,
       height: 360,
       grid: {
-        vertLines: { color: GRID_COLOR },
-        horzLines: { color: GRID_COLOR },
+        vertLines: { color: ct.grid },
+        horzLines: { color: ct.grid },
       },
       crosshair: { mode: 1 },
-      rightPriceScale: { borderColor: GRID_COLOR },
+      rightPriceScale: { borderColor: ct.grid },
       timeScale: {
-        borderColor: GRID_COLOR,
+        borderColor: ct.grid,
         timeVisible: chartInterval !== 'daily',
         handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true },
       },
@@ -250,9 +258,9 @@ export function StockPriceChart({ data }) {
 
     // Candlestick series
     candleSeriesRef.current = chart.addCandlestickSeries({
-      upColor: GREEN, downColor: RED,
-      borderDownColor: RED, borderUpColor: GREEN,
-      wickDownColor: RED, wickUpColor: GREEN,
+      upColor: ct.up, downColor: ct.down,
+      borderDownColor: ct.down, borderUpColor: ct.up,
+      wickDownColor: ct.down, wickUpColor: ct.up,
     });
 
     // Volume histogram series (bottom 20%)
@@ -321,13 +329,13 @@ export function StockPriceChart({ data }) {
   return (
     <div>
       <div className="flex items-center gap-3 mb-2" style={{ fontSize: 13, color: TEXT_COLOR }}>
-        <span style={{ fontWeight: 600, color: '#fff' }}>{data.symbol}</span>
+        <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>{data.symbol}</span>
         {chartInterval && (
           <span style={{
             fontSize: 11,
             padding: '1px 6px',
             borderRadius: 3,
-            background: 'rgba(255,255,255,0.08)',
+            background: 'var(--color-bg-surface)',
             color: TEXT_COLOR,
           }}>
             {INTERVAL_LABELS[chartInterval] || chartInterval}
@@ -381,8 +389,8 @@ function StockStatsCard({ stats }) {
         gap: '8px 16px',
         marginTop: 12,
         padding: '10px 12px',
-        background: 'rgba(255,255,255,0.04)',
-        border: '1px solid rgba(255,255,255,0.06)',
+        background: 'var(--color-bg-surface)',
+        border: '1px solid var(--color-border-default)',
         borderRadius: 6,
         fontSize: 12,
       }}
@@ -392,7 +400,7 @@ function StockStatsCard({ stats }) {
           <div style={{ color: item.labelColor || TEXT_COLOR, opacity: item.labelColor ? 1 : 0.7, marginBottom: 2 }}>
             {item.label}
           </div>
-          <div style={{ color: item.color || '#fff', fontWeight: 500 }}>
+          <div style={{ color: item.color || 'var(--color-text-primary)', fontWeight: 500 }}>
             {item.value}
           </div>
         </div>
@@ -428,7 +436,7 @@ export function SectorPerformanceChart({ data }) {
 
   return (
     <div>
-      <h4 style={{ color: '#fff', fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
+      <h4 style={{ color: 'var(--color-text-primary)', fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
         Sector Performance
       </h4>
       <ResponsiveContainer width="100%" height={Math.max(chartData.length * 36, 200)}>
@@ -482,7 +490,7 @@ export function PerformanceBarChart({ performance }) {
 
   return (
     <div>
-      <h4 style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+      <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
         Price Performance
       </h4>
       <ResponsiveContainer width="100%" height={180}>
@@ -528,7 +536,7 @@ export function AnalystRatingsChart({ ratings }) {
 
   return (
     <div>
-      <h4 style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+      <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
         Analyst Ratings
       </h4>
       <div style={{ position: 'relative' }}>
@@ -544,7 +552,7 @@ export function AnalystRatingsChart({ ratings }) {
               stroke="none"
             >
               {chartData.map((entry) => (
-                <Cell key={entry.name} fill={ANALYST_COLORS[entry.name] || '#666'} />
+                <Cell key={entry.name} fill={ANALYST_COLORS[entry.name] || 'var(--color-icon-muted)'} />
               ))}
             </Pie>
             <Legend
@@ -564,7 +572,7 @@ export function AnalystRatingsChart({ ratings }) {
             textAlign: 'center',
           }}
         >
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', textTransform: 'uppercase' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', textTransform: 'uppercase' }}>
             {ratings.consensus || ''}
           </div>
           <div style={{ fontSize: 11, color: TEXT_COLOR }}>{total} ratings</div>
@@ -625,7 +633,7 @@ export function RevenueBreakdownChart({ revenueByProduct, revenueByGeo }) {
 
   return (
     <div>
-      <h4 style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+      <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
         Revenue Breakdown
       </h4>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -643,7 +651,7 @@ export function QuarterlyRevenueChart({ data }) {
 
   return (
     <div>
-      <h4 style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+      <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
         Quarterly Revenue &amp; Net Income
       </h4>
       <ResponsiveContainer width="100%" height={220}>
@@ -653,7 +661,7 @@ export function QuarterlyRevenueChart({ data }) {
           <YAxis tick={{ fill: TEXT_COLOR, fontSize: 11 }} axisLine={{ stroke: GRID_COLOR }} tickFormatter={(v) => formatNumber(v).replace('$', '')} />
           <Tooltip content={<DarkTooltip formatter={(v) => formatNumber(v)} />} />
           <Legend wrapperStyle={{ fontSize: 11, color: TEXT_COLOR }} formatter={(val) => <span style={{ color: TEXT_COLOR }}>{val}</span>} />
-          <Bar dataKey="revenue" name="Revenue" fill="#6155F5" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="revenue" name="Revenue" fill="var(--color-accent-primary)" radius={[4, 4, 0, 0]} />
           <Bar dataKey="netIncome" name="Net Income" fill={GREEN} radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
@@ -675,7 +683,7 @@ export function MarginsChart({ data }) {
 
   return (
     <div>
-      <h4 style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+      <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
         Profit Margins
       </h4>
       <ResponsiveContainer width="100%" height={220}>
@@ -685,7 +693,7 @@ export function MarginsChart({ data }) {
           <YAxis tick={{ fill: TEXT_COLOR, fontSize: 11 }} axisLine={{ stroke: GRID_COLOR }} tickFormatter={(v) => `${v.toFixed(0)}%`} />
           <Tooltip content={<DarkTooltip formatter={(v) => `${v?.toFixed(1)}%`} />} />
           <Legend wrapperStyle={{ fontSize: 11, color: TEXT_COLOR }} formatter={(val) => <span style={{ color: TEXT_COLOR }}>{val}</span>} />
-          <Line type="monotone" dataKey="grossMargin" name="Gross Margin" stroke="#6155F5" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+          <Line type="monotone" dataKey="grossMargin" name="Gross Margin" stroke="var(--color-accent-primary)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
           <Line type="monotone" dataKey="operatingMargin" name="Operating Margin" stroke={MA_ORANGE} strokeWidth={2} dot={{ r: 3 }} connectNulls />
           <Line type="monotone" dataKey="netMargin" name="Net Margin" stroke={GREEN} strokeWidth={2} dot={{ r: 3 }} connectNulls />
         </LineChart>
@@ -701,7 +709,7 @@ export function EarningsSurpriseChart({ data }) {
 
   return (
     <div>
-      <h4 style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+      <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
         EPS: Actual vs Estimate
       </h4>
       <ResponsiveContainer width="100%" height={220}>
@@ -712,7 +720,7 @@ export function EarningsSurpriseChart({ data }) {
           <Tooltip content={<DarkTooltip formatter={(v) => `$${v?.toFixed(2)}`} />} />
           <Legend wrapperStyle={{ fontSize: 11, color: TEXT_COLOR }} formatter={(val) => <span style={{ color: TEXT_COLOR }}>{val}</span>} />
           <Bar dataKey="epsActual" name="EPS Actual" fill={GREEN} radius={[4, 4, 0, 0]} />
-          <Bar dataKey="epsEstimate" name="EPS Estimate" fill="#4b5563" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="epsEstimate" name="EPS Estimate" fill="var(--color-icon-muted)" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -726,7 +734,7 @@ export function CashFlowChart({ data }) {
 
   return (
     <div>
-      <h4 style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+      <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
         Cash Flow (Quarterly)
       </h4>
       <ResponsiveContainer width="100%" height={220}>
@@ -737,7 +745,7 @@ export function CashFlowChart({ data }) {
           <Tooltip content={<DarkTooltip formatter={(v) => formatNumber(v)} />} />
           <Legend wrapperStyle={{ fontSize: 11, color: TEXT_COLOR }} formatter={(val) => <span style={{ color: TEXT_COLOR }}>{val}</span>} />
           <ReferenceLine y={0} stroke={GRID_COLOR} />
-          <Bar dataKey="operatingCashFlow" name="Operating CF" fill="#6155F5" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="operatingCashFlow" name="Operating CF" fill="var(--color-accent-primary)" radius={[4, 4, 0, 0]} />
           <Bar dataKey="capitalExpenditure" name="CapEx" fill={RED} radius={[4, 4, 0, 0]} />
           <Bar dataKey="freeCashFlow" name="Free CF" fill={GREEN} radius={[4, 4, 0, 0]} />
         </BarChart>
@@ -761,14 +769,14 @@ export function CompanyOverviewCard({ data }) {
       {quote && (
         <div>
           <div className="flex items-baseline gap-3 mb-3">
-            <span style={{ fontSize: 20, fontWeight: 700, color: '#fff' }}>
+            <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-text-primary)' }}>
               {name || symbol}
             </span>
             <span style={{ fontSize: 14, color: TEXT_COLOR }}>{symbol}</span>
             <OpenInTradingLink symbol={symbol} />
           </div>
           <div className="flex items-baseline gap-3 mb-3">
-            <span style={{ fontSize: 24, fontWeight: 700, color: '#fff' }}>
+            <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text-primary)' }}>
               ${quote.price?.toFixed(2) || 'N/A'}
             </span>
             {quote.change != null && (
@@ -823,7 +831,7 @@ function QuoteStat({ label, value }) {
   return (
     <div className="flex justify-between py-0.5">
       <span style={{ opacity: 0.7 }}>{label}</span>
-      <span style={{ color: '#fff' }}>{value}</span>
+      <span style={{ color: 'var(--color-text-primary)' }}>{value}</span>
     </div>
   );
 }
@@ -848,20 +856,20 @@ export function MarketIndicesChart({ data }) {
           <div
             key={symbol}
             style={{
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.06)',
+              background: 'var(--color-bg-surface)',
+              border: '1px solid var(--color-border-default)',
               borderRadius: 8,
               padding: '10px 12px',
             }}
           >
             {/* Header: name + price/change + trading link */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ color: '#fff', fontWeight: 600, fontSize: 13 }}>
+              <span style={{ color: 'var(--color-text-primary)', fontWeight: 600, fontSize: 13 }}>
                 {indexData.name || symbol}
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
                 {lastClose != null && (
-                  <span style={{ color: '#fff', fontWeight: 500 }}>
+                  <span style={{ color: 'var(--color-text-primary)', fontWeight: 500 }}>
                     {lastClose.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 )}
@@ -951,7 +959,7 @@ export function StockScreenerTable({ data }) {
 
   return (
     <div>
-      <h4 style={{ color: '#fff', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+      <h4 style={{ color: 'var(--color-text-primary)', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
         Stock Screener — {count} result{count !== 1 ? 's' : ''}
       </h4>
 
@@ -965,9 +973,9 @@ export function StockScreenerTable({ data }) {
                 fontSize: 11,
                 padding: '2px 8px',
                 borderRadius: 12,
-                backgroundColor: 'rgba(97, 85, 245, 0.12)',
-                color: 'rgba(255,255,255,0.7)',
-                border: '1px solid rgba(97, 85, 245, 0.2)',
+                backgroundColor: 'var(--color-accent-soft)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-accent-soft)',
               }}
             >
               {tag}
@@ -988,12 +996,12 @@ export function StockScreenerTable({ data }) {
                   style={{
                     position: 'sticky',
                     top: 0,
-                    background: CHART_BG,
+                    background: 'var(--color-bg-card)',
                     color: TEXT_COLOR,
                     fontWeight: 500,
                     padding: '6px 8px',
                     textAlign: 'left',
-                    borderBottom: '1px solid rgba(255,255,255,0.1)',
+                    borderBottom: '1px solid var(--color-border-muted)',
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
                     minWidth: col.width,
@@ -1010,15 +1018,15 @@ export function StockScreenerTable({ data }) {
               <tr
                 key={stock.symbol || i}
                 style={{
-                  borderBottom: '1px solid rgba(255,255,255,0.04)',
+                  borderBottom: '1px solid var(--color-border-muted)',
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)')}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-border-muted)')}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
               >
                 {columns.map((col) => {
                   const raw = stock[col.key];
                   const display = col.format ? col.format(raw) : (raw ?? 'N/A');
-                  const cellColor = col.color ? col.color(raw) : (col.key === 'symbol' ? '#fff' : TEXT_COLOR);
+                  const cellColor = col.color ? col.color(raw) : (col.key === 'symbol' ? 'var(--color-text-primary)' : TEXT_COLOR);
                   return (
                     <td
                       key={col.key}
@@ -1046,6 +1054,8 @@ export function StockScreenerTable({ data }) {
 }
 
 function MiniCandlestick({ ohlcv, height = 180 }) {
+  const { theme } = useTheme();
+  const ct = CANVAS_THEMES[theme] || CANVAS_THEMES.dark;
   const containerRef = useRef(null);
   const chartRef = useRef(null);
 
@@ -1062,27 +1072,27 @@ function MiniCandlestick({ ohlcv, height = 180 }) {
 
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: CHART_BG },
-        textColor: TEXT_COLOR,
+        background: { type: ColorType.Solid, color: ct.bg },
+        textColor: ct.text,
       },
       width: containerRef.current.clientWidth,
       height,
       grid: {
-        vertLines: { color: GRID_COLOR },
-        horzLines: { color: GRID_COLOR },
+        vertLines: { color: ct.grid },
+        horzLines: { color: ct.grid },
       },
-      rightPriceScale: { borderColor: GRID_COLOR },
-      timeScale: { borderColor: GRID_COLOR, timeVisible: isIntraday },
+      rightPriceScale: { borderColor: ct.grid },
+      timeScale: { borderColor: ct.grid, timeVisible: isIntraday },
     });
     chartRef.current = chart;
 
     const series = chart.addCandlestickSeries({
-      upColor: GREEN,
-      downColor: RED,
-      borderDownColor: RED,
-      borderUpColor: GREEN,
-      wickDownColor: RED,
-      wickUpColor: GREEN,
+      upColor: ct.up,
+      downColor: ct.down,
+      borderDownColor: ct.down,
+      borderUpColor: ct.up,
+      wickDownColor: ct.down,
+      wickUpColor: ct.up,
     });
     series.setData(
       ohlcv.map((d) => ({
@@ -1110,7 +1120,7 @@ function MiniCandlestick({ ohlcv, height = 180 }) {
         chartRef.current = null;
       }
     };
-  }, [ohlcv, height]);
+  }, [ohlcv, height, theme]);
 
   if (!ohlcv?.length) return null;
   return <div ref={containerRef} style={{ width: '100%', height }} />;

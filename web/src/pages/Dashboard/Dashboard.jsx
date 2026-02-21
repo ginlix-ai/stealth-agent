@@ -7,6 +7,7 @@ import {
   getInfoFlowResults,
 } from './utils/api';
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useToast } from '@/components/ui/use-toast';
 import { getFlashWorkspace } from '../ChatAgent/utils/api';
 import { useNavigate } from 'react-router-dom';
@@ -97,6 +98,7 @@ function formatRelativeTime(timestamp) {
 function Dashboard() {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   
   // Onboarding check state
   const [showOnboardingDialog, setShowOnboardingDialog] = useState(false);
@@ -282,8 +284,8 @@ function Dashboard() {
       console.error('Error setting up onboarding:', error);
       toast({
         variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to set up onboarding. Please try again.',
+        title: t('common.error'),
+        description: t('dashboard.failedOnboarding'),
       });
     } finally {
       setIsCreatingWorkspace(false);
@@ -304,8 +306,8 @@ function Dashboard() {
       console.error('Error navigating to modify preferences:', error);
       toast({
         variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to start preference update. Please try again.',
+        title: t('common.error'),
+        description: t('dashboard.failedPrefUpdate'),
       });
     }
   }, [navigate, toast]);
@@ -338,20 +340,20 @@ function Dashboard() {
         open={deleteConfirm.open}
         title={deleteConfirm.title}
         message={deleteConfirm.message}
-        confirmLabel="Delete"
+        confirmLabel={t('common.delete')}
         onConfirm={runDeleteConfirm}
         onOpenChange={(open) => !open && setDeleteConfirm((p) => ({ ...p, open: false }))}
             />
 
       {/* Onboarding Incomplete Dialog */}
       <Dialog open={showOnboardingDialog} onOpenChange={setShowOnboardingDialog}>
-        <DialogContent className="sm:max-w-md text-white border" style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}>
+        <DialogContent className="sm:max-w-md border" style={{ backgroundColor: 'var(--color-bg-elevated)', borderColor: 'var(--color-border-elevated)' }}>
           <DialogHeader>
             <DialogTitle className="dashboard-title-font" style={{ color: 'var(--color-text-primary)' }}>
-              Preference Information Incomplete
+              {t('dashboard.prefIncomplete')}
             </DialogTitle>
             <DialogDescription style={{ color: 'var(--color-text-secondary)' }}>
-              Your preference information is not complete. Please complete your preferences to get the best experience with the agent.
+              {t('dashboard.prefIncompleteMsg')}
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2 pt-4">
@@ -361,10 +363,10 @@ function Dashboard() {
                 setOnboardingIgnoredFor24h();
                 setShowOnboardingDialog(false);
               }}
-              className="px-4 py-2 rounded-md text-sm font-medium transition-colors hover:bg-white/10"
+              className="px-4 py-2 rounded-md text-sm font-medium transition-colors"
               style={{ color: 'var(--color-text-primary)' }}
             >
-              Ignore for 24 hours
+              {t('dashboard.ignoreFor24h')}
             </button>
             <button
               type="button"
@@ -376,7 +378,7 @@ function Dashboard() {
               className="px-4 py-2 rounded-md text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: 'var(--color-accent-primary)', color: 'var(--color-text-on-accent)' }}
             >
-              {isCreatingWorkspace ? 'Setting up...' : 'Proceed'}
+              {isCreatingWorkspace ? t('dashboard.settingUp') : t('dashboard.proceed')}
                     </button>
                   </div>
         </DialogContent>
