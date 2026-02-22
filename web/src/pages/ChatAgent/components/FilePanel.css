@@ -341,7 +341,7 @@
     gap: 8px;
     padding: 10px 12px;
     border-bottom: 1px solid var(--color-border-muted);
-    background-color: var(--color-accent-soft);
+    background-color: var(--color-bg-surface);
     flex-shrink: 0;
   }
   .print-settings-row {
@@ -364,16 +364,15 @@
     font-size: 12px;
     font-weight: 500;
     color: var(--color-text-primary);
-    background-color: var(--color-border-muted);
-    border: 1px solid var(--color-border-muted);
+    background-color: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-default);
     outline: none;
     cursor: pointer;
     transition: all 0.15s;
     appearance: auto;
   }
   .print-settings-select:hover {
-    border-color: var(--color-border-muted);
-    background-color: var(--color-border-muted);
+    border-color: var(--color-border-elevated);
   }
   .print-settings-select:focus {
     border-color: var(--color-accent-overlay);
@@ -388,8 +387,8 @@
     display: flex;
     align-items: center;
     gap: 2px;
-    background: var(--color-border-muted);
-    border: 1px solid var(--color-border-muted);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-default);
     border-radius: 6px;
     padding: 1px 2px;
   }
@@ -407,7 +406,7 @@
     transition: all 0.12s;
   }
   .print-settings-stepper-btn:hover:not(:disabled) {
-    background: var(--color-border-muted);
+    background: var(--color-bg-hover);
     color: var(--color-text-primary);
   }
   .print-settings-stepper-btn:disabled {
@@ -428,9 +427,9 @@
     justify-content: center;
     gap: 6px;
     padding: 6px 12px;
-    border: 1px solid var(--color-accent-overlay);
-    background: var(--color-accent-soft);
-    color: var(--color-accent-primary);
+    border: none;
+    background: var(--color-accent-primary);
+    color: var(--color-text-on-accent);
     border-radius: 6px;
     font-size: 12px;
     font-weight: 600;
@@ -438,9 +437,7 @@
     transition: all 0.15s;
   }
   .print-settings-print-btn:hover {
-    background: var(--color-accent-soft);
-    border-color: var(--color-accent-overlay);
-    color: var(--color-accent-primary);
+    opacity: 0.9;
   }
 
   /* ====== Print Preview Active (live typography) ====== */
