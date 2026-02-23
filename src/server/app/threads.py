@@ -40,6 +40,7 @@ from src.server.database.conversation import (
     update_thread_title,
     get_thread_by_id,
     update_thread_sharing,
+    lookup_thread_by_external_id,
 )
 from src.server.dependencies.usage_limits import ChatRateLimited
 
@@ -193,9 +194,20 @@ async def send_new_thread_message(request: ChatRequest, auth: ChatRateLimited):
     Create a new thread and send the first message. Returns an SSE stream.
 
     The server creates a new thread_id and returns it in SSE events.
+    If external_thread_id + platform are provided, resolves to an existing thread first.
     """
-    # Generate a new thread_id since none was provided
-    thread_id = str(uuid4())
+    thread_id = None
+    if request.external_thread_id and request.platform:
+        thread_id = await lookup_thread_by_external_id(
+            request.platform, request.external_thread_id, auth.user_id
+        )
+        if thread_id:
+            logger.info(
+                f"[CHAT] Resolved external_thread_id={request.external_thread_id} "
+                f"platform={request.platform} -> thread_id={thread_id}"
+            )
+    if not thread_id:
+        thread_id = str(uuid4())
     return await _handle_send_message(request, auth, thread_id)
 
 

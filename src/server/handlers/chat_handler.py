@@ -376,7 +376,7 @@ async def astream_flash_workflow(
         workspace_id = str(flash_ws["workspace_id"])
 
         # Ensure thread exists in database
-        await qr_db.ensure_thread_exists(
+        ensure_kwargs = dict(
             workspace_id=workspace_id,
             conversation_thread_id=thread_id,
             user_id=user_id,
@@ -384,6 +384,10 @@ async def astream_flash_workflow(
             initial_status="in_progress",
             msg_type="flash",
         )
+        if request.external_thread_id and request.platform:
+            ensure_kwargs["external_id"] = request.external_thread_id
+            ensure_kwargs["platform"] = request.platform
+        await qr_db.ensure_thread_exists(**ensure_kwargs)
 
         # Initialize persistence service
         persistence_service = ConversationPersistenceService.get_instance(
@@ -893,7 +897,7 @@ async def astream_ptc_workflow(
         query_type = "resume_feedback" if is_resume else "initial"
 
         # Ensure thread exists in database (linked to workspace)
-        await qr_db.ensure_thread_exists(
+        ensure_kwargs = dict(
             workspace_id=workspace_id,
             conversation_thread_id=thread_id,
             user_id=user_id,
@@ -901,6 +905,10 @@ async def astream_ptc_workflow(
             initial_status="in_progress",
             msg_type="ptc",
         )
+        if request.external_thread_id and request.platform:
+            ensure_kwargs["external_id"] = request.external_thread_id
+            ensure_kwargs["platform"] = request.platform
+        await qr_db.ensure_thread_exists(**ensure_kwargs)
 
         # Initialize persistence service for this thread
         persistence_service = ConversationPersistenceService.get_instance(

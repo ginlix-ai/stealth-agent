@@ -238,6 +238,17 @@ class ChatRequest(BaseModel):
         description="LLM model name from models.json (e.g., 'minimax-m2.1', 'claude-sonnet-4-5')",
     )
 
+    # External thread identity (for channel integrations like Telegram, Slack)
+    external_thread_id: Optional[str] = Field(
+        default=None,
+        description="Stable external thread identifier (e.g. 'chat_id:topic_id'). "
+        "When provided with platform, langalpha resolves to an existing thread or creates a new one.",
+    )
+    platform: Optional[str] = Field(
+        default=None,
+        description="Platform identifier (e.g. 'telegram', 'slack'). Used with external_thread_id.",
+    )
+
 
 # =============================================================================
 # Utility Request Models

@@ -543,6 +543,8 @@ async def setup_tables_async():
                                 )),
                             thread_index INTEGER NOT NULL,
                             title VARCHAR(255),
+                            external_id   VARCHAR(255),
+                            platform      VARCHAR(50),
                             share_token VARCHAR(32) UNIQUE,
                             is_shared BOOLEAN NOT NULL DEFAULT FALSE,
                             share_permissions JSONB NOT NULL DEFAULT '{}',
@@ -564,6 +566,11 @@ async def setup_tables_async():
                     await cur.execute("""
                         CREATE UNIQUE INDEX IF NOT EXISTS idx_threads_share_token
                         ON conversation_threads(share_token) WHERE share_token IS NOT NULL;
+                    """)
+                    await cur.execute("""
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_threads_external
+                        ON conversation_threads (platform, external_id)
+                        WHERE external_id IS NOT NULL;
                     """)
                     print("   conversation_threads OK")
 

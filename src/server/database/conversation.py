@@ -234,6 +234,8 @@ async def create_thread(
     msg_type: Optional[str] = None,
     thread_index: Optional[int] = None,
     title: Optional[str] = None,
+    external_id: Optional[str] = None,
+    platform: Optional[str] = None,
     conn=None
 ) -> Dict[str, Any]:
     """
@@ -246,33 +248,53 @@ async def create_thread(
         msg_type: Message type
         thread_index: Optional thread index (calculated if not provided)
         title: Optional thread title
+        external_id: Optional external thread identifier (e.g. "chat_id:topic_id")
+        platform: Optional platform identifier (e.g. "telegram", "slack")
         conn: Optional database connection to reuse
     """
+    # Build SQL dynamically — only include external_id/platform for platform callers
+    columns = [
+        "conversation_thread_id", "workspace_id", "current_status",
+        "msg_type", "thread_index", "title",
+    ]
+    base_params = [conversation_thread_id, workspace_id, current_status, msg_type]
+    # thread_index is appended per-attempt (may be recalculated on retry)
+
+    if external_id and platform:
+        columns.extend(["external_id", "platform"])
+        extra_params = [external_id, platform]
+    else:
+        extra_params = []
+
+    col_str = ", ".join(columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+    returning_str = f"{col_str}, created_at, updated_at"
+
+    sql = f"""
+        INSERT INTO conversation_threads ({col_str})
+        VALUES ({placeholders})
+        RETURNING {returning_str}
+    """
+
     max_retries = 3
     for attempt in range(max_retries):
         # Calculate thread_index if not provided, or recalculate on retry
         if thread_index is None or attempt > 0:
             thread_index = await calculate_next_thread_index(workspace_id, conn=conn)
 
+        params = tuple(base_params + [thread_index, title] + extra_params)
+
         try:
             if conn:
                 async with conn.cursor(row_factory=dict_row) as cur:
-                    await cur.execute("""
-                        INSERT INTO conversation_threads (conversation_thread_id, workspace_id, current_status, msg_type, thread_index, title)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                        RETURNING conversation_thread_id, workspace_id, current_status, msg_type, thread_index, title, created_at, updated_at
-                    """, (conversation_thread_id, workspace_id, current_status, msg_type, thread_index, title))
+                    await cur.execute(sql, params)
                     result = await cur.fetchone()
                     logger.info(f"[conversation_db] create_thread thread_id={conversation_thread_id} thread_index={thread_index} workspace_id={workspace_id}")
                     return dict(result)
             else:
                 async with get_db_connection() as conn_new:
                     async with conn_new.cursor(row_factory=dict_row) as cur:
-                        await cur.execute("""
-                            INSERT INTO conversation_threads (conversation_thread_id, workspace_id, current_status, msg_type, thread_index, title)
-                            VALUES (%s, %s, %s, %s, %s, %s)
-                            RETURNING conversation_thread_id, workspace_id, current_status, msg_type, thread_index, title, created_at, updated_at
-                        """, (conversation_thread_id, workspace_id, current_status, msg_type, thread_index, title))
+                        await cur.execute(sql, params)
                         result = await cur.fetchone()
                         return dict(result)
 
@@ -286,6 +308,40 @@ async def create_thread(
         except Exception as e:
             logger.error(f"Error creating thread: {e}")
             raise
+
+
+async def lookup_thread_by_external_id(
+    platform: str, external_id: str, user_id: str
+) -> Optional[str]:
+    """Look up thread_id by platform + external_id, scoped to user's workspaces.
+
+    Returns the conversation_thread_id if found, None otherwise.
+    """
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute("""
+                    SELECT ct.conversation_thread_id
+                    FROM conversation_threads ct
+                    JOIN workspaces w ON ct.workspace_id = w.workspace_id
+                    WHERE ct.platform = %s
+                      AND ct.external_id = %s
+                      AND w.user_id = %s
+                    ORDER BY ct.updated_at DESC
+                    LIMIT 1
+                """, (platform, external_id, user_id))
+                result = await cur.fetchone()
+                if result:
+                    thread_id = str(result["conversation_thread_id"])
+                    logger.info(
+                        f"[conversation_db] lookup_thread_by_external_id "
+                        f"platform={platform} external_id={external_id} -> {thread_id}"
+                    )
+                    return thread_id
+                return None
+    except Exception as e:
+        logger.error(f"Error looking up thread by external_id: {e}")
+        return None
 
 
 async def update_thread_status(conversation_thread_id: str, status: str, conn=None) -> bool:
@@ -330,6 +386,8 @@ async def ensure_thread_exists(
     initial_query: str,
     initial_status: str = "in_progress",
     msg_type: Optional[str] = None,
+    external_id: Optional[str] = None,
+    platform: Optional[str] = None,
 ) -> None:
     """
     Ensure conversation_threads row exists before workflow starts.
@@ -344,6 +402,8 @@ async def ensure_thread_exists(
         initial_query: Initial query text (used as thread title)
         initial_status: Initial thread status
         msg_type: Message type (e.g., 'ptc')
+        external_id: Optional external thread identifier (e.g. "chat_id:topic_id")
+        platform: Optional platform identifier (e.g. "telegram", "slack")
     """
     async with get_db_connection() as conn:
         # Step 1: Verify workspace exists
@@ -374,6 +434,8 @@ async def ensure_thread_exists(
                 msg_type=msg_type,
                 thread_index=None,  # Will be calculated inside create_thread using same conn
                 title=title,
+                external_id=external_id,
+                platform=platform,
                 conn=conn
             )
         else:
