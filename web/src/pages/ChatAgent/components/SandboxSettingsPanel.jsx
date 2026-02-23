@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   X, Cpu, MemoryStick, HardDrive, MonitorCog, Play, Square,
   Package, Search, RefreshCw, ChevronDown, ChevronRight,
-  Server, Loader2, BookOpen,
+  Server, Loader2, BookOpen, Archive,
 } from 'lucide-react';
 import { getSandboxStats, installSandboxPackages, refreshWorkspace } from '../utils/api';
 import { api } from '@/api/client';
@@ -192,32 +192,44 @@ export default function SandboxSettingsPanel({ onClose, workspaceId }) {
               />
             )}
             {activeTab === 'storage' && (
-              <StorageTab
-                stats={stats}
-                showDirBreakdown={showDirBreakdown}
-                onToggleBreakdown={() => setShowDirBreakdown(!showDirBreakdown)}
-              />
+              isRunning ? (
+                <StorageTab
+                  stats={stats}
+                  showDirBreakdown={showDirBreakdown}
+                  onToggleBreakdown={() => setShowDirBreakdown(!showDirBreakdown)}
+                />
+              ) : (
+                <OfflineTabPlaceholder tabName="storage" />
+              )
             )}
             {activeTab === 'packages' && (
-              <PackagesTab
-                filteredPackages={filteredPackages}
-                defaultPkgSet={defaultPkgSet}
-                pkgSearch={pkgSearch}
-                onSearchChange={setPkgSearch}
-                installInput={installInput}
-                onInstallInputChange={setInstallInput}
-                installing={installing}
-                installResult={installResult}
-                onInstall={handleInstall}
-              />
+              isRunning ? (
+                <PackagesTab
+                  filteredPackages={filteredPackages}
+                  defaultPkgSet={defaultPkgSet}
+                  pkgSearch={pkgSearch}
+                  onSearchChange={setPkgSearch}
+                  installInput={installInput}
+                  onInstallInputChange={setInstallInput}
+                  installing={installing}
+                  installResult={installResult}
+                  onInstall={handleInstall}
+                />
+              ) : (
+                <OfflineTabPlaceholder tabName="packages" />
+              )
             )}
             {activeTab === 'tools' && (
-              <ToolsTab
-                stats={stats}
-                refreshing={refreshing}
-                refreshResult={refreshResult}
-                onRefresh={handleRefresh}
-              />
+              isRunning ? (
+                <ToolsTab
+                  stats={stats}
+                  refreshing={refreshing}
+                  refreshResult={refreshResult}
+                  onRefresh={handleRefresh}
+                />
+              ) : (
+                <OfflineTabPlaceholder tabName="tools & skills" />
+              )
             )}
           </>
         )}
@@ -261,11 +273,23 @@ function ErrorState({ message, onRetry }) {
 }
 
 
+function OfflineTabPlaceholder({ tabName }) {
+  return (
+    <div className="py-8 text-center text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
+      Start the workspace to view {tabName}
+    </div>
+  );
+}
+
+
 // ---------------------------------------------------------------------------
 // Overview Tab
 // ---------------------------------------------------------------------------
 
+const TRANSITIONAL_STATES = new Set(['archiving', 'stopping', 'starting']);
+
 function OverviewTab({ stats, isRunning, actionLoading, onStartStop }) {
+  const isTransitioning = actionLoading || TRANSITIONAL_STATES.has(stats?.state);
   const resourceCards = [
     { icon: Cpu, label: 'CPU', value: stats.resources.cpu != null ? `${stats.resources.cpu} vCPU` : '—' },
     { icon: MemoryStick, label: 'Memory', value: stats.resources.memory != null ? `${stats.resources.memory} GiB` : '—' },
@@ -298,13 +322,19 @@ function OverviewTab({ stats, isRunning, actionLoading, onStartStop }) {
         style={{ backgroundColor: 'var(--color-border-muted)', border: '1px solid var(--color-border-muted)' }}
       >
         <div className="flex items-center gap-3">
-          <div
-            className="w-2.5 h-2.5 rounded-full"
-            style={{ backgroundColor: isRunning ? 'var(--color-profit)' : 'var(--color-loss)' }}
-          />
+          {isTransitioning ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
+          ) : (
+            <div
+              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+              style={{ backgroundColor: isRunning ? 'var(--color-profit)' : 'var(--color-loss)' }}
+            />
+          )}
           <div>
             <div className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-              {isRunning ? 'Running' : stats.state || 'Unknown'}
+              {isTransitioning
+                ? (actionLoading ? 'Updating...' : stats.state.charAt(0).toUpperCase() + stats.state.slice(1) + '...')
+                : isRunning ? 'Running' : stats.state ? stats.state.charAt(0).toUpperCase() + stats.state.slice(1) : 'Unknown'}
             </div>
             {stats.created_at && (
               <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
@@ -316,27 +346,38 @@ function OverviewTab({ stats, isRunning, actionLoading, onStartStop }) {
         <div className="flex items-center gap-2">
           {stats.auto_stop_interval != null && (
             <span className="text-xs px-2 py-1 rounded" style={{ color: 'var(--color-text-tertiary)', backgroundColor: 'var(--color-border-muted)' }}>
-              Auto-stop: {Math.round(stats.auto_stop_interval / 60)}m
+              Auto-stop: {stats.auto_stop_interval}m
             </span>
+          )}
+          {!isRunning && stats.state === 'stopped' && (
+            <button
+              onClick={() => onStartStop('archive')}
+              disabled={isTransitioning}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors hover:bg-foreground/10 disabled:opacity-50"
+              style={{ color: 'var(--color-text-tertiary)', border: '1px solid var(--color-border-muted)' }}
+            >
+              <Archive className="h-3 w-3" />
+              Archive
+            </button>
           )}
           {isRunning ? (
             <button
               onClick={() => onStartStop('stop')}
-              disabled={actionLoading}
+              disabled={isTransitioning}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors hover:bg-foreground/10 disabled:opacity-50"
               style={{ color: 'var(--color-loss)', border: '1px solid var(--color-border-loss)' }}
             >
-              {actionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Square className="h-3 w-3" />}
+              <Square className="h-3 w-3" />
               Stop
             </button>
           ) : (
             <button
               onClick={() => onStartStop('start')}
-              disabled={actionLoading}
+              disabled={isTransitioning}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors hover:bg-foreground/10 disabled:opacity-50"
               style={{ color: 'var(--color-profit)', border: '1px solid var(--color-profit-border)' }}
             >
-              {actionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+              <Play className="h-3 w-3" />
               Start
             </button>
           )}

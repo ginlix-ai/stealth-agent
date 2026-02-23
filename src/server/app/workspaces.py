@@ -321,6 +321,46 @@ async def stop_workspace(workspace_id: str):
         raise HTTPException(status_code=500, detail="Failed to stop workspace")
 
 
+@router.post("/{workspace_id}/archive", response_model=WorkspaceActionResponse)
+async def archive_workspace(
+    workspace_id: str,
+    x_user_id: CurrentUserId,
+):
+    """
+    Archive a stopped workspace (moves sandbox to object storage).
+
+    The workspace must be in 'stopped' state. Archived sandboxes take longer
+    to start (~60-300s) but use no compute resources.
+
+    Args:
+        workspace_id: Workspace UUID
+
+    Returns:
+        Action result
+    """
+    try:
+        workspace = await db_get_workspace(workspace_id)
+        _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
+
+        manager = WorkspaceManager.get_instance()
+        await manager.archive_workspace(workspace_id)
+
+        logger.info(f"Archived workspace {workspace_id}")
+        return WorkspaceActionResponse(
+            workspace_id=workspace_id,
+            status="stopped",
+            message="Workspace archived successfully",
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Error archiving workspace {workspace_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to archive workspace")
+
+
 @router.post("/{workspace_id}/refresh", response_model=WorkspaceRefreshResponse)
 async def refresh_workspace(
     workspace_id: str,

@@ -222,7 +222,81 @@ async def get_sandbox_stats(
     workspace_id: str,
     x_user_id: CurrentUserId,
 ) -> SandboxStatsResponse:
-    """Get sandbox resource stats, disk usage, installed packages, and MCP servers."""
+    """Get sandbox resource stats, disk usage, installed packages, and MCP servers.
+
+    For running workspaces: returns full stats including disk, packages, MCP, skills.
+    For stopped/archived workspaces: returns metadata only (state, resources, intervals)
+    from Daytona API without starting the sandbox.
+    """
+    workspace = await db_get_workspace(workspace_id)
+    _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
+
+    if workspace.get("status") == "flash":
+        raise HTTPException(
+            status_code=400, detail="Flash workspaces do not have a sandbox"
+        )
+
+    if workspace.get("status") == "running":
+        return await _get_full_sandbox_stats(workspace_id, x_user_id, workspace)
+    else:
+        return await _get_offline_sandbox_stats(workspace_id, workspace)
+
+
+async def _get_offline_sandbox_stats(
+    workspace_id: str,
+    workspace: dict[str, Any],
+) -> SandboxStatsResponse:
+    """Get sandbox metadata for stopped/archived workspaces via Daytona API (no start)."""
+    sandbox_id = workspace.get("sandbox_id")
+    if not sandbox_id:
+        return SandboxStatsResponse(
+            workspace_id=workspace_id,
+            state=workspace.get("status", "unknown"),
+            created_at=str(workspace.get("created_at", "")),
+            resources=SandboxResources(),
+        )
+
+    from daytona_sdk import AsyncDaytona, DaytonaConfig
+
+    manager = WorkspaceManager.get_instance()
+    daytona_config = DaytonaConfig(
+        api_key=manager.config.daytona.api_key,
+        api_url=manager.config.daytona.base_url,
+    )
+    try:
+        async with AsyncDaytona(daytona_config) as daytona:
+            sandbox = await daytona.get(sandbox_id)
+            state = sandbox.state.value if hasattr(sandbox.state, "value") else str(sandbox.state)
+            return SandboxStatsResponse(
+                workspace_id=workspace_id,
+                sandbox_id=sandbox_id,
+                state=state,
+                created_at=str(sandbox.created_at) if sandbox.created_at else None,
+                auto_stop_interval=sandbox.auto_stop_interval,
+                resources=SandboxResources(
+                    cpu=sandbox.cpu,
+                    memory=sandbox.memory,
+                    disk=sandbox.disk,
+                    gpu=sandbox.gpu,
+                ),
+            )
+    except Exception as e:
+        logger.warning(f"Failed to query Daytona for sandbox {sandbox_id}: {e}")
+        return SandboxStatsResponse(
+            workspace_id=workspace_id,
+            sandbox_id=sandbox_id,
+            state=workspace.get("status", "unknown"),
+            created_at=str(workspace.get("created_at", "")),
+            resources=SandboxResources(),
+        )
+
+
+async def _get_full_sandbox_stats(
+    workspace_id: str,
+    x_user_id: str,
+    workspace: dict[str, Any],
+) -> SandboxStatsResponse:
+    """Get full sandbox stats for running workspaces (disk, packages, MCP, skills)."""
     session, sandbox = await _get_sandbox(workspace_id, x_user_id)
 
     # --- 1. Static properties from the Daytona sandbox object ---

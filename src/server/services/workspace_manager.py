@@ -735,6 +735,36 @@ class WorkspaceManager:
                 )
                 raise
 
+    async def archive_workspace(self, workspace_id: str) -> Dict[str, Any]:
+        """Archive a stopped workspace (moves sandbox to object storage)."""
+        async with self._acquire_workspace_lock(workspace_id):
+            workspace = await db_get_workspace(workspace_id)
+            if not workspace:
+                raise ValueError(f"Workspace {workspace_id} not found")
+
+            if workspace["status"] != "stopped":
+                raise RuntimeError(
+                    f"Cannot archive workspace in '{workspace['status']}' state. "
+                    "Only stopped workspaces can be archived."
+                )
+
+            sandbox_id = workspace.get("sandbox_id")
+            if not sandbox_id:
+                raise RuntimeError("No sandbox associated with this workspace")
+
+            from daytona_sdk import AsyncDaytona, DaytonaConfig
+
+            daytona_config = DaytonaConfig(
+                api_key=self.config.daytona.api_key,
+                api_url=self.config.daytona.base_url,
+            )
+            async with AsyncDaytona(daytona_config) as daytona:
+                sandbox = await daytona.get(sandbox_id)
+                await sandbox.archive()
+
+            logger.info(f"Workspace {workspace_id} archived successfully")
+            return workspace
+
     async def delete_workspace(
         self,
         workspace_id: str,
