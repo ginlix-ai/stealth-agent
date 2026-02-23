@@ -166,39 +166,41 @@ const chatHr = ({ node, ...props }) => (
 );
 const chatTable = ({ node, ...props }) => (
   <div className="pt-[8px] pb-[18px]">
-    <div className="overflow-x-auto inline-block border rounded-lg" style={{ borderColor: 'var(--color-border-muted)', maxWidth: '100%' }}>
-      <table className="m-0 table-auto border-collapse" {...props} />
+    <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid var(--color-border-muted)' }}>
+      <table className="m-0 w-full border-collapse" {...props} />
     </div>
   </div>
 );
-const chatThead = ({ node, ...props }) => <thead {...props} />;
+const chatThead = ({ node, ...props }) => <thead style={{ backgroundColor: 'var(--color-bg-input)' }} {...props} />;
 const chatTbody = ({ node, ...props }) => <tbody {...props} />;
 const chatTr = ({ node, ...props }) => <tr {...props} />;
-const chatTh = ({ node, ...props }) => (
+const chatTh = ({ node, style, ...props }) => (
   <th
-    className="text-left align-top first:border-s-0 last:border-e-0"
+    className="align-top [&:not(:first-child)]:border-l"
     style={{
-      backgroundColor: 'var(--color-bg-input)',
+      textAlign: 'left',
       borderBottom: '1px solid var(--color-border-muted)',
-      borderLeft: '1px solid var(--color-border-muted)',
+      borderColor: 'var(--color-border-muted)',
       color: 'var(--color-text-primary)',
       fontSize: '0.875rem',
       fontWeight: 600,
-      padding: '7px 9px',
+      padding: '8px 14px',
+      ...style,
     }}
     {...props}
   />
 );
-const chatTd = ({ node, ...props }) => (
+const chatTd = ({ node, style, ...props }) => (
   <td
-    className="text-left first:border-s-0 last:border-e-0"
+    className="align-top [&:not(:first-child)]:border-l"
     style={{
-      backgroundColor: 'var(--color-bg-tag)',
+      textAlign: 'left',
       borderTop: '1px solid var(--color-border-muted)',
-      borderLeft: '1px solid var(--color-border-muted)',
+      borderColor: 'var(--color-border-muted)',
       color: 'var(--color-text-primary)',
       fontSize: '0.875rem',
       padding: '8px 14px',
+      ...style,
     }}
     {...props}
   />
