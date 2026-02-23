@@ -620,6 +620,7 @@ class WorkspaceManager:
                     "Failed to find sandbox" in err_msg
                     or "deleted" in err_msg
                     or "still in state" in err_msg
+                    or "Cannot reconnect" in err_msg
                 ):
                     sandbox_gone = True
                     SessionManager.remove_session(workspace_id)

@@ -667,6 +667,50 @@ class PTCSandbox:
                         f"Sandbox still in state '{state_value}' after waiting. "
                         f"Expected 'stopped'."
                     )
+            elif state_value == "archived":
+                logger.info(
+                    "Starting archived sandbox (restore may take longer)",
+                    sandbox_id=sandbox_id,
+                )
+                await self._daytona_call(
+                    sandbox.start,
+                    timeout=300,
+                    retry_policy=_DaytonaRetryPolicy.SAFE,
+                )
+            elif state_value == "archiving":
+                # Wait for sandbox to finish archiving, then start it.
+                logger.info(
+                    "Sandbox is archiving, waiting before start",
+                    sandbox_id=sandbox_id,
+                )
+                for _ in range(60):  # Max ~30 seconds
+                    await asyncio.sleep(0.5)
+                    sandbox = await self._daytona_call(
+                        self.daytona_client.get,
+                        sandbox_id,
+                        retry_policy=_DaytonaRetryPolicy.SAFE,
+                        allow_reconnect=False,
+                    )
+                    state = getattr(sandbox, "state", None)
+                    state_value = state.value if hasattr(state, "value") else str(state)
+                    if state_value == "archived":
+                        break
+                self.sandbox = sandbox
+                if state_value == "archived":
+                    logger.info(
+                        "Sandbox finished archiving, starting it",
+                        sandbox_id=sandbox_id,
+                    )
+                    await self._daytona_call(
+                        sandbox.start,
+                        timeout=300,
+                        retry_policy=_DaytonaRetryPolicy.SAFE,
+                    )
+                else:
+                    raise RuntimeError(
+                        f"Sandbox still in state '{state_value}' after waiting. "
+                        f"Expected 'archived'."
+                    )
             else:
                 raise RuntimeError(
                     f"Cannot reconnect to sandbox in state: {state_value}. "
