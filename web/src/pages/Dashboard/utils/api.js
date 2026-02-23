@@ -372,6 +372,50 @@ export async function deleteUserApiKey(provider) {
   return data;
 }
 
+// --- OAuth (Connected Accounts) ---
+
+/**
+ * Start Codex device code flow — returns { user_code, verification_url, interval }.
+ * POST /api/v1/oauth/codex/device/initiate
+ */
+export async function initiateCodexDevice() {
+  const { data } = await api.post('/api/v1/oauth/codex/device/initiate');
+  return data;
+}
+
+/**
+ * Poll for device authorization approval.
+ * POST /api/v1/oauth/codex/device/poll
+ * @returns {Promise<Object>} { pending: true } or { success: true, email, plan_type, account_id }
+ */
+export async function pollCodexDevice() {
+  const { data } = await api.post('/api/v1/oauth/codex/device/poll');
+  return data;
+}
+
+/**
+ * Check Codex OAuth connection status.
+ * GET /api/v1/oauth/codex/status
+ * Returns { connected, account_id, email, plan_type }
+ */
+export async function getCodexOAuthStatus() {
+  try {
+    const { data } = await api.get('/api/v1/oauth/codex/status');
+    return data;
+  } catch {
+    return { connected: false, account_id: null, email: null, plan_type: null };
+  }
+}
+
+/**
+ * Disconnect Codex OAuth — delete stored tokens.
+ * DELETE /api/v1/oauth/codex
+ */
+export async function disconnectCodexOAuth() {
+  const { data } = await api.delete('/api/v1/oauth/codex');
+  return data;
+}
+
 // --- InfoFlow (content feed) ---
 
 /**

@@ -88,6 +88,9 @@ const DashboardHeader = ({ title = 'LangAlpha', onStockSearch, onModifyPreferenc
     fetchUser();
   }, [isLoggedIn]);
 
+  // Note: Codex OAuth no longer uses server-side redirect callbacks.
+  // The flow is now frontend-driven with a paste dialog in UserConfigPanel.
+
   const handlePanelClose = () => {
     setIsUserPanelOpen(false);
     if (isLoggedIn) {
@@ -261,6 +264,7 @@ const DashboardHeader = ({ title = 'LangAlpha', onStockSearch, onModifyPreferenc
         onClose={handlePanelClose}
         onModifyPreferences={onModifyPreferences}
         onStartOnboarding={onStartOnboarding}
+        initialTab={null}
       />
     </>
   );
