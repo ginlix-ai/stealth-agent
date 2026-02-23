@@ -5,11 +5,13 @@ Provides common patterns for exception handling and authentication.
 """
 
 import functools
+import hmac
 import inspect
 import logging
+import os
 from typing import Annotated, Callable, Optional, TypeVar
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.server.auth.jwt_bearer import _AUTH_ENABLED, LOCAL_DEV_USER_ID, _decode_token
@@ -18,9 +20,11 @@ from src.server.auth.jwt_bearer import _AUTH_ENABLED, LOCAL_DEV_USER_ID, _decode
 T = TypeVar("T")
 
 _optional_bearer = HTTPBearer(auto_error=False)
+_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "")
 
 
 async def get_current_user_id(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer),
 ) -> str:
     """
@@ -31,6 +35,17 @@ async def get_current_user_id(
 
     When auth is enabled, requires a valid Bearer JWT (Supabase).
     """
+    # Service-to-service auth (only active if INTERNAL_SERVICE_TOKEN is set)
+    if _SERVICE_TOKEN:
+        token = request.headers.get("X-Service-Token")
+        if token:
+            if not hmac.compare_digest(token, _SERVICE_TOKEN):
+                raise HTTPException(status_code=401, detail="Invalid service token")
+            user_id = request.headers.get("X-User-Id")
+            if not user_id:
+                raise HTTPException(status_code=401, detail="Missing X-User-Id")
+            return user_id
+
     if not _AUTH_ENABLED:
         return LOCAL_DEV_USER_ID
 
