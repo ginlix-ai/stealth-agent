@@ -208,7 +208,7 @@ def _extract_text_from_summary(summary: Any) -> Optional[str]:
             elif "text" in item:
                 text_parts.append(item["text"])
 
-    combined_text = "".join(text_parts) if text_parts else ""
+    combined_text = "\n\n".join(text_parts) if text_parts else ""
 
     return combined_text if combined_text else None
 
@@ -321,7 +321,9 @@ def format_llm_content(content: Union[str, List, None], additional_kwargs: Optio
                     # OpenAI Response API format: {"type": "reasoning", "summary": [...]}
                     summary = item.get("summary", [])
                     if summary and isinstance(summary, list) and len(summary) > 0:
-                        reasoning_parts.append(str(summary))
+                        extracted = _extract_text_from_summary(summary)
+                        if extracted:
+                            reasoning_parts.append(extracted)
 
                 elif item_type == "thinking":
                     # Anthropic extended thinking format: {"type": "thinking", "thinking": "..."}

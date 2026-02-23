@@ -280,6 +280,11 @@ class WorkflowStreamHandler:
         # Track reasoning status per agent for lifecycle management
         self.reasoning_active: Set[str] = set()
 
+        # Track reasoning block index per agent to detect block transitions
+        # When index changes (e.g., 0→1), a separator (\n\n) is needed between blocks
+        self._reasoning_block_index: dict[str, int] = {}
+        self._reasoning_separator_pending: Set[str] = set()
+
         # Track function_call state for Response API (per agent)
         # Response API sends name/call_id only in first chunk, need to persist across chunks
         # Key: (agent_name, index), Value: {name, call_id, args_accumulated}
@@ -822,6 +827,8 @@ class WorkflowStreamHandler:
                 if agent_name in self.reasoning_active:
                     yield self._format_reasoning_signal(agent_name, message_id, "complete")
                     self.reasoning_active.discard(agent_name)
+                self._reasoning_block_index.pop(agent_name, None)
+                self._reasoning_separator_pending.discard(agent_name)
             else:
                 # Reasoning started - emit start signal
                 if agent_name not in self.reasoning_active:
@@ -843,6 +850,8 @@ class WorkflowStreamHandler:
                     if agent_name in self.reasoning_active:
                         yield self._format_reasoning_signal(agent_name, message_id, "complete")
                         self.reasoning_active.discard(agent_name)
+                    self._reasoning_block_index.pop(agent_name, None)
+                    self._reasoning_separator_pending.discard(agent_name)
                 else:
                     # Reasoning started - emit start signal
                     if agent_name not in self.reasoning_active:
@@ -966,6 +975,15 @@ class WorkflowStreamHandler:
                         yield self._format_sse_event("tool_call_chunks", event_stream_message)
                         return  # Don't process input_json_delta as regular content
 
+        # Detect reasoning summary_text index transitions before normalization
+        # When the summary_text index changes (e.g., 0→1), a new reasoning thought started
+        reasoning_idx = self._extract_reasoning_summary_index(message_chunk.content)
+        if reasoning_idx is not None:
+            prev_idx = self._reasoning_block_index.get(agent_name)
+            self._reasoning_block_index[agent_name] = reasoning_idx
+            if prev_idx is not None and reasoning_idx != prev_idx:
+                self._reasoning_separator_pending.add(agent_name)
+
         # Normalize main content - extract text and get content type
         text_content, content_type = normalize_text_content(message_chunk.content)
 
@@ -982,6 +1000,11 @@ class WorkflowStreamHandler:
                 # Override content type to reasoning since we have reasoning content
                 content_type = "reasoning"
 
+        # Prepend separator when transitioning between reasoning blocks
+        if text_content and content_type == "reasoning" and agent_name in self._reasoning_separator_pending:
+            text_content = "\n\n" + text_content
+            self._reasoning_separator_pending.discard(agent_name)
+
         event_stream_message: dict[str, Any] = {
             "thread_id": self.thread_id,
             "agent": agent_name,
@@ -996,6 +1019,8 @@ class WorkflowStreamHandler:
                 # Reasoning completed, emit completion signal before this content
                 yield self._format_reasoning_signal(agent_name, message_id, "complete")
                 self.reasoning_active.discard(agent_name)
+                self._reasoning_block_index.pop(agent_name, None)
+                self._reasoning_separator_pending.discard(agent_name)
 
             event_stream_message["content"] = text_content
             event_stream_message["content_type"] = content_type  # "text" or "reasoning"
@@ -1068,6 +1093,8 @@ class WorkflowStreamHandler:
             if agent_name in self.reasoning_active:
                 yield self._format_reasoning_signal(agent_name, message_id, "complete")
                 self.reasoning_active.discard(agent_name)
+                self._reasoning_block_index.pop(agent_name, None)
+                self._reasoning_separator_pending.discard(agent_name)
 
             # Unified tool call completion handler for all providers
             # After normalization, both Response API "completed" and Anthropic "tool_use"
@@ -1242,6 +1269,30 @@ class WorkflowStreamHandler:
                 self.seen_tool_ids.add(tool_id)
 
         return filtered_tool_calls
+
+    @staticmethod
+    def _extract_reasoning_summary_index(content: Any) -> Optional[int]:
+        """Extract the summary_text item index from reasoning content.
+
+        During streaming, OpenAI Response API sends reasoning chunks where each
+        summary_text item has an 'index' field (0, 1, 2...) identifying which
+        reasoning "thought step" it belongs to. When this index changes (e.g., 0→1),
+        a new reasoning thought has started and we need to emit a separator.
+
+        Note: The top-level reasoning dict also has an 'index' field, but that's
+        the position in the content array (always 0) — NOT the thought step index.
+        """
+        items = [content] if isinstance(content, dict) else (content if isinstance(content, list) else [])
+        for item in items:
+            if not isinstance(item, dict) or item.get("type") != "reasoning":
+                continue
+            # Extract index from summary_text items (the thought step index)
+            summary = item.get("summary")
+            if isinstance(summary, list):
+                for s in summary:
+                    if isinstance(s, dict) and "index" in s:
+                        return s["index"]
+        return None
 
     def _format_reasoning_signal(
         self,
