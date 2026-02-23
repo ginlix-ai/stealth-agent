@@ -1,7 +1,10 @@
 import { useState, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Copy, Check } from 'lucide-react';
@@ -435,16 +438,35 @@ function fixMarkdownTables(content) {
   return result.join('\n');
 }
 
+/**
+ * Normalize LaTeX delimiters for remark-math compatibility.
+ *
+ * LLMs often emit \[...\] (display) and \(...\) (inline) notation,
+ * but remark-math only recognizes $$...$$ and $...$ delimiters.
+ */
+function normalizeLatexDelimiters(content) {
+  if (!content || typeof content !== 'string') return content;
+
+  // Convert display math: \[...\] → $$...$$
+  // Match \[ ... \] allowing newlines in between
+  content = content.replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => `$$${math}$$`);
+
+  // Convert inline math: \(...\) → $...$
+  content = content.replace(/\\\((.*?)\\\)/g, (_, math) => `$${math}$`);
+
+  return content;
+}
+
 function Markdown({ content, variant = 'panel', className = '', style }) {
   const config = VARIANTS[variant];
-  const fixed = useMemo(() => fixMarkdownTables(content), [content]);
+  const processed = useMemo(() => normalizeLatexDelimiters(fixMarkdownTables(content)), [content]);
   return (
     <div
       className={`${config.className} ${className}`.trim()}
       style={{ ...config.style, ...style }}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={config.components}>
-        {fixed}
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeRaw]} components={config.components}>
+        {processed}
       </ReactMarkdown>
     </div>
   );
