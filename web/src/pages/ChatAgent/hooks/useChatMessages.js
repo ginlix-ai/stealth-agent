@@ -1265,7 +1265,10 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       // Replay buffered events first — this processes artifact{task,spawned} events
       // which create subagent cards with the correct description/type. Per-task streams
       // are opened AFTER so they merge into existing cards instead of creating empty ones.
-      await reconnectToWorkflowStream(threadId, null, processEvent);
+      const result = await reconnectToWorkflowStream(threadId, null, processEvent);
+      if (result?.disconnected) {
+        throw new Error('Reconnection stream disconnected');
+      }
 
       // Mark message as complete
       setMessages((prev) =>
@@ -1307,6 +1310,45 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
       cleanupAfterStreamEnd(assistantMessageId);
     }
+  };
+
+  /**
+   * Attempts to auto-reconnect after a mid-stream network disconnect.
+   * Uses exponential backoff (1s, 2s, 4s, 8s, 16s) with up to 5 retries.
+   * Falls back to cleanupAfterStreamEnd if workflow completes or retries exhaust.
+   */
+  const attemptReconnectAfterDisconnect = async (assistantMessageId) => {
+    const MAX_RETRIES = 5;
+    const BASE_DELAY = 1000;
+
+    setIsReconnecting(true);
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      if (!threadId || threadId === '__default__') break;
+
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, BASE_DELAY * Math.pow(2, attempt - 1)));
+      }
+
+      try {
+        const status = await getWorkflowStatus(threadId);
+        if (!status.can_reconnect) {
+          console.log('[Reconnect] Workflow no longer reconnectable, cleaning up');
+          break;
+        }
+
+        console.log('[Reconnect] Attempt', attempt + 1, 'of', MAX_RETRIES);
+        await reconnectToStream({ activeTasks: status.active_tasks || [] });
+
+        setIsReconnecting(false);
+        return;
+      } catch (err) {
+        console.warn('[Reconnect] Attempt', attempt + 1, 'failed:', err.message);
+      }
+    }
+
+    setIsReconnecting(false);
+    cleanupAfterStreamEnd(assistantMessageId);
   };
 
   // Load history when workspace or threadId changes, then check for reconnection
@@ -2352,6 +2394,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     });
     currentMessageRef.current = assistantMessageId;
 
+    let wasDisconnected = false;
     try {
       // Prepare refs for event handlers — use persistent subagent state
       const refs = {
@@ -2367,7 +2410,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       // Create the event processor using the shared factory
       const processEvent = createStreamEventProcessor(assistantMessageId, refs, getTaskIdFromEvent);
 
-      await sendChatMessageStream(
+      const result = await sendChatMessageStream(
         message,
         workspaceId,
         threadId,
@@ -2377,6 +2420,13 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         additionalContext,
         agentMode
       );
+
+      if (result?.disconnected) {
+        console.log('[Send] Stream disconnected, attempting reconnect');
+        wasDisconnected = true;
+        attemptReconnectAfterDisconnect(assistantMessageId);
+        return;
+      }
 
       // Mark message as complete
       setMessages((prev) =>
@@ -2409,15 +2459,17 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             );
           }
         } finally {
-          // Mark message as complete (in case the try-block didn't reach it)
-          setMessages((prev) =>
-            updateMessage(prev, assistantMessageId, (msg) => ({
-              ...msg,
-              isStreaming: false,
-            }))
-          );
+          if (!wasDisconnected) {
+            // Mark message as complete (in case the try-block didn't reach it)
+            setMessages((prev) =>
+              updateMessage(prev, assistantMessageId, (msg) => ({
+                ...msg,
+                isStreaming: false,
+              }))
+            );
 
-          cleanupAfterStreamEnd(assistantMessageId);
+            cleanupAfterStreamEnd(assistantMessageId);
+          }
         }
       };
 
@@ -2455,14 +2507,22 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
     const processEvent = createStreamEventProcessor(assistantMessageId, refs, getTaskIdFromEvent);
 
+    let wasDisconnected = false;
     try {
-      await sendHitlResponse(
+      const result = await sendHitlResponse(
         workspaceId,
         threadId,
         hitlResponse,
         processEvent,
         planMode
       );
+
+      if (result?.disconnected) {
+        console.log('[HITL] Stream disconnected, attempting reconnect');
+        wasDisconnected = true;
+        attemptReconnectAfterDisconnect(assistantMessageId);
+        return;
+      }
 
       // Mark message as complete
       setMessages((prev) =>
@@ -2483,7 +2543,9 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         }))
       );
     } finally {
-      cleanupAfterStreamEnd(assistantMessageId);
+      if (!wasDisconnected) {
+        cleanupAfterStreamEnd(assistantMessageId);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, completePendingTodos]);

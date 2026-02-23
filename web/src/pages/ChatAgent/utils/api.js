@@ -134,6 +134,7 @@ async function streamFetch(url, opts, onEvent) {
     } else if (line.trim() === '') ev = {};
   };
 
+  let disconnected = false;
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -149,11 +150,12 @@ async function streamFetch(url, opts, onEvent) {
     // Handle incomplete chunked encoding or other stream errors
     if (error.name === 'TypeError' && error.message.includes('network')) {
       console.warn('[api] Stream interrupted (network error):', error.message);
-      // Don't throw - allow the stream to complete gracefully
+      disconnected = true;
     } else {
       throw error;
     }
   }
+  return { disconnected };
 }
 
 export async function replayThreadHistory(threadId, onEvent = () => {}) {
@@ -191,7 +193,7 @@ export async function sendChatMessageStream(
     ? '/api/v1/threads/messages'
     : `/api/v1/threads/${threadId}/messages`;
   const authHeaders = await getAuthHeaders();
-  await streamFetch(
+  return await streamFetch(
     url,
     {
       method: 'POST',
@@ -227,7 +229,7 @@ export async function reconnectToWorkflowStream(threadId, lastEventId = null, on
   if (!threadId) throw new Error('Thread ID is required');
   const queryParam = lastEventId != null ? `?last_event_id=${lastEventId}` : '';
   const authHeaders = await getAuthHeaders();
-  await streamFetch(
+  return await streamFetch(
     `/api/v1/threads/${threadId}/messages/stream${queryParam}`,
     { method: 'GET', headers: { ...authHeaders } },
     onEvent
@@ -368,7 +370,7 @@ export async function sendHitlResponse(workspaceId, threadId, hitlResponse, onEv
     plan_mode: planMode,
   };
   const authHeaders = await getAuthHeaders();
-  await streamFetch(
+  return await streamFetch(
     `/api/v1/threads/${threadId}/messages`,
     {
       method: 'POST',
