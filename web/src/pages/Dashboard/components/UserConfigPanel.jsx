@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, User, LogOut, Eye, EyeOff, Trash2, HelpCircle, MessageSquareText, Sun, Moon, Monitor, Link2, Unlink, ExternalLink, Shield, ClipboardCopy } from 'lucide-react';
 import { Input } from '../../../components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../../components/ui/dialog';
-import { updateCurrentUser, getCurrentUser, updatePreferences, getPreferences, clearPreferences, uploadAvatar, redeemCode, getUsageStatus, getAvailableModels, getUserApiKeys, updateUserApiKeys, deleteUserApiKey, initiateCodexDevice, pollCodexDevice, getCodexOAuthStatus, disconnectCodexOAuth } from '../utils/api';
+import { updateCurrentUser, getCurrentUser, updatePreferences, getPreferences, clearPreferences, uploadAvatar, getAvailableModels, getUserApiKeys, updateUserApiKeys, deleteUserApiKey, initiateCodexDevice, pollCodexDevice, getCodexOAuthStatus, disconnectCodexOAuth } from '../utils/api';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { useTranslation } from 'react-i18next';
@@ -30,14 +30,6 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
   const [locale, setLocale] = useState('');
 
   const [preferences, setPreferences] = useState(null);
-
-  const [membership, setMembership] = useState({ membership_id: 1, name: 'free', display_name: 'Free', rank: 0 });
-  const [redeemInput, setRedeemInput] = useState('');
-  const [isRedeeming, setIsRedeeming] = useState(false);
-  const [redeemError, setRedeemError] = useState(null);
-  const [redeemSuccess, setRedeemSuccess] = useState(null);
-
-  const [usage, setUsage] = useState(null);
 
   // Model tab state
   const [availableModels, setAvailableModels] = useState({});
@@ -115,7 +107,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
   useEffect(() => {
     if (isOpen) {
       setIsLoading(true);
-      Promise.all([loadUserData(), loadPreferencesData(), loadUsageData()])
+      Promise.all([loadUserData(), loadPreferencesData()])
         .finally(() => setIsLoading(false));
     }
   }, [isOpen]);
@@ -150,7 +142,6 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
         setName(userData.user.name || '');
         setTimezone(userData.user.timezone || '');
         setLocale(userData.user.locale || '');
-        setMembership(userData.user.membership || { membership_id: 1, name: 'free', display_name: 'Free', rank: 0 });
         const url = userData.user.avatar_url;
         const version = userData.user.updated_at;
         setAvatarUrl(url ? `${url}?v=${version}` : null);
@@ -165,15 +156,6 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
       const preferencesData = await getPreferences();
       setPreferences(preferencesData || null);
     } catch {}
-  };
-
-  const loadUsageData = async () => {
-    try {
-      const data = await getUsageStatus();
-      setUsage(data);
-    } catch {
-      // Usage data load failed - keep null
-    }
   };
 
   const loadModelTabData = async () => {
@@ -401,32 +383,6 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
     }
   };
 
-  const handleRedeemCode = async () => {
-    if (!redeemInput.trim()) return;
-    setIsRedeeming(true);
-    setRedeemError(null);
-    setRedeemSuccess(null);
-    try {
-      const result = await redeemCode(redeemInput.trim());
-      setRedeemSuccess(result.message);
-      setRedeemInput('');
-      refreshUser();
-      await Promise.all([loadUserData(), loadUsageData()]);
-    } catch (err) {
-      const detail = err.response?.data?.detail || err.message || 'Failed to redeem code';
-      setRedeemError(typeof detail === 'string' ? detail : detail.message || 'Failed to redeem code');
-    } finally {
-      setIsRedeeming(false);
-    }
-  };
-
-  const PLAN_BADGE_COLORS = [
-    { backgroundColor: 'var(--color-bg-card)', color: 'var(--color-text-tertiary)', border: '1px solid var(--color-border-muted)' },
-    { backgroundColor: 'var(--color-info-soft)', color: 'var(--color-info)', border: '1px solid var(--color-info-soft)' },
-    { backgroundColor: 'var(--color-warning-soft)', color: 'var(--color-warning)', border: '1px solid var(--color-warning-soft)' },
-  ];
-  const getPlanBadgeStyle = (rank) => PLAN_BADGE_COLORS[Math.min(rank, PLAN_BADGE_COLORS.length - 1)];
-
   // Prevent Enter key in text inputs from submitting the enclosing <form>.
   // Only the explicit submit button should trigger form submission.
   const preventEnterSubmit = (e) => {
@@ -438,8 +394,6 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
   const handleClose = () => {
     setError(null);
     setSaveSuccess(false);
-    setRedeemError(null);
-    setRedeemSuccess(null);
     onClose();
   };
 
@@ -664,104 +618,6 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                         {t('settings.auto', 'Auto')}
                       </button>
                     </div>
-                  </div>
-
-                  <div style={{ borderTop: '1px solid var(--color-border-muted)', paddingTop: '16px' }}>
-                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-primary)' }}>{t('settings.plan')}</label>
-                    <div className="flex items-center gap-3 mb-3">
-                      <span
-                        className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase"
-                        style={getPlanBadgeStyle(membership.rank ?? 0)}
-                      >
-                        {membership.display_name || membership.name || 'Free'}
-                      </span>
-                    </div>
-
-                    {usage && (
-                      <div className="mb-4 space-y-3">
-                        {/* Credits */}
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                              {t('settings.dailyCredits')}
-                              {usage.byok_enabled && (
-                                <span
-                                  className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
-                                  style={{ backgroundColor: 'var(--color-success-soft)', color: 'var(--color-success)', border: '1px solid var(--color-success-soft)' }}
-                                >
-                                  BYOK
-                                </span>
-                              )}
-                            </span>
-                            <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                              {usage.credits.limit === -1
-                                ? t('settings.unlimited')
-                                : `${usage.credits.used} / ${usage.credits.limit}`}
-                            </span>
-                          </div>
-                          {usage.credits.limit !== -1 && (
-                            <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-border-muted)' }}>
-                              <div
-                                className="h-full rounded-full transition-all"
-                                style={{
-                                  width: `${Math.min(100, (usage.credits.used / usage.credits.limit) * 100)}%`,
-                                  backgroundColor: usage.credits.used / usage.credits.limit > 0.9
-                                    ? 'var(--color-loss)'
-                                    : 'var(--color-accent-primary)',
-                                }}
-                              />
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Workspaces */}
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{t('settings.activeWorkspaces')}</span>
-                            <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                              {usage.workspaces.limit === -1
-                                ? t('settings.unlimited')
-                                : `${usage.workspaces.active} / ${usage.workspaces.limit}`}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={redeemInput}
-                        onChange={(e) => { setRedeemInput(e.target.value); setRedeemError(null); setRedeemSuccess(null); }}
-                        placeholder={t('settings.enterRedemptionCode')}
-                        className="flex-1 rounded-md px-3 py-1.5 text-sm"
-                        style={{
-                          backgroundColor: 'var(--color-bg-card)',
-                          border: '1px solid var(--color-border-muted)',
-                          color: 'var(--color-text-primary)',
-                        }}
-                        disabled={isRedeeming}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleRedeemCode(); } }}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleRedeemCode}
-                        disabled={isRedeeming || !redeemInput.trim()}
-                        className="px-3 py-1.5 rounded-md text-sm font-medium"
-                        style={{
-                          backgroundColor: isRedeeming || !redeemInput.trim() ? 'var(--color-accent-disabled)' : 'var(--color-accent-primary)',
-                          color: 'var(--color-text-on-accent)',
-                        }}
-                      >
-                        {isRedeeming ? t('settings.redeeming') : t('settings.redeem')}
-                      </button>
-                    </div>
-                    {redeemError && (
-                      <p className="text-xs mt-1.5" style={{ color: 'var(--color-loss)' }}>{redeemError}</p>
-                    )}
-                    {redeemSuccess && (
-                      <p className="text-xs mt-1.5" style={{ color: 'var(--color-gain)' }}>{redeemSuccess}</p>
-                    )}
                   </div>
 
                   {error && (
