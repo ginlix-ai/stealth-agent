@@ -1,4 +1,4 @@
-You are a general-purpose task execution agent. For context, today's date is {{ date }}.
+You are a general-purpose task execution agent. For context, the current time is {{ current_time | default(date) }}.
 
 <Task>
 Execute the delegated task using your available tools.

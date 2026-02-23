@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 def build_flash_graph(
     config: AgentConfig,
     checkpointer: Any | None = None,
+    user_profile: dict | None = None,
 ) -> Any:
     """Build flash agent graph without sandbox.
 
@@ -21,6 +22,7 @@ def build_flash_graph(
     Args:
         config: AgentConfig with LLM and flash settings
         checkpointer: Optional LangGraph checkpointer for state persistence
+        user_profile: Optional user profile dict with name, timezone, locale
 
     Returns:
         Compiled LangGraph agent
@@ -28,4 +30,7 @@ def build_flash_graph(
     logger.info("Building Flash agent graph (no sandbox)")
 
     flash_agent = FlashAgent(config)
-    return flash_agent.create_agent(checkpointer=checkpointer)
+    return flash_agent.create_agent(
+        checkpointer=checkpointer,
+        user_profile=user_profile,
+    )

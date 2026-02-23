@@ -20,6 +20,7 @@ def get_general_subagent_config(
     include_mcp_docs: bool = True,
     tool_exposure_mode: str = "full",
     filesystem_tools: list[Any] | None = None,
+    current_time: str | None = None,
 ) -> dict[str, Any]:
     """Get configuration for the general-purpose sub-agent.
 
@@ -34,6 +35,7 @@ def get_general_subagent_config(
             to use instead of relying on FilesystemMiddleware.
             Vision support is provided via VisionMiddleware intercepting read_file
             for image paths/URLs.
+        current_time: Pre-formatted current time string for time awareness
 
     Returns:
         Sub-agent configuration dictionary for deepagent
@@ -66,6 +68,7 @@ def get_general_subagent_config(
         max_iterations=max_iterations,
         tool_summary=mcp_tool_summary,
         storage_enabled=is_storage_enabled(),
+        current_time=current_time,
     )
 
     # Create execute_code tool with sandbox and MCP registry
@@ -106,6 +109,7 @@ def create_general_subagent(
     include_mcp_docs: bool = True,
     tool_exposure_mode: str = "full",
     filesystem_tools: list[Any] | None = None,
+    current_time: str | None = None,
 ) -> dict[str, Any]:
     """Create a general-purpose sub-agent for deepagent.
 
@@ -120,6 +124,7 @@ def create_general_subagent(
         tool_exposure_mode: How to format tool docs ("full" or "summary")
         filesystem_tools: Custom filesystem tools (read, write, edit, glob, grep).
             Vision support is provided via VisionMiddleware in shared middleware.
+        current_time: Pre-formatted current time string for time awareness
 
     Returns:
         Sub-agent configuration dictionary
@@ -132,4 +137,5 @@ def create_general_subagent(
         include_mcp_docs=include_mcp_docs,
         tool_exposure_mode=tool_exposure_mode,
         filesystem_tools=filesystem_tools,
+        current_time=current_time,
     )

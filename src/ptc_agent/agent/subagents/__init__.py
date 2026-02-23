@@ -19,10 +19,10 @@ STATEFUL_SUBAGENTS = {"general-purpose"}
 # Maps generic parameter names to subagent-specific parameter names
 SUBAGENT_PARAMS = {
     "research": {
-        "accepted": ["max_researcher_iterations", "mcp_tools"],
+        "accepted": ["max_researcher_iterations", "mcp_tools", "current_time"],
     },
     "general-purpose": {
-        "accepted": ["max_iterations", "additional_tools", "include_mcp_docs", "tool_exposure_mode", "filesystem_tools"],
+        "accepted": ["max_iterations", "additional_tools", "include_mcp_docs", "tool_exposure_mode", "filesystem_tools", "current_time"],
     },
 }
 

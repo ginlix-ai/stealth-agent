@@ -29,6 +29,7 @@ from .formatter import (
 )
 from .loader import (
     PromptLoader,
+    format_current_time,
     get_loader,
     init_loader,
     reset_loader,
@@ -36,6 +37,7 @@ from .loader import (
 
 __all__ = [
     "PromptLoader",
+    "format_current_time",
     "format_subagent_summary",
     "format_tool_summary",
     "get_loader",

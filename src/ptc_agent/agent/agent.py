@@ -7,6 +7,7 @@ This module creates a PTC agent that:
 - Supports sub-agent delegation for specialized tasks
 """
 
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -47,6 +48,7 @@ from ptc_agent.agent.middleware import (
 )
 from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
 from ptc_agent.agent.prompts import (
+    format_current_time,
     format_subagent_summary,
     format_tool_summary,
     get_loader,
@@ -185,6 +187,7 @@ class PTCAgent:
         subagent_summary: str,
         user_profile: dict | None = None,
         plan_mode: bool = False,
+        current_time: str | None = None,
     ) -> str:
         """Build the system prompt for the agent.
 
@@ -193,6 +196,7 @@ class PTCAgent:
             subagent_summary: Formatted subagent summary
             user_profile: Optional user profile dict with name, timezone, locale
             plan_mode: If True, includes plan mode workflow instructions
+            current_time: Pre-formatted current time string for time awareness
 
         Returns:
             Complete system prompt
@@ -212,6 +216,7 @@ class PTCAgent:
             include_examples=True,
             include_anti_patterns=True,
             for_task_workflow=True,
+            current_time=current_time,
         )
 
     def _get_tool_summary(self, mcp_registry: MCPRegistry) -> str:
@@ -281,6 +286,12 @@ class PTCAgent:
         """
         # Use provided LLM or fall back to instance LLM
         model = llm if llm is not None else self.llm
+
+        # Freeze current time for this request (refreshes on each new query)
+        request_time = datetime.now(tz=UTC)
+        timezone_str = (user_profile or {}).get("timezone")
+        current_time = format_current_time(request_time, timezone_str)
+
         # Create the execute_code tool for MCP invocation
         execute_code_tool = create_execute_code_tool(sandbox, mcp_registry)
 
@@ -448,6 +459,7 @@ class PTCAgent:
             max_iterations=DEFAULT_MAX_GENERAL_ITERATIONS,
             filesystem_tools=filesystem_tools,  # Pass custom tools to subagents
             additional_tools=finance_tools,  # Pass finance tools to general-purpose subagent
+            current_time=current_time,
         )
 
         if additional_subagents:
@@ -461,7 +473,9 @@ class PTCAgent:
 
         # Build system prompt
         system_prompt = self._build_system_prompt(
-            tool_summary, subagent_summary, user_profile, plan_mode=plan_mode
+            tool_summary, subagent_summary, user_profile,
+            plan_mode=plan_mode,
+            current_time=current_time,
         )
 
         # Append suffix if provided (e.g., agent.md content)

@@ -4,6 +4,7 @@ Optimized for fast responses using external tools only (web search, market data,
 SEC filings). No code execution, no sandbox, no MCP tools.
 """
 
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -19,7 +20,7 @@ from ptc_agent.agent.middleware import (
     DynamicSkillLoaderMiddleware,
     AskUserMiddleware,
 )
-from ptc_agent.agent.prompts import get_loader
+from ptc_agent.agent.prompts import format_current_time, get_loader
 from ptc_agent.config import AgentConfig
 
 # External tools only (no sandbox, no MCP)
@@ -119,22 +120,35 @@ class FlashAgent:
 
         return tools
 
-    def _build_system_prompt(self, tools: list[Any]) -> str:
+    def _build_system_prompt(
+        self,
+        tools: list[Any],
+        user_profile: dict | None = None,
+        current_time: str | None = None,
+    ) -> str:
         """Build minimal system prompt for Flash agent.
 
         Args:
             tools: List of available tools
+            user_profile: Optional user profile dict with name, timezone, locale
+            current_time: Pre-formatted current time string for time awareness
 
         Returns:
             Minimal system prompt string
         """
         loader = get_loader()
-        return loader.render("flash_system.md.j2", tools=tools)
+        return loader.render(
+            "flash_system.md.j2",
+            tools=tools,
+            user_profile=user_profile,
+            current_time=current_time,
+        )
 
     def create_agent(
         self,
         checkpointer: Any | None = None,
         llm: Any | None = None,
+        user_profile: dict | None = None,
     ) -> Any:
         """Create a Flash agent with minimal middleware stack.
 
@@ -143,17 +157,25 @@ class FlashAgent:
         Args:
             checkpointer: Optional LangGraph checkpointer for state persistence
             llm: Optional LLM override
+            user_profile: Optional user profile dict with name, timezone, locale
 
         Returns:
             Configured LangGraph agent
         """
         model = llm if llm is not None else self.llm
 
+        # Freeze current time for this request (refreshes on each new query)
+        request_time = datetime.now(tz=UTC)
+        timezone_str = (user_profile or {}).get("timezone")
+        current_time = format_current_time(request_time, timezone_str)
+
         # Build tools
         tools = self._build_tools()
 
         # Build system prompt
-        system_prompt = self._build_system_prompt(tools)
+        system_prompt = self._build_system_prompt(
+            tools, user_profile=user_profile, current_time=current_time
+        )
 
         # Minimal shared middleware stack
         shared_middleware: list[Any] = [

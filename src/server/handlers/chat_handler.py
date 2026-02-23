@@ -21,6 +21,7 @@ from src.server.models.chat import (
 from src.server.handlers.streaming_handler import WorkflowStreamHandler
 from ptc_agent.agent.graph import build_ptc_graph_with_session
 from ptc_agent.agent.flash import build_flash_graph
+from ptc_agent.agent.graph import get_user_profile_for_prompt
 from src.server.services.workspace_manager import WorkspaceManager
 from src.server.database.workspace import update_workspace_activity, get_or_create_flash_workspace
 from src.server.services.background_task_manager import (
@@ -433,10 +434,16 @@ async def astream_flash_workflow(
             setup.agent_config, user_id, request.llm_model, byok_active, mode="flash"
         )
 
+        # Fetch user profile for prompt injection
+        flash_user_profile = None
+        if user_id:
+            flash_user_profile = await get_user_profile_for_prompt(user_id)
+
         # Build flash graph (no sandbox, no session)
         flash_graph = build_flash_graph(
             config=config,
             checkpointer=setup.checkpointer,
+            user_profile=flash_user_profile,
         )
 
         # Build input state from messages

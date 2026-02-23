@@ -3,9 +3,12 @@
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import yaml
 from jinja2 import Environment, FileSystemLoader
+
+from src.utils.timezone_utils import get_timezone_label
 
 
 class PromptLoader:
@@ -162,3 +165,25 @@ def reset_loader() -> None:
     """Reset the singleton loader (useful for testing)."""
     global _loader
     _loader = None
+
+
+def format_current_time(dt: datetime, timezone_str: str | None = None) -> str:
+    """Format a datetime into a human-readable current time string.
+
+    Pure function — never calls datetime.now() itself. Takes a pre-captured
+    datetime and optional timezone string, returns formatted time.
+
+    Args:
+        dt: Pre-captured timezone-aware datetime (typically from datetime.now(tz=UTC)).
+        timezone_str: Optional IANA timezone (e.g., "America/New_York") to convert to.
+
+    Returns:
+        Formatted string like "3:00 PM EST, Monday, February 23, 2026"
+    """
+    if timezone_str:
+        try:
+            dt = dt.astimezone(ZoneInfo(timezone_str))
+        except (KeyError, TypeError):
+            pass
+    tz_label = get_timezone_label(dt)
+    return dt.strftime("%-I:%M %p") + f" {tz_label}, " + dt.strftime("%A, %B %-d, %Y")

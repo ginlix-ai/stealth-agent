@@ -3,6 +3,12 @@
 - **Name**: {{ user_profile.name | default("User") }}
 - **Timezone**: {{ user_profile.timezone | default("UTC") }}
 - **Locale**: {{ user_profile.locale | default("en-US") }}
+{% if user_profile.locale and not user_profile.locale.startswith("en") %}
+
+## Response Language
+
+Respond in the language of the user's locale ({{ user_profile.locale }}) unless the user explicitly requests a different language.
+{% endif %}
 {% if user_profile.agent_preference %}
 
 ## Agent Preferences

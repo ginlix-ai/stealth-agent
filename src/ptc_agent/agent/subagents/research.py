@@ -15,19 +15,21 @@ from src.tools.search import get_web_search_tool
 def get_research_subagent_config(
     max_researcher_iterations: int = 3,
     mcp_tools: list[Any] | None = None,
+    current_time: str | None = None,
 ) -> dict[str, Any]:
     """Get configuration for the research sub-agent.
 
     Args:
         max_researcher_iterations: Maximum search iterations
         mcp_tools: Additional MCP tools to include (per-subagent config)
+        current_time: Pre-formatted current time string for time awareness
 
     Returns:
         Sub-agent configuration dictionary for deepagent
     """
     # Render researcher instructions using template loader (date auto-injected from session)
     loader = get_loader()
-    instructions = loader.get_subagent_prompt("researcher")
+    instructions = loader.get_subagent_prompt("researcher", current_time=current_time)
 
     # Get configured search tool (Tavily, Bocha, or Serper from agent_config.yaml)
     web_search_tool = get_web_search_tool(
@@ -58,6 +60,7 @@ def get_research_subagent_config(
 def create_research_subagent(
     max_researcher_iterations: int = 3,
     mcp_tools: list[Any] | None = None,
+    current_time: str | None = None,
 ) -> dict[str, Any]:
     """Create a research sub-agent for deepagent.
 
@@ -66,6 +69,7 @@ def create_research_subagent(
     Args:
         max_researcher_iterations: Maximum search iterations
         mcp_tools: Additional MCP tools for this sub-agent
+        current_time: Pre-formatted current time string for time awareness
 
     Returns:
         Sub-agent configuration dictionary
@@ -73,4 +77,5 @@ def create_research_subagent(
     return get_research_subagent_config(
         max_researcher_iterations=max_researcher_iterations,
         mcp_tools=mcp_tools,
+        current_time=current_time,
     )
