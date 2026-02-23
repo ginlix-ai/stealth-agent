@@ -1246,7 +1246,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       unresolvedHistoryInterruptRef,
     };
 
-    const processEvent = createStreamEventProcessor(assistantMessageId, refs, getTaskIdFromEvent);
+    const wasInterruptedRef = { current: false };
+    const processEvent = createStreamEventProcessor(assistantMessageId, refs, getTaskIdFromEvent, wasInterruptedRef);
 
     try {
       // Replay buffered events first — this processes artifact{task,spawned} events
@@ -1295,7 +1296,9 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         return prev;
       });
 
-      cleanupAfterStreamEnd(assistantMessageId);
+      if (!wasInterruptedRef.current) {
+        cleanupAfterStreamEnd(assistantMessageId);
+      }
     }
   };
 
@@ -1658,7 +1661,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
    * @param {Function} getTaskIdFromEvent - Helper to route subagent events
    * @returns {Function} Event handler: (event) => void
    */
-  const createStreamEventProcessor = (assistantMessageId, refs, getTaskIdFromEvent) => {
+  const createStreamEventProcessor = (assistantMessageId, refs, getTaskIdFromEvent, wasInterruptedRef = null) => {
     // Snapshot of the old assistant message's content order at the time the user
     // sent a queued message.  Used to roll back any content that leaked into the
     // old bubble due to stream-mode multiplexing (custom events can arrive after
@@ -2363,6 +2366,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         setIsLoading(false);
         isStreamingRef.current = false;
         currentMessageRef.current = null;
+        if (wasInterruptedRef) wasInterruptedRef.current = true;
       }
     };
 
@@ -2508,6 +2512,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     currentMessageRef.current = assistantMessageId;
 
     let wasDisconnected = false;
+    const wasInterruptedRef = { current: false };
     try {
       // Prepare refs for event handlers — use persistent subagent state
       const refs = {
@@ -2521,7 +2526,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       };
 
       // Create the event processor using the shared factory
-      const processEvent = createStreamEventProcessor(assistantMessageId, refs, getTaskIdFromEvent);
+      const processEvent = createStreamEventProcessor(assistantMessageId, refs, getTaskIdFromEvent, wasInterruptedRef);
 
       const result = await sendChatMessageStream(
         message,
@@ -2572,7 +2577,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             );
           }
         } finally {
-          if (!wasDisconnected) {
+          if (!wasDisconnected && !wasInterruptedRef.current) {
             // Mark message as complete (in case the try-block didn't reach it)
             setMessages((prev) =>
               updateMessage(prev, assistantMessageId, (msg) => ({
@@ -2620,7 +2625,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       updateSubagentCard: updateSubagentCard || (() => {}),
     };
 
-    const processEvent = createStreamEventProcessor(assistantMessageId, refs, getTaskIdFromEvent);
+    const wasInterruptedRef = { current: false };
+    const processEvent = createStreamEventProcessor(assistantMessageId, refs, getTaskIdFromEvent, wasInterruptedRef);
 
     let wasDisconnected = false;
     try {
@@ -2658,7 +2664,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         }))
       );
     } finally {
-      if (!wasDisconnected) {
+      if (!wasDisconnected && !wasInterruptedRef.current) {
         cleanupAfterStreamEnd(assistantMessageId);
       }
     }
