@@ -800,6 +800,47 @@ async def _handle_sse_disconnect(
             pass
 
 
+async def _is_plan_interrupt_pending(thread_id: str) -> bool:
+    """Check if the pending interrupt is a SubmitPlan (plan mode) interrupt.
+
+    Plan interrupts from HumanInTheLoopMiddleware have action_requests with
+    name="SubmitPlan". Other interrupts (AskUserQuestion, onboarding) use
+    a "type" field instead. Returns False on any error.
+    """
+    try:
+        checkpointer = setup.checkpointer
+        if not checkpointer:
+            return False
+        config = {"configurable": {"thread_id": thread_id}}
+        checkpoint_tuple = await checkpointer.aget_tuple(config)
+        if not checkpoint_tuple or not checkpoint_tuple.pending_writes:
+            return False
+        for _task_id, channel, value in checkpoint_tuple.pending_writes:
+            if channel != "__interrupt__":
+                continue
+            interrupts = value if isinstance(value, list) else [value]
+            for intr in interrupts:
+                intr_value = (
+                    getattr(intr, "value", intr)
+                    if not isinstance(intr, dict)
+                    else intr.get("value", intr)
+                )
+                if not isinstance(intr_value, dict):
+                    continue
+                action_requests = intr_value.get("action_requests", [])
+                if action_requests and isinstance(action_requests[0], dict):
+                    if action_requests[0].get("name") == "SubmitPlan":
+                        return True
+        return False
+    except Exception:
+        logger.warning(
+            f"[PTC_CHAT] Failed to check pending interrupt type for "
+            f"thread_id={thread_id}, defaulting to non-plan mode",
+            exc_info=True,
+        )
+        return False
+
+
 async def astream_ptc_workflow(
     request: ChatRequest,
     thread_id: str,
@@ -980,8 +1021,15 @@ async def astream_ptc_workflow(
         registry_store = BackgroundRegistryStore.get_instance()
         background_registry = await registry_store.get_or_create_registry(thread_id)
 
-        # Effective plan_mode: if resuming from HITL, plan mode must have been active
-        effective_plan_mode = request.plan_mode or bool(request.hitl_response)
+        # Effective plan_mode: only enable if explicitly requested or resuming
+        # from a SubmitPlan interrupt. Other interrupt types (AskUserQuestion,
+        # onboarding) must NOT activate plan mode.
+        if request.plan_mode:
+            effective_plan_mode = True
+        elif request.hitl_response:
+            effective_plan_mode = await _is_plan_interrupt_pending(thread_id)
+        else:
+            effective_plan_mode = False
 
         # Build graph with the workspace's session
         ptc_graph = await build_ptc_graph_with_session(
