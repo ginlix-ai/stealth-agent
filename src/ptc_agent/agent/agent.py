@@ -46,7 +46,7 @@ from ptc_agent.agent.middleware import (
     # Subagent message queue middleware
     SubagentMessageQueueMiddleware,
 )
-from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
+from ptc_agent.agent.middleware.background_subagent.registry import BackgroundTaskRegistry
 from ptc_agent.agent.prompts import (
     format_current_time,
     format_subagent_summary,
@@ -74,7 +74,7 @@ from src.tools.market_data.tool import (
 )
 from ptc_agent.config import AgentConfig
 from ptc_agent.core.mcp_registry import MCPRegistry
-from ptc_agent.core.sandbox import ExecutionResult, PTCSandbox
+from ptc_agent.core.sandbox import PTCSandbox
 from ptc_agent.utils.storage.storage_uploader import is_storage_enabled
 
 # Import HITL middleware for plan mode
@@ -82,6 +82,13 @@ try:
     from langchain.agents.middleware import HumanInTheLoopMiddleware
 except ImportError:
     HumanInTheLoopMiddleware = None  # type: ignore[misc,assignment]
+
+# Import model resilience middleware
+try:
+    from langchain.agents.middleware import ModelRetryMiddleware, ModelFallbackMiddleware
+except ImportError:
+    ModelRetryMiddleware = None  # type: ignore[misc,assignment]
+    ModelFallbackMiddleware = None  # type: ignore[misc,assignment]
 
 # Import Checkpointer type for type hints
 try:
@@ -219,6 +226,43 @@ class PTCAgent:
             current_time=current_time,
         )
 
+    def _build_model_resilience_middleware(self) -> list[Any]:
+        """Build model retry and fallback middleware.
+
+        Returns a list of middleware in append order (fallback first, then retry).
+        Middleware execution: Fallback → Retry → Model
+        Error propagation: Model fails → Retry catches (3x) → Fallback catches (switch model)
+        """
+        middleware: list[Any] = []
+
+        # Fallback middleware (outermost — catches errors after retry exhausted)
+        if ModelFallbackMiddleware is not None and self.config.llm.fallback:
+            from src.llms import get_llm_by_type
+
+            fallback_instances = [
+                get_llm_by_type(name) for name in self.config.llm.fallback
+            ]
+            middleware.append(ModelFallbackMiddleware(*fallback_instances))
+            logger.info(
+                "Model fallback middleware enabled",
+                fallback_models=self.config.llm.fallback,
+            )
+
+        # Retry middleware (innermost — retries same model before fallback)
+        if ModelRetryMiddleware is not None:
+            middleware.append(
+                ModelRetryMiddleware(
+                    max_retries=3,
+                    on_failure="error",
+                    backoff_factor=2.0,
+                    initial_delay=1.0,
+                    max_delay=60.0,
+                    jitter=True,
+                )
+            )
+
+        return middleware
+
     def _get_tool_summary(self, mcp_registry: MCPRegistry) -> str:
         """Get formatted tool summary for prompts.
 
@@ -317,10 +361,6 @@ class PTCAgent:
             create_grep_tool(sandbox),  # overrides middleware grep
         ]
         tools.extend(filesystem_tools)
-        logger.info(
-            "Using custom filesystem tools",
-            tools=["Read", "Write", "Edit", "Glob", "Grep"],
-        )
 
         # Add web search tool (uses configured search engine from agent_config.yaml)
         web_search_tool = get_web_search_tool(
@@ -330,7 +370,6 @@ class PTCAgent:
         )
         tools.append(web_search_tool)
         tools.append(web_fetch_tool)
-        logger.info("Web tools enabled", tools=["WebSearch", "WebFetch"])
 
         # Add finance tools
         finance_tools = [
@@ -342,7 +381,6 @@ class PTCAgent:
             screen_stocks,  # Stock screener with filters
         ]
         tools.extend(finance_tools)
-        logger.info("Finance tools enabled", tool_count=len(finance_tools))
 
         # Default to subagents from config if none specified
         if subagent_names is None:
@@ -355,43 +393,29 @@ class PTCAgent:
         # These run in order: parse args -> execute -> handle errors -> normalize results
         shared_middleware.extend(
             [
-                ToolArgumentParsingMiddleware(),  # Parse JSON string args to Python types
-                ToolErrorHandlingMiddleware(),  # Catch tool errors, return simplified messages
-                ToolResultNormalizationMiddleware(),  # Ensure all results are strings for LLM
+                ToolArgumentParsingMiddleware(),
+                ToolErrorHandlingMiddleware(),
+                ToolResultNormalizationMiddleware(),
             ]
-        )
-        logger.info(
-            "Tool middleware enabled: argument parsing, error handling, result normalization"
         )
 
         # File operation SSE middleware - emits events for write_file/edit_file
         shared_middleware.append(FileOperationMiddleware())
-        logger.info("FileOperationMiddleware enabled for SSE events")
 
         # Todo operation SSE middleware - emits events for TodoWrite
         shared_middleware.append(TodoWriteMiddleware())
-        logger.info("TodoWriteMiddleware enabled for SSE events")
 
         # Add multimodal middleware for read_file image/PDF support (when enabled)
         if self.config.enable_view_image:
-            multimodal_middleware = MultimodalMiddleware(sandbox=sandbox)
-            shared_middleware.append(multimodal_middleware)
-            logger.info("MultimodalMiddleware enabled for read_file image/PDF support")
+            shared_middleware.append(MultimodalMiddleware(sandbox=sandbox))
 
         # Add dynamic skill loader middleware for user onboarding etc.
         skill_loader_middleware = DynamicSkillLoaderMiddleware(
             mode="ptc",
         )
         shared_middleware.append(skill_loader_middleware)
-        # Add load_skill tool
         tools.extend(skill_loader_middleware.tools)
-        # Pre-register all skill tools (they're available but discovered via load_skill)
         tools.extend(skill_loader_middleware.get_all_skill_tools())
-        logger.info(
-            "Dynamic skill loader enabled",
-            skill_count=len(skill_loader_middleware.skill_registry),
-            skill_tool_count=len(skill_loader_middleware.get_all_skill_tools()),
-        )
 
         # --- Build main-only middleware (NOT passed to subagents) ---
         main_only_middleware: list[Any] = []
@@ -415,13 +439,7 @@ class PTCAgent:
             checkpointer=checkpointer,
         )
         main_only_middleware.append(background_middleware)
-        # Add background management tools (wait, task_progress)
         tools.extend(background_middleware.tools)
-        logger.info(
-            "Background subagent execution enabled",
-            timeout=background_timeout,
-            background_tools=[t.name for t in background_middleware.tools],
-        )
 
         # Add HITL middleware (always available for future interrupt features)
         if HumanInTheLoopMiddleware is not None:
@@ -435,18 +453,11 @@ class PTCAgent:
                 plan_middleware = PlanModeMiddleware()
                 main_only_middleware.append(plan_middleware)
                 tools.extend(plan_middleware.tools)
-                logger.info(
-                    "Plan tools enabled",
-                    plan_tools=[
-                        getattr(t, "name", str(t)) for t in plan_middleware.tools
-                    ],
-                )
 
         # Ask user question middleware (always available for main agent)
         ask_user_middleware = AskUserMiddleware()
         main_only_middleware.append(ask_user_middleware)
         tools.extend(ask_user_middleware.tools)
-        logger.info("AskUserQuestion tool enabled")
 
         # Create subagents from names using the registry
         # Note: Subagents get vision capability through VisionMiddleware in shared_middleware
@@ -522,6 +533,9 @@ class PTCAgent:
         # Custom SSE-enabled summarization emits 'summarization_signal' events
         summarization = SummarizationMiddleware()
 
+        # Build model resilience middleware (retry + fallback)
+        model_resilience = self._build_model_resilience_middleware()
+
         # Subagent middleware (shared only, no SubAgentMiddleware/BackgroundSubagentMiddleware/HITL)
         # SubagentMessageQueueMiddleware is first so follow-up messages are
         # visible before any other middleware runs.
@@ -533,6 +547,7 @@ class PTCAgent:
                 LargeResultEvictionMiddleware(backend=backend),
                 *shared_middleware,
                 summarization,
+                *model_resilience,
                 AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
                 PatchToolCallsMiddleware(),
             ]
@@ -559,6 +574,7 @@ class PTCAgent:
                 *shared_middleware,
                 *main_only_middleware,
                 summarization,
+                *model_resilience,
                 AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
                 PatchToolCallsMiddleware(),
             ]
@@ -580,181 +596,3 @@ class PTCAgent:
             middleware=background_middleware,
             auto_wait=self.config.background_auto_wait,
         )
-
-
-class PTCExecutor:
-    """Executor that combines agent and sandbox for complete task execution."""
-
-    def __init__(self, agent: PTCAgent, mcp_registry: MCPRegistry) -> None:
-        """Initialize executor.
-
-        Args:
-            agent: PTC agent for task execution
-            mcp_registry: MCP registry with available tools
-        """
-        self.agent = agent
-        self.mcp_registry = mcp_registry
-
-        logger.info("Initialized PTCExecutor")
-
-    async def execute_task(
-        self,
-        task: str,
-        sandbox: PTCSandbox,
-        max_retries: int = 3,
-    ) -> ExecutionResult:
-        """Execute a task using deepagent with automatic error recovery.
-
-        Args:
-            task: User's task description
-            sandbox: PTCSandbox instance
-            max_retries: Maximum retry attempts
-
-        Returns:
-            Final execution result.
-        """
-        logger.info("Executing task with deepagent", task=task[:100])
-
-        # Create the agent with injected dependencies
-        agent = self.agent.create_agent(
-            sandbox,
-            self.mcp_registry,
-        )
-
-        try:
-            # Configure recursion limit
-            recursion_limit = max(max_retries * 5, 15)
-
-            # Execute task via deepagent
-            agent_result = await agent.ainvoke(
-                {"messages": [("user", task)]},
-                config={"recursion_limit": recursion_limit},
-            )
-
-            return await self._parse_agent_result(agent_result, sandbox)
-
-        except Exception as e:
-            logger.exception("Agent execution failed")
-
-            return ExecutionResult(
-                success=False,
-                stdout="",
-                stderr=f"Agent execution error: {e!s}",
-                duration=0,
-                files_created=[],
-                files_modified=[],
-                execution_id="agent_error",
-                code_hash="",
-            )
-
-    async def _parse_agent_result(
-        self,
-        agent_result: dict,
-        sandbox: PTCSandbox,
-    ) -> ExecutionResult:
-        """Parse deepagent result into ExecutionResult.
-
-        Args:
-            agent_result: Result from agent.ainvoke()
-            sandbox: Sandbox instance to query for files
-
-        Returns:
-            ExecutionResult with execution details
-        """
-        messages = agent_result.get("messages", [])
-
-        if not messages:
-            return ExecutionResult(
-                success=False,
-                stdout="",
-                stderr="Agent returned no messages",
-                duration=0,
-                files_created=[],
-                files_modified=[],
-                execution_id="no_messages",
-                code_hash="",
-            )
-
-        # Find tool messages
-        tool_messages = [
-            msg for msg in messages if hasattr(msg, "type") and msg.type == "tool"
-        ]
-
-        if not tool_messages:
-            # Extract final AI message
-            ai_messages = [
-                msg for msg in messages if hasattr(msg, "type") and msg.type == "ai"
-            ]
-            final_message = ai_messages[-1].content if ai_messages else "No execution"
-
-            return ExecutionResult(
-                success=True,  # Agent completed without code execution
-                stdout=final_message,
-                stderr="",
-                duration=0,
-                files_created=[],
-                files_modified=[],
-                execution_id="no_tool_calls",
-                code_hash="",
-            )
-
-        # Get last tool message
-        last_tool_msg = tool_messages[-1]
-        observation = (
-            last_tool_msg.content
-            if hasattr(last_tool_msg, "content")
-            else str(last_tool_msg)
-        )
-
-        # Check success
-        success = "SUCCESS" in observation or "ERROR" not in observation
-
-        # Extract stdout/stderr
-        if success:
-            stdout = observation.replace("SUCCESS", "").strip()
-            stderr = ""
-        else:
-            stdout = ""
-            stderr = observation.replace("ERROR", "").strip()
-
-        # Get files from sandbox (optional - failure doesn't affect result)
-        files_created = []
-        try:
-            if hasattr(sandbox, "_list_result_files"):
-                result_files = await sandbox._list_result_files()
-                files_created = [f for f in result_files if f]
-        except Exception as e:
-            # Graceful degradation: file listing is optional, log for debugging
-            logger.debug("Failed to list result files (non-critical)", error=str(e))
-
-        return ExecutionResult(
-            success=success,
-            stdout=stdout,
-            stderr=stderr,
-            duration=0.0,
-            files_created=files_created,
-            files_modified=[],
-            execution_id=f"agent_step_{len(tool_messages)}",
-            code_hash="",
-        )
-
-
-# For LangGraph deployment compatibility
-async def create_ptc_agent(config: AgentConfig | None = None) -> PTCAgent:
-    """Create a PTCAgent instance.
-
-    Factory function for LangGraph deployment.
-
-    Args:
-        config: Optional agent configuration. If None, loads from default config files.
-
-    Returns:
-        Configured PTCAgent
-    """
-    if config is None:
-        from ptc_agent.config import load_from_files
-
-        config = await load_from_files()
-        config.validate_api_keys()
-
-    return PTCAgent(config)

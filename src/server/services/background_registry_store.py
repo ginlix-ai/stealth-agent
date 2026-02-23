@@ -10,7 +10,7 @@ import asyncio
 import logging
 from typing import Dict, Optional
 
-from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
+from ptc_agent.agent.middleware.background_subagent.registry import BackgroundTaskRegistry
 
 logger = logging.getLogger(__name__)
 

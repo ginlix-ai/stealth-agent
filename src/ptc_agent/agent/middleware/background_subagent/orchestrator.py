@@ -11,10 +11,10 @@ from typing import Any
 import structlog
 from langchain_core.messages import HumanMessage
 
-from ptc_agent.agent.middleware.background.middleware import (
+from ptc_agent.agent.middleware.background_subagent.middleware import (
     BackgroundSubagentMiddleware,
 )
-from ptc_agent.agent.middleware.background.utils import build_message_checker
+from ptc_agent.agent.middleware.background_subagent.utils import build_message_checker
 
 logger = structlog.get_logger(__name__)
 

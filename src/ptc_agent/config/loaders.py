@@ -248,16 +248,18 @@ def load_from_dict(
         # Simple string format: "claude-sonnet-4-5"
         llm_name = llm_data
         flash_llm = None
+        fallback_models = None
     elif isinstance(llm_data, dict):
         llm_name = llm_data.get("name", "minimax-m2.1")
         flash_llm = llm_data.get("flash")  # None means use main llm
+        fallback_models = llm_data.get("fallback")  # list[str] | None
     else:
         raise ValueError(
             "llm section must be either a string (LLM name) or dict with 'name' key"
         )
 
     # Create LLM config - model resolution happens in get_llm_client()
-    llm_config = LLMConfig(name=llm_name, flash=flash_llm)
+    llm_config = LLMConfig(name=llm_name, flash=flash_llm, fallback=fallback_models)
 
     # Load configurations using shared factory functions
     daytona_config = create_daytona_config(config_data["daytona"])
@@ -334,6 +336,8 @@ cli:
 # Model name from src/llms/manifest/models.json
 llm:
   name: "minimax-m2.1"
+  # fallback:          # Fallback models when primary fails (after 3 retries)
+  #   - "gpt-4.1-mini"
 
 # Daytona Sandbox
 # ---------------

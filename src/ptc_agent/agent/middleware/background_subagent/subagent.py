@@ -19,11 +19,11 @@ from langchain_core.tools import StructuredTool
 from langgraph.config import get_config
 from langgraph.types import Command
 
-from ptc_agent.agent.middleware.background.middleware import (
+from ptc_agent.agent.middleware.background_subagent.middleware import (
     current_background_token_tracker,
     current_background_tool_call_id,
 )
-from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
+from ptc_agent.agent.middleware.background_subagent.registry import BackgroundTaskRegistry
 from ptc_agent.agent.middleware._utils import append_to_system_message
 
 logger = structlog.get_logger(__name__)
@@ -704,7 +704,7 @@ class SubAgentMiddleware(AgentMiddleware):
 
     Example:
         ```python
-        from ptc_agent.agent.middleware.subagents import SubAgentMiddleware
+        from ptc_agent.agent.middleware.background_subagent.subagent_middleware import SubAgentMiddleware
         from langchain.agents import create_agent
 
         # Basic usage with defaults (no default middleware)

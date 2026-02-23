@@ -41,7 +41,7 @@ from ptc_agent.config import (
     load_from_files,
 )
 
-from .agent import PTCAgent, PTCExecutor, create_ptc_agent
+from .agent import PTCAgent
 from .backends import DaytonaBackend
 from .graph import SessionProvider, build_ptc_graph, build_ptc_graph_with_session
 from .subagents import create_research_subagent
@@ -54,14 +54,12 @@ __all__ = [
     "LLMDefinition",
     # Agent
     "PTCAgent",
-    "PTCExecutor",
     # Graph factory
     "SessionProvider",
     "build_ptc_graph",
     "build_ptc_graph_with_session",
     # Utilities
     "configure_logging",
-    "create_ptc_agent",
     "create_research_subagent",
     "ensure_config_dir",
     "find_config_file",

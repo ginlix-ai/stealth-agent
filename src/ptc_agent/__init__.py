@@ -24,8 +24,6 @@ __version__ = "0.1.0"
 from ptc_agent.agent import (
     DaytonaBackend,
     PTCAgent,
-    PTCExecutor,
-    create_ptc_agent,
 )
 from ptc_agent.config import (
     AgentConfig,
@@ -61,7 +59,6 @@ __all__ = [
     "MCPToolInfo",
     # Agent
     "PTCAgent",
-    "PTCExecutor",
     # Core
     "PTCSandbox",
     "Session",
@@ -72,7 +69,6 @@ __all__ = [
     "TodoStatus",
     # Version
     "__version__",
-    "create_ptc_agent",
     "load_core_from_files",
     "load_from_files",
 ]

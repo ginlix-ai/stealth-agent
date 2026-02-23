@@ -20,8 +20,8 @@ from langgraph.runtime import Runtime
 
 from langchain.agents.middleware.types import AgentMiddleware, AgentState
 
-from ptc_agent.agent.middleware.background.middleware import current_background_tool_call_id
-from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
+from ptc_agent.agent.middleware.background_subagent.middleware import current_background_tool_call_id
+from ptc_agent.agent.middleware.background_subagent.registry import BackgroundTaskRegistry
 
 logger = logging.getLogger(__name__)
 

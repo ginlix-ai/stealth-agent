@@ -98,6 +98,7 @@ class LLMConfig(BaseModel):
 
     name: str  # Name/alias from src/llms/manifest/models.json
     flash: str | None = None  # LLM for flash agent, defaults to main llm if None
+    fallback: list[str] | None = None  # Fallback model names for retry exhaustion
 
 
 class AgentConfig(BaseModel):

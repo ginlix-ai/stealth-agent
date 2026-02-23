@@ -16,18 +16,18 @@ from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
-from ptc_agent.agent.middleware.background.registry import (
+from ptc_agent.agent.middleware.background_subagent.registry import (
     BackgroundTask,
     BackgroundTaskRegistry,
 )
-from ptc_agent.agent.middleware.background.tools import (
+from ptc_agent.agent.middleware.background_subagent.tools import (
     create_task_output_tool,
     create_wait_tool,
 )
 from src.utils.tracking.per_call_token_tracker import PerCallTokenTracker
 
 if TYPE_CHECKING:
-    from ptc_agent.agent.middleware.background.counter import ToolCallCounterMiddleware
+    from ptc_agent.agent.middleware.background_subagent.counter import ToolCallCounterMiddleware
 
 # This ContextVar propagates tool_call_id to subagent tool calls, used by
 # ToolCallCounterMiddleware to track which background task a tool call

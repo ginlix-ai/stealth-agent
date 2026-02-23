@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 if TYPE_CHECKING:
-    from ptc_agent.agent.middleware.background.utils import MessageChecker
+    from ptc_agent.agent.middleware.background_subagent.utils import MessageChecker
 
 logger = structlog.get_logger(__name__)
 

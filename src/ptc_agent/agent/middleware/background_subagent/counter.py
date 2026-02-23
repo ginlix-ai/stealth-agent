@@ -18,8 +18,8 @@ from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
-from ptc_agent.agent.middleware.background.middleware import current_background_tool_call_id
-from ptc_agent.agent.middleware.background.registry import BackgroundTaskRegistry
+from ptc_agent.agent.middleware.background_subagent.middleware import current_background_tool_call_id
+from ptc_agent.agent.middleware.background_subagent.registry import BackgroundTaskRegistry
 
 logger = structlog.get_logger(__name__)
 

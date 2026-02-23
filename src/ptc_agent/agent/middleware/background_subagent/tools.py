@@ -13,13 +13,13 @@ import structlog
 from langchain_core.tools import StructuredTool
 from langgraph.config import get_config
 
-from ptc_agent.agent.middleware.background.utils import build_message_checker
+from ptc_agent.agent.middleware.background_subagent.utils import build_message_checker
 
 if TYPE_CHECKING:
-    from ptc_agent.agent.middleware.background.middleware import (
+    from ptc_agent.agent.middleware.background_subagent.middleware import (
         BackgroundSubagentMiddleware,
     )
-    from ptc_agent.agent.middleware.background.registry import (
+    from ptc_agent.agent.middleware.background_subagent.registry import (
         BackgroundTask,
         BackgroundTaskRegistry,
     )

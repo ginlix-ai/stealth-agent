@@ -11,7 +11,7 @@ This module provides middleware for LangChain/LangGraph agents:
 """
 
 # Background subagent middleware
-from ptc_agent.agent.middleware.background import (
+from ptc_agent.agent.middleware.background_subagent import (
     BackgroundSubagentMiddleware,
     BackgroundSubagentOrchestrator,
     ToolCallCounterMiddleware,
@@ -76,12 +76,12 @@ from ptc_agent.agent.middleware.message_queue import (
 )
 
 # Subagent message queue middleware
-from ptc_agent.agent.middleware.background.subagent_message_queue import (
+from ptc_agent.agent.middleware.background_subagent.queue import (
     SubagentMessageQueueMiddleware,
 )
 
 # Subagent middleware
-from ptc_agent.agent.middleware.subagents import (
+from ptc_agent.agent.middleware.background_subagent.subagent import (
     CompiledSubAgent,
     SubAgent,
     SubAgentMiddleware,
