@@ -239,6 +239,16 @@ async def get_workflow_status(thread_id: str) -> dict:
             except Exception as e:
                 logger.debug(f"Could not get background task status for {thread_id}: {e}")
 
+        # Include share status so the UI can show the correct icon without an extra API call
+        is_shared = False
+        try:
+            from src.server.database.conversation import get_thread_by_id
+            thread_row = await get_thread_by_id(thread_id)
+            if thread_row:
+                is_shared = bool(thread_row.get("is_shared"))
+        except Exception as e:
+            logger.debug(f"Could not fetch share status for {thread_id}: {e}")
+
         response = {
             "thread_id": thread_id,
             "status": status,
@@ -249,6 +259,7 @@ async def get_workflow_status(thread_id: str) -> dict:
             "progress": checkpoint_info,
             "active_tasks": active_tasks,
             "soft_interrupted": soft_interrupted,
+            "is_shared": is_shared,
         }
 
         logger.debug(f"Status check for {thread_id}: {status}")

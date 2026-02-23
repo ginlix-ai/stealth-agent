@@ -543,6 +543,10 @@ async def setup_tables_async():
                                 )),
                             thread_index INTEGER NOT NULL,
                             title VARCHAR(255),
+                            share_token VARCHAR(32) UNIQUE,
+                            is_shared BOOLEAN NOT NULL DEFAULT FALSE,
+                            share_permissions JSONB NOT NULL DEFAULT '{}',
+                            shared_at TIMESTAMPTZ,
                             created_at TIMESTAMPTZ DEFAULT NOW(),
                             updated_at TIMESTAMPTZ DEFAULT NOW(),
                             CONSTRAINT unique_thread_index_per_workspace
@@ -556,6 +560,10 @@ async def setup_tables_async():
                     await cur.execute("""
                         CREATE INDEX IF NOT EXISTS idx_threads_current_status
                         ON conversation_threads(current_status);
+                    """)
+                    await cur.execute("""
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_threads_share_token
+                        ON conversation_threads(share_token) WHERE share_token IS NOT NULL;
                     """)
                     print("   conversation_threads OK")
 

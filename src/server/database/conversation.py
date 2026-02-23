@@ -415,7 +415,7 @@ async def get_workspace_threads(
                 query = f"""
                     SELECT
                         conversation_thread_id, workspace_id, current_status, msg_type, thread_index,
-                        title, created_at, updated_at
+                        title, is_shared, created_at, updated_at
                     FROM conversation_threads
                     WHERE workspace_id = %s
                     ORDER BY {sort_by} {sort_order.upper()}
@@ -470,7 +470,7 @@ async def get_threads_for_user(
                 query = f"""
                     SELECT
                         t.conversation_thread_id, t.workspace_id, t.current_status, t.msg_type, t.thread_index,
-                        t.title, t.created_at, t.updated_at,
+                        t.title, t.is_shared, t.created_at, t.updated_at,
                         fq.content AS first_query_content
                     FROM conversation_threads t
                     JOIN workspaces w ON t.workspace_id = w.workspace_id
@@ -1147,7 +1147,10 @@ async def get_thread_by_id(conversation_thread_id: str) -> Optional[Dict[str, An
         async with get_db_connection() as conn:
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute("""
-                    SELECT conversation_thread_id, workspace_id, current_status, msg_type, thread_index, title, created_at, updated_at
+                    SELECT conversation_thread_id, workspace_id, current_status,
+                           msg_type, thread_index, title,
+                           share_token, is_shared, share_permissions, shared_at,
+                           created_at, updated_at
                     FROM conversation_threads
                     WHERE conversation_thread_id = %s
                 """, (conversation_thread_id,))
@@ -1157,6 +1160,99 @@ async def get_thread_by_id(conversation_thread_id: str) -> Optional[Dict[str, An
 
     except Exception as e:
         logger.error(f"Error getting thread by id: {e}")
+        raise
+
+
+async def get_thread_by_share_token(share_token: str) -> Optional[Dict[str, Any]]:
+    """
+    Get a shared thread by its public share token.
+
+    Returns thread info + workspace_id + workspace name only if is_shared = TRUE.
+    """
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute("""
+                    SELECT
+                        t.conversation_thread_id,
+                        t.workspace_id,
+                        t.current_status,
+                        t.msg_type,
+                        t.title,
+                        t.share_token,
+                        t.is_shared,
+                        t.share_permissions,
+                        t.shared_at,
+                        t.created_at,
+                        t.updated_at,
+                        w.name AS workspace_name
+                    FROM conversation_threads t
+                    JOIN workspaces w ON w.workspace_id = t.workspace_id
+                    WHERE t.share_token = %s AND t.is_shared = TRUE
+                """, (share_token,))
+
+                result = await cur.fetchone()
+                return dict(result) if result else None
+
+    except Exception as e:
+        logger.error(f"Error getting thread by share token: {e}")
+        raise
+
+
+async def update_thread_sharing(
+    conversation_thread_id: str,
+    is_shared: bool,
+    share_token: Optional[str] = None,
+    share_permissions: Optional[Dict[str, Any]] = None,
+    shared_at: Optional[datetime] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Update sharing settings for a thread.
+
+    Args:
+        conversation_thread_id: Thread ID
+        is_shared: Whether the thread is publicly shared
+        share_token: Opaque share token (set on first enable)
+        share_permissions: Permission dict e.g. {"allow_files": false, "allow_download": false}
+        shared_at: Timestamp of last enable
+    """
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor(row_factory=dict_row) as cur:
+                sets = ["is_shared = %s", "updated_at = NOW()"]
+                params: list = [is_shared]
+
+                if share_token is not None:
+                    sets.append("share_token = %s")
+                    params.append(share_token)
+
+                if share_permissions is not None:
+                    sets.append("share_permissions = %s")
+                    params.append(Json(share_permissions))
+
+                if shared_at is not None:
+                    sets.append("shared_at = %s")
+                    params.append(shared_at)
+
+                params.append(conversation_thread_id)
+
+                await cur.execute(
+                    f"""
+                    UPDATE conversation_threads
+                    SET {', '.join(sets)}
+                    WHERE conversation_thread_id = %s
+                    RETURNING conversation_thread_id, workspace_id, share_token,
+                              is_shared, share_permissions, shared_at,
+                              current_status, msg_type, title, created_at, updated_at
+                    """,
+                    tuple(params),
+                )
+
+                result = await cur.fetchone()
+                return dict(result) if result else None
+
+    except Exception as e:
+        logger.error(f"Error updating thread sharing: {e}")
         raise
 
 

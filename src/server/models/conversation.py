@@ -7,7 +7,7 @@ the query-response schema (workspaces, thread, query, response).
 
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ==================== Workspace Thread Response Models ====================
@@ -23,6 +23,7 @@ class WorkspaceThreadListItem(BaseModel):
     first_query_content: Optional[str] = Field(
         None, description="First user query content (preview)"
     )
+    is_shared: bool = Field(False, description="Whether thread is publicly shared")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
@@ -35,6 +36,7 @@ class WorkspaceThreadListItem(BaseModel):
                 "current_status": "completed",
                 "msg_type": "ptc",
                 "title": "Tesla Stock Analysis",
+                "is_shared": False,
                 "created_at": "2025-10-15T10:30:00Z",
                 "updated_at": "2025-10-15T14:45:00Z"
             }
@@ -171,4 +173,36 @@ class ThreadDeleteResponse(BaseModel):
                 "message": "Thread deleted successfully"
             }
         }
+
+
+# ==================== Thread Sharing Models ====================
+
+class SharePermissions(BaseModel):
+    """Configurable permissions for a shared thread."""
+    allow_files: bool = Field(False, description="Allow browsing and reading workspace files")
+    allow_download: bool = Field(False, description="Allow downloading raw workspace files")
+
+    @model_validator(mode="after")
+    def download_requires_files(self):
+        if self.allow_download and not self.allow_files:
+            self.allow_files = True
+        return self
+
+
+class ThreadShareRequest(BaseModel):
+    """Request model for toggling thread sharing."""
+    is_shared: bool = Field(..., description="Enable or disable public sharing")
+    permissions: Optional[SharePermissions] = Field(
+        None, description="Share permissions (only provided fields are updated)"
+    )
+
+
+class ThreadShareResponse(BaseModel):
+    """Response model for thread share status."""
+    is_shared: bool = Field(..., description="Whether the thread is publicly shared")
+    share_token: Optional[str] = Field(None, description="Opaque share token")
+    share_url: Optional[str] = Field(None, description="Full share URL")
+    permissions: SharePermissions = Field(
+        default_factory=SharePermissions, description="Current share permissions"
+    )
 

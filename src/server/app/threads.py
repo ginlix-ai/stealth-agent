@@ -11,6 +11,8 @@ Route definitions are thin — business logic lives in handlers/.
 
 import json
 import logging
+import secrets
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
 
@@ -24,6 +26,9 @@ from src.server.models.conversation import (
     WorkspaceThreadsListResponse,
     ThreadUpdateRequest,
     ThreadDeleteResponse,
+    ThreadShareRequest,
+    ThreadShareResponse,
+    SharePermissions,
 )
 from src.server.database.conversation import (
     get_workspace_threads,
@@ -34,6 +39,7 @@ from src.server.database.conversation import (
     delete_thread,
     update_thread_title,
     get_thread_by_id,
+    update_thread_sharing,
 )
 from src.server.dependencies.usage_limits import ChatRateLimited
 
@@ -99,6 +105,7 @@ async def list_threads(
                 msg_type=thread.get("msg_type"),
                 title=thread.get("title"),
                 first_query_content=thread.get("first_query_content"),
+                is_shared=bool(thread.get("is_shared", False)),
                 created_at=thread["created_at"],
                 updated_at=thread["updated_at"],
             )
@@ -473,4 +480,93 @@ async def send_subagent_message(
         task_id=task_id,
         content=request.content,
         user_id=x_user_id,
+    )
+
+
+# =============================================================================
+# THREAD SHARING
+# =============================================================================
+
+
+@router.post("/{thread_id}/share", response_model=ThreadShareResponse)
+async def update_thread_share(
+    thread_id: str,
+    request: ThreadShareRequest,
+    x_user_id: CurrentUserId,
+):
+    """Toggle public sharing for a thread and update permissions."""
+    from src.server.database.workspace import get_workspace
+
+    thread = await get_thread_by_id(thread_id)
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    # Verify ownership via workspace
+    workspace = await get_workspace(str(thread["workspace_id"]))
+    if not workspace or workspace.get("user_id") != x_user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    # Build update kwargs
+    kwargs: dict = {"is_shared": request.is_shared}
+
+    # Generate share_token on first enable (reuse existing on re-enable)
+    if request.is_shared and not thread.get("share_token"):
+        kwargs["share_token"] = secrets.token_urlsafe(16)
+
+    if request.is_shared:
+        kwargs["shared_at"] = datetime.now(timezone.utc)
+
+    # Merge permissions: start from existing, overlay provided fields
+    existing_perms = thread.get("share_permissions") or {}
+    if isinstance(existing_perms, str):
+        existing_perms = json.loads(existing_perms)
+
+    if request.permissions is not None:
+        merged = {**existing_perms, **request.permissions.model_dump()}
+        # Enforce: download requires files
+        if merged.get("allow_download") and not merged.get("allow_files"):
+            merged["allow_files"] = True
+        kwargs["share_permissions"] = merged
+
+    updated = await update_thread_sharing(thread_id, **kwargs)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    share_token = updated.get("share_token")
+    perms = updated.get("share_permissions") or {}
+    if isinstance(perms, str):
+        perms = json.loads(perms)
+
+    return ThreadShareResponse(
+        is_shared=updated["is_shared"],
+        share_token=share_token if updated["is_shared"] else None,
+        share_url=f"/s/{share_token}" if updated["is_shared"] and share_token else None,
+        permissions=SharePermissions(**(perms if isinstance(perms, dict) else {})),
+    )
+
+
+@router.get("/{thread_id}/share", response_model=ThreadShareResponse)
+async def get_thread_share(thread_id: str, x_user_id: CurrentUserId):
+    """Get current share status and permissions for a thread."""
+    from src.server.database.workspace import get_workspace
+
+    thread = await get_thread_by_id(thread_id)
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    workspace = await get_workspace(str(thread["workspace_id"]))
+    if not workspace or workspace.get("user_id") != x_user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    share_token = thread.get("share_token")
+    is_shared = thread.get("is_shared", False)
+    perms = thread.get("share_permissions") or {}
+    if isinstance(perms, str):
+        perms = json.loads(perms)
+
+    return ThreadShareResponse(
+        is_shared=is_shared,
+        share_token=share_token if is_shared else None,
+        share_url=f"/s/{share_token}" if is_shared and share_token else None,
+        permissions=SharePermissions(**(perms if isinstance(perms, dict) else {})),
     )
