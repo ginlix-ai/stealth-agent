@@ -67,7 +67,7 @@ async def create_user(
                 VALUES (%s, %s, %s, %s, %s, %s, FALSE, NOW(), NOW())
                 RETURNING
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, membership_id, auth_provider,
+                    onboarding_completed, auth_provider,
                     created_at, updated_at, last_login_at
             """, (user_id, email, name, avatar_url, timezone, locale))
 
@@ -92,7 +92,7 @@ async def find_user_by_email(email: str) -> Optional[Dict[str, Any]]:
             await cur.execute("""
                 SELECT
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, membership_id, auth_provider,
+                    onboarding_completed, auth_provider,
                     created_at, updated_at, last_login_at
                 FROM users
                 WHERE email = %s
@@ -115,7 +115,7 @@ async def migrate_user_id(old_user_id: str, new_user_id: str) -> Optional[Dict[s
                 WHERE user_id = %s
                 RETURNING
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, membership_id, auth_provider,
+                    onboarding_completed, auth_provider,
                     created_at, updated_at, last_login_at
             """, (new_user_id, old_user_id))
             result = await cur.fetchone()
@@ -160,7 +160,7 @@ async def create_user_from_auth(
                     updated_at = NOW()
                 RETURNING
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, membership_id, auth_provider,
+                    onboarding_completed, auth_provider,
                     created_at, updated_at, last_login_at
             """, (user_id, email, name, avatar_url, auth_provider, timezone, locale))
             result = await cur.fetchone()
@@ -192,7 +192,7 @@ async def get_user(user_id: str) -> Optional[Dict[str, Any]]:
             await cur.execute("""
                 SELECT
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, membership_id, auth_provider,
+                    onboarding_completed, auth_provider,
                     created_at, updated_at, last_login_at
                 FROM users
                 WHERE user_id = %s
@@ -247,7 +247,7 @@ async def update_user(
 
     returning_columns = [
         "user_id", "email", "name", "avatar_url", "timezone", "locale",
-        "onboarding_completed", "membership_id", "auth_provider",
+        "onboarding_completed", "auth_provider",
         "created_at", "updated_at", "last_login_at",
     ]
 
@@ -310,7 +310,7 @@ async def upsert_user(
                     updated_at = NOW()
                 RETURNING
                     user_id, email, name, avatar_url, timezone, locale,
-                    onboarding_completed, membership_id, auth_provider,
+                    onboarding_completed, auth_provider,
                     created_at, updated_at, last_login_at
             """, (user_id, email, name, avatar_url, timezone, locale))
 
@@ -515,7 +515,7 @@ async def get_user_with_preferences(user_id: str) -> Optional[Dict[str, Any]]:
             await cur.execute("""
                 SELECT
                     u.user_id, u.email, u.name, u.avatar_url, u.timezone, u.locale,
-                    u.onboarding_completed, u.membership_id, u.auth_provider,
+                    u.onboarding_completed, u.auth_provider,
                     u.created_at, u.updated_at, u.last_login_at,
                     p.user_preference_id, p.risk_preference, p.investment_preference,
                     p.agent_preference, p.other_preference,
@@ -538,7 +538,6 @@ async def get_user_with_preferences(user_id: str) -> Optional[Dict[str, Any]]:
                 'timezone': result['timezone'],
                 'locale': result['locale'],
                 'onboarding_completed': result['onboarding_completed'],
-                'membership_id': result['membership_id'],
                 'auth_provider': result['auth_provider'],
                 'created_at': result['created_at'],
                 'updated_at': result['updated_at'],

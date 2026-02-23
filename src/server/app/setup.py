@@ -92,8 +92,8 @@ async def lifespan(app: FastAPI):
         raise
 
     # Auto-provision local dev user when Supabase auth is disabled
-    from src.server.auth.jwt_bearer import _AUTH_ENABLED, LOCAL_DEV_USER_ID
-    if not _AUTH_ENABLED:
+    from src.config.settings import AUTH_ENABLED, LOCAL_DEV_USER_ID
+    if not AUTH_ENABLED:
         from src.server.database.user import create_user_from_auth
         await create_user_from_auth(
             user_id=LOCAL_DEV_USER_ID,
@@ -112,15 +112,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Redis cache initialization failed: {e}")
         logger.warning("Server will continue without caching")
-
-    # Initialize MembershipService (load memberships from DB into memory)
-    try:
-        from src.server.services.membership_service import MembershipService
-        membership_svc = MembershipService.get_instance()
-        await membership_svc.refresh()
-    except Exception as e:
-        logger.warning(f"MembershipService initialization failed: {e}")
-        logger.warning("Using fallback membership definitions")
 
     # Start BackgroundTaskManager cleanup task
     try:
@@ -358,8 +349,6 @@ from src.server.app.watchlist import router as watchlist_router
 from src.server.app.portfolio import router as portfolio_router
 from src.server.app.infoflow import router as infoflow_router
 from src.server.app.sec_proxy import router as sec_proxy_router
-from src.server.app.usage import router as usage_router
-from src.server.app.memberships import router as memberships_router
 from src.server.app.api_keys import router as api_keys_router
 from src.server.app.automations import router as automations_router
 from src.server.app.oauth import router as oauth_router
@@ -378,8 +367,6 @@ app.include_router(watchlist_router)  # /api/v1/users/me/watchlist/* - Watchlist
 app.include_router(portfolio_router)  # /api/v1/users/me/portfolio/* - Portfolio management
 app.include_router(infoflow_router)  # /api/v1/infoflow/* - InfoFlow content feed
 app.include_router(sec_proxy_router)  # /api/v1/sec-proxy/* - SEC EDGAR document proxy
-app.include_router(usage_router)  # /api/v1/usage/* - Usage limits and code redemption
-app.include_router(memberships_router)  # /api/v1/memberships - Membership definitions (public)
 app.include_router(api_keys_router)  # /api/v1/users/me/api-keys + /api/v1/models - BYOK & model config
 app.include_router(automations_router)  # /api/v1/automations/* - Scheduled automation triggers
 app.include_router(oauth_router)  # /api/v1/oauth/* - OAuth provider connections (Codex)

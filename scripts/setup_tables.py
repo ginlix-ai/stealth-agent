@@ -2,26 +2,26 @@
 """
 Unified database setup script for fresh installs.
 
-Creates all 14 application tables in FK dependency order, with indexes,
-triggers, seed data, and verification.
+Creates all application tables in FK dependency order, with indexes,
+triggers, and verification.
 
 Replaces the old setup_conversation_tables.py and setup_user_tables.py scripts.
 
+Note: Membership/plan tables (memberships, redemption_codes, redemption_histories)
+have been migrated to ginlix-auth's auth_plans table and are no longer created here.
+
 Tables created (in order):
- 1. memberships          - Membership tiers with seed data
- 2. users                - Central user profiles (FK -> memberships)
- 3. workspaces           - Daytona sandbox workspaces (FK -> users)
- 4. user_preferences     - Categorized user prefs (FK -> users)
- 5. watchlists           - Named watchlist containers (FK -> users)
- 6. watchlist_items      - Instruments in watchlists (FK -> watchlists)
- 7. user_portfolios      - Current holdings (FK -> users)
- 8. redemption_codes     - Promo/upgrade codes (FK -> memberships)
- 9. redemption_histories - Code redemption log (FK -> redemption_codes, users)
-10. user_api_keys        - Encrypted BYOK keys (FK -> users)
-11. conversation_threads - Chat threads (FK -> workspaces)
-12. conversation_queries - User messages (FK -> conversation_threads)
-13. conversation_responses - Agent responses (FK -> conversation_threads)
-14. conversation_usages  - Token/credit tracking (FK -> conversation_responses, threads, workspaces)
+ 1. users                - Central user profiles
+ 2. workspaces           - Daytona sandbox workspaces (FK -> users)
+ 3. user_preferences     - Categorized user prefs (FK -> users)
+ 4. watchlists           - Named watchlist containers (FK -> users)
+ 5. watchlist_items      - Instruments in watchlists (FK -> watchlists)
+ 6. user_portfolios      - Current holdings (FK -> users)
+ 7. user_api_keys        - Encrypted BYOK keys (FK -> users)
+ 8. conversation_threads - Chat threads (FK -> workspaces)
+ 9. conversation_queries - User messages (FK -> conversation_threads)
+10. conversation_responses - Agent responses (FK -> conversation_threads)
+11. conversation_usages  - Token/credit tracking (FK -> conversation_responses, threads, workspaces)
 
 Usage:
     uv run python scripts/setup_tables.py
@@ -48,7 +48,6 @@ from psycopg.rows import dict_row
 # Table names in FK dependency order (used for verification at the end)
 # ---------------------------------------------------------------------------
 ALL_TABLES = [
-    "memberships",
     "users",
     "workspaces",
     "workspace_files",
@@ -56,8 +55,6 @@ ALL_TABLES = [
     "watchlists",
     "watchlist_items",
     "user_portfolios",
-    "redemption_codes",
-    "redemption_histories",
     "user_api_keys",
     "conversation_threads",
     "conversation_queries",
@@ -69,7 +66,6 @@ ALL_TABLES = [
 
 # Tables that have an updated_at column and need the auto-update trigger
 TABLES_WITH_UPDATED_AT_TRIGGER = [
-    "memberships",
     "users",
     "workspaces",
     "workspace_files",
@@ -162,48 +158,7 @@ async def setup_tables_async():
                     print("   update_updated_at_column() OK")
 
                     # ===================================================
-                    # 1. memberships
-                    # ===================================================
-                    print("\n-- Creating 'memberships' table ...")
-                    await cur.execute("""
-                        CREATE TABLE IF NOT EXISTS memberships (
-                            membership_id SERIAL PRIMARY KEY,
-                            name VARCHAR(50) NOT NULL UNIQUE,
-                            display_name VARCHAR(100) NOT NULL,
-                            rank INT NOT NULL UNIQUE,
-                            daily_credits NUMERIC(10,2) NOT NULL DEFAULT 500.0,
-                            max_active_workspaces INT NOT NULL DEFAULT 3,
-                            max_concurrent_requests INT NOT NULL DEFAULT 5,
-                            is_default BOOLEAN NOT NULL DEFAULT FALSE,
-                            created_at TIMESTAMPTZ DEFAULT NOW(),
-                            updated_at TIMESTAMPTZ DEFAULT NOW()
-                        );
-                    """)
-                    await cur.execute("""
-                        CREATE UNIQUE INDEX IF NOT EXISTS idx_memberships_default
-                        ON memberships(is_default) WHERE is_default = TRUE;
-                    """)
-                    await cur.execute("""
-                        CREATE UNIQUE INDEX IF NOT EXISTS idx_memberships_rank
-                        ON memberships(rank);
-                    """)
-
-                    # Seed data
-                    print("   Seeding memberships ...")
-                    await cur.execute("""
-                        INSERT INTO memberships
-                            (name, display_name, rank, daily_credits,
-                             max_active_workspaces, max_concurrent_requests, is_default)
-                        VALUES
-                            ('free',       'Free',       0, 1000.0,  3, 10,  TRUE),
-                            ('pro',        'Pro',        1, 5000.0, 10, 40, FALSE),
-                            ('enterprise', 'Enterprise', 2,   -1,   -1, -1, FALSE)
-                        ON CONFLICT (name) DO NOTHING;
-                    """)
-                    print("   memberships OK")
-
-                    # ===================================================
-                    # 2. users
+                    # 1. users
                     # ===================================================
                     print("\n-- Creating 'users' table ...")
                     await cur.execute("""
@@ -215,8 +170,7 @@ async def setup_tables_async():
                             timezone VARCHAR(100),
                             locale VARCHAR(20),
                             onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
-                            membership_id INT NOT NULL DEFAULT 1
-                                REFERENCES memberships(membership_id),
+                            membership_id INT NOT NULL DEFAULT 1,
                             byok_enabled BOOLEAN NOT NULL DEFAULT FALSE,
                             auth_provider VARCHAR(50),
                             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -231,10 +185,6 @@ async def setup_tables_async():
                     await cur.execute("""
                         CREATE INDEX IF NOT EXISTS idx_users_created_at
                         ON users(created_at DESC);
-                    """)
-                    await cur.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_users_membership_id
-                        ON users(membership_id);
                     """)
                     print("   users OK")
 
@@ -445,48 +395,7 @@ async def setup_tables_async():
                     print("   user_portfolios OK")
 
                     # ===================================================
-                    # 8. redemption_codes
-                    # ===================================================
-                    print("\n-- Creating 'redemption_codes' table ...")
-                    await cur.execute("""
-                        CREATE TABLE IF NOT EXISTS redemption_codes (
-                            code VARCHAR(50) PRIMARY KEY,
-                            membership_id INT NOT NULL
-                                REFERENCES memberships(membership_id),
-                            max_redemptions INT NOT NULL DEFAULT 1,
-                            current_redemptions INT NOT NULL DEFAULT 0,
-                            expires_at TIMESTAMPTZ,
-                            created_at TIMESTAMPTZ DEFAULT NOW(),
-                            is_active BOOLEAN NOT NULL DEFAULT TRUE
-                        );
-                    """)
-                    print("   redemption_codes OK")
-
-                    # ===================================================
-                    # 9. redemption_histories
-                    # ===================================================
-                    print("\n-- Creating 'redemption_histories' table ...")
-                    await cur.execute("""
-                        CREATE TABLE IF NOT EXISTS redemption_histories (
-                            redemption_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            code VARCHAR(50) NOT NULL
-                                REFERENCES redemption_codes(code),
-                            user_id VARCHAR(255) NOT NULL
-                                REFERENCES users(user_id) ON UPDATE CASCADE,
-                            previous_plan VARCHAR(50) NOT NULL,
-                            new_plan VARCHAR(50) NOT NULL,
-                            redeemed_at TIMESTAMPTZ DEFAULT NOW(),
-                            CONSTRAINT unique_code_user UNIQUE (code, user_id)
-                        );
-                    """)
-                    await cur.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_redemption_histories_user
-                        ON redemption_histories(user_id);
-                    """)
-                    print("   redemption_histories OK")
-
-                    # ===================================================
-                    # 10. user_api_keys
+                    # 8. user_api_keys
                     # ===================================================
                     print("\n-- Creating 'user_api_keys' table ...")
                     await cur.execute("""
@@ -830,7 +739,6 @@ async def setup_tables_async():
 
             print(f"\n   Setup complete! All {len(ALL_TABLES)} tables are ready.")
             print("\n   Schema Summary:")
-            print("    - memberships:            Membership tiers (free/pro/enterprise)")
             print("    - users:                  Central user profiles")
             print("    - workspaces:             Daytona sandbox workspaces")
             print("    - workspace_files:        Persisted workspace files (offline access)")
@@ -838,8 +746,6 @@ async def setup_tables_async():
             print("    - watchlists:             Named watchlist containers")
             print("    - watchlist_items:        Instruments in watchlists")
             print("    - user_portfolios:        Current holdings")
-            print("    - redemption_codes:       Promo/upgrade codes")
-            print("    - redemption_histories:   Code redemption audit log")
             print("    - user_api_keys:          Encrypted BYOK API keys")
             print("    - conversation_threads:   Chat threads per workspace")
             print("    - conversation_queries:   User messages per thread")

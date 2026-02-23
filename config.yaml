@@ -96,14 +96,3 @@ redis:
     enabled: true  # Enable SWR for cache reads
     soft_ttl_ratio: 0.6  # Refresh when remaining TTL < 60% of original (e.g., at 3 min for 5 min TTL)
     warm_after_invalidation: true  # Pre-populate cache after invalidation
-
-
-# =============================================================================
-# USAGE LIMITS CONFIGURATION
-# =============================================================================
-# Per-user, tier-based usage limits. Only enforced when auth is enabled.
-# Complete no-op in local dev (when SUPABASE_URL is unset).
-usage_limits:
-  enabled: true
-  plan_cache_ttl: 300              # seconds — PlanService in-memory cache TTL
-  burst_counter_ttl: 300           # seconds (5 minutes, short-lived burst window)

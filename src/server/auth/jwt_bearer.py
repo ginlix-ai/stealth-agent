@@ -10,7 +10,6 @@ requests are attributed to a default local-dev identity.  This lets
 contributors run the stack locally without a Supabase project.
 """
 
-import os
 from dataclasses import dataclass
 
 import jwt
@@ -18,8 +17,7 @@ from jwt import PyJWKClient
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-_AUTH_ENABLED = bool(os.getenv("SUPABASE_URL", ""))
-LOCAL_DEV_USER_ID = os.getenv("AUTH_USER_ID", "local-dev-user")
+from src.config.settings import AUTH_ENABLED, LOCAL_DEV_USER_ID, SUPABASE_URL
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -36,10 +34,9 @@ class AuthInfo:
 def _get_jwks_client() -> PyJWKClient:
     global _jwks_client
     if _jwks_client is None:
-        supabase_url = os.getenv("SUPABASE_URL", "")
-        if not supabase_url:
+        if not SUPABASE_URL:
             raise RuntimeError("SUPABASE_URL environment variable is not set")
-        jwks_url = f"{supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+        jwks_url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
         _jwks_client = PyJWKClient(jwks_url, cache_jwk_set=True, lifespan=300)
     return _jwks_client
 
@@ -77,7 +74,7 @@ async def verify_jwt_token(
     When Supabase auth is disabled (``SUPABASE_URL`` unset), returns a
     static local-dev user ID without requiring a token.
     """
-    if not _AUTH_ENABLED:
+    if not AUTH_ENABLED:
         return LOCAL_DEV_USER_ID
     if credentials is None:
         raise HTTPException(status_code=401, detail="Missing Bearer token")
@@ -91,7 +88,7 @@ async def get_current_auth_info(
 
     Used by the auth-sync endpoint to persist the provider on first login.
     """
-    if not _AUTH_ENABLED:
+    if not AUTH_ENABLED:
         return AuthInfo(user_id=LOCAL_DEV_USER_ID)
     if credentials is None:
         raise HTTPException(status_code=401, detail="Missing Bearer token")

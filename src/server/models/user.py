@@ -156,15 +156,6 @@ class UserUpdate(UserBase):
     )
 
 
-class MembershipResponse(BaseModel):
-    """Nested membership object returned inside UserResponse."""
-
-    membership_id: int = Field(description="Membership ID")
-    name: str = Field(description="Membership internal name")
-    display_name: str = Field(description="Membership display name")
-    rank: int = Field(description="Membership rank (0 = lowest)")
-
-
 class UserResponse(UserBase):
     """Response model for user details."""
 
@@ -172,7 +163,6 @@ class UserResponse(UserBase):
     onboarding_completed: bool = Field(
         default=False, description="Whether onboarding is completed"
     )
-    membership: MembershipResponse = Field(description="User membership details")
     auth_provider: Optional[str] = Field(
         None, description="Authentication provider (e.g. google, github, email)"
     )
@@ -182,25 +172,6 @@ class UserResponse(UserBase):
 
     class Config:
         from_attributes = True
-
-
-# =============================================================================
-# Code Redemption Models
-# =============================================================================
-
-
-class RedeemCodeRequest(BaseModel):
-    """Request model for redeeming a code."""
-
-    code: str = Field(..., min_length=1, max_length=50, description="Redemption code")
-
-
-class RedeemCodeResponse(BaseModel):
-    """Response model for successful code redemption."""
-
-    previous_plan: str = Field(description="Plan before redemption")
-    new_plan: str = Field(description="Plan after redemption")
-    message: str = Field(description="Human-readable success message")
 
 
 # =============================================================================

@@ -49,7 +49,7 @@ from src.server.utils.skill_context import (
     build_skill_prefix_message,
 )
 from src.server.utils.multimodal_context import parse_multimodal_contexts, inject_multimodal_context
-from src.server.services.usage_limiter import UsageLimiter
+from src.server.dependencies.usage_limits import release_burst_slot
 
 # Locale/timezone configuration
 from src.config.settings import (
@@ -586,7 +586,7 @@ async def astream_flash_workflow(
                     exc_info=True,
                 )
             finally:
-                await UsageLimiter.release_burst_slot(user_id)
+                await release_burst_slot(user_id)
 
         # Start workflow in background
         await manager.start_workflow(
@@ -670,7 +670,7 @@ async def astream_flash_workflow(
         logger.exception(f"[FLASH_ERROR] thread_id={thread_id}: {e}")
 
         # Release burst slot on error (setup errors before background task starts)
-        await UsageLimiter.release_burst_slot(user_id)
+        await release_burst_slot(user_id)
 
         # Persist error
         if persistence_service:
@@ -770,7 +770,7 @@ async def _handle_sse_disconnect(
                 )
 
             await manager.cancel_workflow(thread_id)
-            await UsageLimiter.release_burst_slot(user_id)
+            await release_burst_slot(user_id)
 
             registry_store = BackgroundRegistryStore.get_instance()
             await registry_store.cancel_and_clear(thread_id, force=True)
@@ -1358,7 +1358,7 @@ async def astream_ptc_workflow(
                 )
             finally:
                 # Release burst slot so it doesn't block future requests
-                await UsageLimiter.release_burst_slot(user_id)
+                await release_burst_slot(user_id)
 
         # Start workflow in background with event buffering
         await manager.start_workflow(
@@ -1448,7 +1448,7 @@ async def astream_ptc_workflow(
         # =====================================================================
 
         # Release burst slot on error so it doesn't block future requests
-        await UsageLimiter.release_burst_slot(user_id)
+        await release_burst_slot(user_id)
 
         # Get token/tool usage for billing even on errors
         _per_call_records = token_callback.per_call_records if token_callback else None

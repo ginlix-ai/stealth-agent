@@ -11,6 +11,7 @@ Configuration loading strategy:
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from functools import lru_cache
@@ -210,6 +211,16 @@ def get_sse_keepalive_interval(default: float = 15.0) -> float:
 
 
 # =============================================================================
+# Auth / Login Service (Supabase)
+# =============================================================================
+SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+AUTH_ENABLED: bool = bool(SUPABASE_URL)
+LOCAL_DEV_USER_ID: str = os.getenv("AUTH_USER_ID", "local-dev-user")
+
+# Quota enforcement service (ginlix-auth)
+AUTH_SERVICE_URL: str = os.getenv("AUTH_SERVICE_URL", "")
+
+# =============================================================================
 # Feature Flags
 # =============================================================================
 
@@ -406,18 +417,6 @@ def get_search_api() -> str:
     agent_config = load_agent_config()
     return str(agent_config.get('search_api', 'tavily'))
 
-
-
-
-
-
-# =============================================================================
-# Usage Limits Configuration
-# =============================================================================
-
-def get_usage_limits_config() -> Dict[str, Any]:
-    """Get the full usage_limits section from config.yaml."""
-    return get_config('usage_limits', {})
 
 
 # =============================================================================
