@@ -31,7 +31,9 @@
     "choosePassword": "设置密码",
     "enterName": "请输入姓名",
     "orContinueWith": "或使用以下方式继续",
-    "welcome": "欢迎"
+    "welcome": "欢迎",
+    "signupCheckEmail": "账号已创建！请查看您的邮箱并点击确认链接。",
+    "signupEmailExists": "该邮箱已注册，请直接登录。"
   },
   "sidebar": {
     "dashboard": "仪表盘",

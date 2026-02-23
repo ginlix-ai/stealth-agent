@@ -163,6 +163,17 @@
   color: var(--color-loss);
 }
 
+.login-page__success {
+  padding: 0.75rem 1rem;
+  border-radius: 0.625rem;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.4;
+  background-color: var(--color-success-soft);
+  border: 1px solid var(--color-success);
+  color: var(--color-success);
+}
+
 .login-page__submit {
   width: 100%;
   padding: 0.75rem 1.25rem;

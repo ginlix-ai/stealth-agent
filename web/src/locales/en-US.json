@@ -31,7 +31,9 @@
     "choosePassword": "Choose a password",
     "enterName": "Enter your name",
     "orContinueWith": "or continue with",
-    "welcome": "Welcome"
+    "welcome": "Welcome",
+    "signupCheckEmail": "Account created! Please check your email for a confirmation link.",
+    "signupEmailExists": "An account with this email already exists. Please log in instead."
   },
   "sidebar": {
     "dashboard": "Dashboard",

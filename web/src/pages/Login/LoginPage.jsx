@@ -47,6 +47,7 @@ function LoginPage() {
   const [signupName, setSignupName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const { t } = useTranslation();
 
   const handleLogin = async (e) => {
@@ -67,9 +68,17 @@ function LoginPage() {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
+    setSuccessMessage(null);
     try {
-      const { error: authError } = await signupWithEmail(signupEmail, signupPassword, signupName);
+      const { data, error: authError } = await signupWithEmail(signupEmail, signupPassword, signupName);
       if (authError) throw authError;
+      if (data?.user && !data.session) {
+        if (data.user.identities?.length === 0) {
+          setError(t('auth.signupEmailExists'));
+        } else {
+          setSuccessMessage(t('auth.signupCheckEmail'));
+        }
+      }
     } catch (err) {
       setError(err?.message || 'Sign up failed');
     } finally {
@@ -102,7 +111,7 @@ function LoginPage() {
         <div className="login-page__tabs">
           <button
             type="button"
-            onClick={() => { setMode('login'); setError(null); }}
+            onClick={() => { setMode('login'); setError(null); setSuccessMessage(null); }}
             className="login-page__tab"
             data-active={mode === 'login'}
           >
@@ -110,7 +119,7 @@ function LoginPage() {
           </button>
           <button
             type="button"
-            onClick={() => { setMode('signup'); setError(null); }}
+            onClick={() => { setMode('signup'); setError(null); setSuccessMessage(null); }}
             className="login-page__tab"
             data-active={mode === 'signup'}
           >
@@ -195,9 +204,10 @@ function LoginPage() {
               />
             </div>
             {error && <div className="login-page__error">{error}</div>}
+            {successMessage && <div className="login-page__success">{successMessage}</div>}
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || successMessage}
               className="login-page__submit"
             >
               {isSubmitting ? t('auth.creatingAccount') : t('auth.signup')}
