@@ -2,6 +2,8 @@ services:
   postgres:
     image: postgres:18
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - langalpha-postgresql-data:/var/lib/postgresql
     environment:
@@ -19,6 +21,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
     command: redis-server --requirepass ${REDIS_PASSWORD}
     volumes:
       - langalpha-redis-data:/data
