@@ -9,25 +9,14 @@ Encryption is transparent to callers — functions accept and return plaintext s
 """
 
 import logging
-import os
 from typing import Any, Dict, Optional
 
 from psycopg.rows import dict_row
 
 from src.server.database.conversation import get_db_connection
+from src.server.database.encryption import get_encryption_key as _get_encryption_key
 
 logger = logging.getLogger(__name__)
-
-
-def _get_encryption_key() -> str:
-    """Return the symmetric encryption key for API key storage."""
-    key = os.getenv("BYOK_ENCRYPTION_KEY")
-    if not key:
-        raise RuntimeError(
-            "BYOK_ENCRYPTION_KEY environment variable is not set. "
-            "Required for encrypting user API keys at rest."
-        )
-    return key
 
 
 async def get_user_api_keys(user_id: str) -> Dict[str, Any]:

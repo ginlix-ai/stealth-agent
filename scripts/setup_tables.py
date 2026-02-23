@@ -504,6 +504,27 @@ async def setup_tables_async():
                     print("   user_api_keys OK")
 
                     # ===================================================
+                    # 10b. user_oauth_tokens
+                    # ===================================================
+                    print("\n-- Creating 'user_oauth_tokens' table ...")
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS user_oauth_tokens (
+                            user_id TEXT NOT NULL,
+                            provider TEXT NOT NULL,
+                            access_token BYTEA NOT NULL,
+                            refresh_token BYTEA NOT NULL,
+                            account_id TEXT NOT NULL,
+                            email TEXT,
+                            plan_type TEXT,
+                            expires_at TIMESTAMPTZ NOT NULL,
+                            created_at TIMESTAMPTZ DEFAULT NOW(),
+                            updated_at TIMESTAMPTZ DEFAULT NOW(),
+                            PRIMARY KEY (user_id, provider)
+                        );
+                    """)
+                    print("   user_oauth_tokens OK")
+
+                    # ===================================================
                     # 11. conversation_threads
                     # ===================================================
                     print("\n-- Creating 'conversation_threads' table ...")
