@@ -457,8 +457,10 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
           style={{
             backgroundColor: 'var(--color-bg-elevated)',
             border: '1px solid var(--color-border-muted)',
-            maxHeight: '90vh',
-            overflowY: 'auto',
+            height: '80vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
           }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -509,6 +511,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                 </button>
               </div>
 
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
               {isLoading && (
                 <div className="flex items-center justify-center py-8">
                   <p className="text-sm" style={{ color: 'var(--color-text-primary)', opacity: 0.7 }}>{t('common.loading')}</p>
@@ -1205,6 +1208,7 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
                   </div>
                 </div>
               )}
+              </div>
         </div>
       </div>
 
