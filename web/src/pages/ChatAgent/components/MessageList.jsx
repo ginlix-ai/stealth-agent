@@ -760,8 +760,8 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
               <UserQuestionCard
                 key={block.key}
                 questionData={qd}
-                onAnswer={onAnswerQuestion}
-                onSkip={onSkipQuestion}
+                onAnswer={(answer) => onAnswerQuestion(answer, block.segment.questionId, qd.interruptId)}
+                onSkip={() => onSkipQuestion(block.segment.questionId, qd.interruptId)}
               />
             );
           }
@@ -912,8 +912,8 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
               <UserQuestionCard
                 key={`question-${segment.questionId}`}
                 questionData={qd}
-                onAnswer={onAnswerQuestion}
-                onSkip={onSkipQuestion}
+                onAnswer={(answer) => onAnswerQuestion(answer, segment.questionId, qd.interruptId)}
+                onSkip={() => onSkipQuestion(segment.questionId, qd.interruptId)}
               />
             );
           }
