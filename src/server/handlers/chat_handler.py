@@ -521,43 +521,145 @@ async def astream_flash_workflow(
             tool_tracker=tool_tracker,
         )
 
-        # Stream flash agent responses directly (no background execution)
-        async for event in handler.stream_workflow(
-            graph=flash_graph,
-            input_state=input_state,
-            config=graph_config,
-        ):
-            yield event
+        # =====================================================================
+        # Background Execution (same pattern as PTC for reconnection support)
+        # =====================================================================
 
-        execution_time = time.time() - start_time
+        tracker = WorkflowTracker.get_instance()
+        manager = BackgroundTaskManager.get_instance()
 
-        # Persist completion
-        if persistence_service:
+        # Mark workflow as active in Redis tracker
+        await tracker.mark_active(
+            thread_id=thread_id,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            metadata={
+                "started_at": datetime.now().isoformat(),
+                "msg_type": "flash",
+            },
+        )
+
+        # Completion callback for background persistence
+        async def on_flash_workflow_complete():
             try:
-                per_call_records = (
+                execution_time = time.time() - start_time
+                _per_call_records = (
                     token_callback.per_call_records if token_callback else None
                 )
-                tool_usage = handler.get_tool_usage() if handler else None
-                sse_events = handler.get_sse_events() if handler else None
+                _tool_usage = handler.get_tool_usage() if handler else None
+                _sse_events = handler.get_sse_events() if handler else None
 
-                await persistence_service.persist_completion(
-                    metadata={"msg_type": "flash"},
-                    execution_time=execution_time,
-                    per_call_records=per_call_records,
-                    tool_usage=tool_usage,
-                    sse_events=sse_events,
+                if persistence_service:
+                    await persistence_service.persist_completion(
+                        metadata={"msg_type": "flash"},
+                        execution_time=execution_time,
+                        per_call_records=_per_call_records,
+                        tool_usage=_tool_usage,
+                        sse_events=_sse_events,
+                    )
+
+                await tracker.mark_completed(
+                    thread_id=thread_id,
+                    metadata={
+                        "completed_at": datetime.now().isoformat(),
+                        "execution_time": execution_time,
+                    },
                 )
-                logger.debug(f"[FLASH_CHAT] Completion persisted: thread_id={thread_id}")
-            except Exception as persist_error:
-                logger.error(f"[FLASH_CHAT] Failed to persist completion: {persist_error}")
+                logger.info(
+                    f"[FLASH_COMPLETE] Background completion persisted: "
+                    f"thread_id={thread_id} duration={execution_time:.2f}s"
+                )
+            except Exception as e:
+                logger.error(
+                    f"[FLASH_CHAT] Background completion persistence failed: {e}",
+                    exc_info=True,
+                )
+            finally:
+                await UsageLimiter.release_burst_slot(user_id)
 
-        logger.info(
-            f"[FLASH_CHAT] Completed: thread_id={thread_id} "
-            f"duration={execution_time:.2f}s"
+        # Start workflow in background
+        await manager.start_workflow(
+            thread_id=thread_id,
+            workflow_generator=handler.stream_workflow(
+                graph=flash_graph,
+                input_state=input_state,
+                config=graph_config,
+            ),
+            metadata={
+                "workspace_id": workspace_id,
+                "user_id": user_id,
+                "started_at": datetime.now().isoformat(),
+                "start_time": start_time,
+                "msg_type": "flash",
+                "handler": handler,
+                "token_callback": token_callback,
+            },
+            completion_callback=on_flash_workflow_complete,
+            graph=flash_graph,
         )
+
+        # Stream live events from background task to client
+        live_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+        await manager.subscribe_to_live_events(thread_id, live_queue)
+        await manager.increment_connection(thread_id)
+
+        _disconnected = False
+        try:
+            while True:
+                try:
+                    sse_event = await asyncio.wait_for(
+                        live_queue.get(), timeout=1.0
+                    )
+                    if sse_event is None:
+                        break
+                    yield sse_event
+                except asyncio.TimeoutError:
+                    status = await manager.get_task_status(thread_id)
+                    if status in [
+                        TaskStatus.COMPLETED,
+                        TaskStatus.FAILED,
+                        TaskStatus.CANCELLED,
+                    ]:
+                        break
+                    continue
+
+        except (asyncio.CancelledError, GeneratorExit):
+            _disconnected = True
+            asyncio.create_task(
+                _handle_sse_disconnect(
+                    tracker=tracker,
+                    manager=manager,
+                    thread_id=thread_id,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    live_queue=live_queue,
+                    handler=handler,
+                    token_callback=token_callback,
+                    persistence_service=persistence_service,
+                    start_time=start_time,
+                    request=request,
+                ),
+                name=f"sse-disconnect-cleanup-{thread_id}",
+            )
+            raise
+        finally:
+            if not _disconnected:
+                try:
+                    await manager.unsubscribe_from_live_events(
+                        thread_id, live_queue
+                    )
+                except Exception:
+                    pass
+                try:
+                    await manager.decrement_connection(thread_id)
+                except Exception:
+                    pass
 
     except Exception as e:
         logger.exception(f"[FLASH_ERROR] thread_id={thread_id}: {e}")
+
+        # Release burst slot on error (setup errors before background task starts)
+        await UsageLimiter.release_burst_slot(user_id)
 
         # Persist error
         if persistence_service:
@@ -603,9 +705,92 @@ async def astream_flash_workflow(
 
         raise
 
+
+async def _handle_sse_disconnect(
+    tracker,
+    manager,
+    thread_id: str,
+    workspace_id: str,
+    user_id: str,
+    live_queue,
+    handler,
+    token_callback,
+    persistence_service,
+    start_time: float,
+    request,
+):
+    """Fire-and-forget cleanup when the SSE client disconnects.
+
+    Runs as an independent asyncio.Task outside Starlette's anyio cancel scope,
+    so awaits work normally. Handles both explicit cancel (user clicked cancel)
+    and accidental disconnect (tab close, refresh, network drop).
+    """
+    try:
+        is_explicit_cancel = await tracker.is_cancelled(thread_id)
+
+        if is_explicit_cancel:
+            logger.info(
+                f"[CHAT] Workflow explicitly cancelled by user: "
+                f"thread_id={thread_id}"
+            )
+            await tracker.mark_cancelled(thread_id)
+
+            _per_call_records = (
+                token_callback.per_call_records if token_callback else None
+            )
+            _tool_usage = handler.get_tool_usage() if handler else None
+
+            try:
+                _sse_events = (
+                    handler.get_sse_events() if handler else None
+                )
+                await persistence_service.persist_cancelled(
+                    execution_time=time.time() - start_time,
+                    metadata={
+                        "workspace_id": request.workspace_id,
+                    },
+                    per_call_records=_per_call_records,
+                    tool_usage=_tool_usage,
+                    sse_events=_sse_events,
+                )
+            except Exception as persist_error:
+                logger.error(
+                    f"[CHAT] Failed to persist cancellation: {persist_error}"
+                )
+
+            await manager.cancel_workflow(thread_id)
+            await UsageLimiter.release_burst_slot(user_id)
+
+            registry_store = BackgroundRegistryStore.get_instance()
+            await registry_store.cancel_and_clear(thread_id, force=True)
+        else:
+            logger.info(
+                f"[CHAT] SSE client disconnected, workflow continues in "
+                f"background: thread_id={thread_id}"
+            )
+            await tracker.mark_disconnected(
+                thread_id=thread_id,
+                metadata={
+                    "workspace_id": workspace_id,
+                    "user_id": user_id,
+                    "disconnected_at": datetime.now().isoformat(),
+                },
+            )
+    except Exception as e:
+        logger.error(
+            f"[CHAT] Error during SSE disconnect cleanup for "
+            f"{thread_id}: {e}",
+            exc_info=True,
+        )
     finally:
-        # Release burst slot for flash workflows (synchronous, no background task)
-        await UsageLimiter.release_burst_slot(user_id)
+        try:
+            await manager.unsubscribe_from_live_events(thread_id, live_queue)
+        except Exception:
+            pass
+        try:
+            await manager.decrement_connection(thread_id)
+        except Exception:
+            pass
 
 
 async def astream_ptc_workflow(
@@ -1132,19 +1317,15 @@ async def astream_ptc_workflow(
         await manager.subscribe_to_live_events(thread_id, live_queue)
         await manager.increment_connection(thread_id)
 
+        _disconnected = False
         try:
-            # Stream live events as they're generated
             while True:
                 try:
                     sse_event = await asyncio.wait_for(live_queue.get(), timeout=1.0)
-
-                    if sse_event is None:  # Sentinel value - workflow completed
+                    if sse_event is None:
                         break
-
                     yield sse_event
-
                 except asyncio.TimeoutError:
-                    # No events yet, check if workflow completed
                     status = await manager.get_task_status(thread_id)
                     if status in [
                         TaskStatus.COMPLETED,
@@ -1152,76 +1333,40 @@ async def astream_ptc_workflow(
                         TaskStatus.CANCELLED,
                     ]:
                         break
-                    continue  # Keep waiting for events
+                    continue
 
-        except asyncio.CancelledError:
-            # SSE client disconnected - but background task continues!
-            is_explicit_cancel = await tracker.is_cancelled(thread_id)
-
-            if is_explicit_cancel:
-                logger.info(
-                    f"[PTC_CHAT] Workflow explicitly cancelled by user: thread_id={thread_id}"
-                )
-                await tracker.mark_cancelled(thread_id)
-
-                # Get token/tool usage for billing
-                _per_call_records = (
-                    token_callback.per_call_records if token_callback else None
-                )
-                _tool_usage = handler.get_tool_usage() if handler else None
-
-                # Persist cancellation to database
-                try:
-                    _sse_events = (
-                        handler.get_sse_events() if handler else None
-                    )
-                    await persistence_service.persist_cancelled(
-                        execution_time=time.time() - start_time,
-                        metadata={
-                            "workspace_id": request.workspace_id,
-                            "msg_type": "ptc",
-                        },
-                        per_call_records=_per_call_records,
-                        tool_usage=_tool_usage,
-                        sse_events=_sse_events,
-                    )
-                except Exception as persist_error:
-                    logger.error(
-                        f"[PTC_CHAT] Failed to persist cancellation: {persist_error}"
-                    )
-
-                # Cancel the background workflow
-                await manager.cancel_workflow(thread_id)
-
-                # Release burst slot on cancellation
-                await UsageLimiter.release_burst_slot(user_id)
-
-                registry_store = BackgroundRegistryStore.get_instance()
-                await registry_store.cancel_and_clear(thread_id, force=True)
-            else:
-                logger.info(
-                    f"[PTC_CHAT] SSE client disconnected, but workflow continues in background: "
-                    f"thread_id={thread_id}"
-                )
-                await tracker.mark_disconnected(
+        except (asyncio.CancelledError, GeneratorExit):
+            # Client disconnected (tab close, refresh, network drop).
+            # Cannot await here — Starlette's anyio cancel scope is active.
+            # Spawn cleanup in an independent task outside the cancel scope.
+            _disconnected = True
+            asyncio.create_task(
+                _handle_sse_disconnect(
+                    tracker=tracker,
+                    manager=manager,
                     thread_id=thread_id,
-                    metadata={
-                        "workspace_id": workspace_id,
-                        "user_id": user_id,
-                        "disconnected_at": datetime.now().isoformat(),
-                    },
-                )
-                # Background task will continue running!
-                logger.info(
-                    f"[PTC_CHAT] Background task for {thread_id} will complete independently"
-                )
-
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    live_queue=live_queue,
+                    handler=handler,
+                    token_callback=token_callback,
+                    persistence_service=persistence_service,
+                    start_time=start_time,
+                    request=request,
+                ),
+                name=f"sse-disconnect-cleanup-{thread_id}",
+            )
             raise
-
         finally:
-            # Cleanup: unsubscribe from live events
-            await manager.unsubscribe_from_live_events(thread_id, live_queue)
-            await manager.decrement_connection(thread_id)
+            if not _disconnected:
+                try:
+                    await manager.unsubscribe_from_live_events(thread_id, live_queue)
+                except Exception:
+                    pass
+                try:
+                    await manager.decrement_connection(thread_id)
+                except Exception:
+                    pass
 
     except Exception as e:
         # =====================================================================
