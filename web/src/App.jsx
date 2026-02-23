@@ -6,7 +6,25 @@ import LoginPage from './pages/Login/LoginPage';
 import SharedChatView from './pages/SharedChat/SharedChatView';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from './contexts/AuthContext';
+import { supabase } from './lib/supabase';
 import './App.css';
+
+/**
+ * Redirect to a URL, appending Supabase session tokens in the hash
+ * for cross-origin session transfer (e.g., ginlix-auth on a different port).
+ * Same-origin redirects work without tokens (shared localStorage).
+ */
+async function redirectWithTokens(url) {
+  const isCrossOrigin = url.startsWith('http') && !url.startsWith(window.location.origin);
+  if (isCrossOrigin && supabase) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token && session?.refresh_token) {
+      window.location.href = `${url}#access_token=${session.access_token}&refresh_token=${session.refresh_token}`;
+      return;
+    }
+  }
+  window.location.href = url;
+}
 
 /** Handles the OAuth redirect from Supabase — shows a spinner then redirects to /dashboard. */
 function AuthCallback() {
@@ -16,6 +34,13 @@ function AuthCallback() {
 
   useEffect(() => {
     if (isLoggedIn) {
+      // Check for redirect parameter (e.g., from ginlix-auth account pages)
+      const params = new URLSearchParams(window.location.search);
+      const redirectTo = params.get('redirect');
+      if (redirectTo && (redirectTo.startsWith('/') || redirectTo.startsWith('http'))) {
+        redirectWithTokens(redirectTo);
+        return;
+      }
       navigate('/dashboard', { replace: true });
     }
   }, [isLoggedIn, navigate]);
@@ -25,6 +50,17 @@ function AuthCallback() {
       <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{tAuth('auth.signingIn')}</p>
     </div>
   );
+}
+
+/** Redirects to dashboard or a ?redirect= target after login. */
+function RootRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const redirectTo = params.get('redirect');
+  if (redirectTo && (redirectTo.startsWith('/') || redirectTo.startsWith('http'))) {
+    redirectWithTokens(redirectTo);
+    return null;
+  }
+  return <Navigate to="/dashboard" replace />;
 }
 
 function App() {
@@ -41,7 +77,7 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/" element={isLoggedIn ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+      <Route path="/" element={isLoggedIn ? <RootRedirect /> : <LoginPage />} />
       <Route path="/callback" element={<AuthCallback />} />
       <Route path="/s/:shareToken" element={<SharedChatView />} />
       <Route path="/*" element={
