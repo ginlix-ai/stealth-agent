@@ -210,7 +210,8 @@
     "questionDeclined": "问题已跳过",
     "startQuestion": "开始提问",
     "letsGo": "开始",
-    "skip": "跳过"
+    "skip": "跳过",
+    "workspaceStarting": "正在启动工作区..."
   },
   "automation": {
     "automations": "自动化",

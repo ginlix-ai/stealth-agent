@@ -84,6 +84,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [hasActiveSubagents, setHasActiveSubagents] = useState(false);  // Subagent streams open after main agent finished
+  const [workspaceStarting, setWorkspaceStarting] = useState(false);  // Workspace is starting up (stopped/archived sandbox)
   const [messageError, setMessageError] = useState(null);
   // HITL (Human-in-the-Loop) plan mode interrupt state
   const [pendingInterrupt, setPendingInterrupt] = useState(null);
@@ -1614,6 +1615,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
    */
   const cleanupAfterStreamEnd = (assistantMessageId) => {
     setIsLoading(false);
+    setWorkspaceStarting(false);
     currentMessageRef.current = null;
     isStreamingRef.current = false;
 
@@ -1693,6 +1695,12 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           setThreadId(event.thread_id);
           setStoredThreadId(workspaceId, event.thread_id);
         }
+      }
+
+      // Handle workspace_status events (workspace starting/ready)
+      if (eventType === 'workspace_status') {
+        setWorkspaceStarting(event.status === 'starting');
+        return;
       }
 
       // Check if this is a subagent event - filter it out from main chat view
@@ -2892,6 +2900,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     threadId,
     isLoading,
     hasActiveSubagents,
+    workspaceStarting,
     isLoadingHistory,
     isReconnecting,
     messageError,

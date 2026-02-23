@@ -210,7 +210,8 @@
     "questionDeclined": "Question declined",
     "startQuestion": "Start a Question",
     "letsGo": "Let's Go",
-    "skip": "Skip"
+    "skip": "Skip",
+    "workspaceStarting": "Starting workspace..."
   },
   "automation": {
     "automations": "Automations",

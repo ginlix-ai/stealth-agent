@@ -249,6 +249,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     messages,
     isLoading,
     hasActiveSubagents,
+    workspaceStarting,
     isLoadingHistory,
     isReconnecting,
     messageError,
@@ -1024,6 +1025,13 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-primary/80" />
                         </span>
                         {t('chat.backgroundTasksRunning')}
+                      </div>
+                    )}
+                    {workspaceStarting && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 text-xs"
+                        style={{ color: 'var(--color-text-tertiary)' }}>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--color-accent-primary)' }} />
+                        {t('chat.workspaceStarting')}
                       </div>
                     )}
                     <ChatInput

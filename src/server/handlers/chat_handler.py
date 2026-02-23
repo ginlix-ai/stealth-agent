@@ -23,7 +23,7 @@ from ptc_agent.agent.graph import build_ptc_graph_with_session
 from ptc_agent.agent.flash import build_flash_graph
 from ptc_agent.agent.graph import get_user_profile_for_prompt
 from src.server.services.workspace_manager import WorkspaceManager
-from src.server.database.workspace import update_workspace_activity, get_or_create_flash_workspace
+from src.server.database.workspace import update_workspace_activity, get_or_create_flash_workspace, get_workspace as db_get_workspace
 from src.server.services.background_task_manager import (
     BackgroundTaskManager,
     TaskStatus,
@@ -1011,9 +1011,20 @@ async def astream_ptc_workflow(
         # Use WorkspaceManager for workspace-based sessions
         logger.info(f"[PTC_CHAT] Using workspace: {workspace_id}")
         workspace_manager = WorkspaceManager.get_instance()
+
+        # Check if workspace needs startup — emit early notification so frontend
+        # can show "Starting workspace..." instead of a silent wait.
+        workspace_record = await db_get_workspace(workspace_id)
+        ws_status = workspace_record.get("status") if workspace_record else None
+        if ws_status == "stopped":
+            yield f"id: 0\nevent: workspace_status\ndata: {json.dumps({'status': 'starting', 'workspace_id': workspace_id})}\n\n"
+
         session = await workspace_manager.get_session_for_workspace(
             workspace_id, user_id=user_id
         )
+
+        if ws_status == "stopped":
+            yield f"id: 0\nevent: workspace_status\ndata: {json.dumps({'status': 'ready', 'workspace_id': workspace_id})}\n\n"
 
         # Update workspace activity
         await update_workspace_activity(workspace_id)
