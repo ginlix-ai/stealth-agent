@@ -157,7 +157,7 @@ function DocumentLoadingFallback() {
   );
 }
 
-function DocumentErrorFallback({ workspaceId, filePath }) {
+function DocumentErrorFallback({ onDownload }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-12">
       <AlertTriangle className="h-6 w-6" style={{ color: 'var(--color-text-tertiary)' }} />
@@ -165,13 +165,7 @@ function DocumentErrorFallback({ workspaceId, filePath }) {
       <button
         className="text-xs px-3 py-1.5 rounded"
         style={{ background: 'var(--color-accent-soft)', color: 'var(--color-accent-primary)', border: '1px solid var(--color-accent-overlay)' }}
-        onClick={async () => {
-          try {
-            await triggerFileDownload(workspaceId, filePath);
-          } catch (err) {
-            console.error('[FilePanel] Download failed:', err);
-          }
-        }}
+        onClick={onDownload}
       >
         Download instead
       </button>
@@ -191,7 +185,23 @@ function FilePanel({
   filesLoading = false,
   filesError = null,
   onRefreshFiles,
+  readOnly = false,
+  apiAdapter = null,
 }) {
+  // Resolve API functions — use adapter overrides if provided, otherwise fall back to authenticated imports
+  const readFileFn = apiAdapter?.readFile
+    ? (_, path) => apiAdapter.readFile(path)
+    : readWorkspaceFile;
+  const downloadFileFn = apiAdapter?.downloadFile
+    ? (_, path) => apiAdapter.downloadFile(path)
+    : downloadWorkspaceFile;
+  const downloadFileAsArrayBufferFn = apiAdapter?.downloadFileAsArrayBuffer
+    ? (_, path) => apiAdapter.downloadFileAsArrayBuffer(path)
+    : downloadWorkspaceFileAsArrayBuffer;
+  const triggerDownloadFn = apiAdapter?.triggerDownload
+    ? (_, path) => apiAdapter.triggerDownload(path)
+    : triggerFileDownload;
+
   // File detail view state
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileContent, setFileContent] = useState(null);
@@ -262,13 +272,13 @@ function FilePanel({
     setModifiedSet(new Set(data.modified || []));
   }, []);
 
-  // Fetch backup status on mount and when files change
+  // Fetch backup status on mount and when files change (skip in readOnly mode)
   useEffect(() => {
-    if (!workspaceId) return;
+    if (!workspaceId || readOnly) return;
     getBackupStatus(workspaceId)
       .then(updateBackupStatus)
       .catch(() => {});
-  }, [workspaceId, files, updateBackupStatus]);
+  }, [workspaceId, files, updateBackupStatus, readOnly]);
 
   const handleBackup = useCallback(async () => {
     if (!workspaceId || backingUp) return;
@@ -434,7 +444,7 @@ function FilePanel({
         setFileLoading(true);
         setFileMime('image');
         try {
-          const blobUrl = await downloadWorkspaceFile(workspaceId, filePath);
+          const blobUrl = await downloadFileFn(workspaceId, filePath);
           setFileContent(blobUrl);
         } catch (err) {
           console.error('[FilePanel] Failed to download image:', err);
@@ -452,7 +462,7 @@ function FilePanel({
         setFileLoading(true);
         setFileMime('pdf');
         try {
-          const buf = await downloadWorkspaceFileAsArrayBuffer(workspaceId, filePath);
+          const buf = await downloadFileAsArrayBufferFn(workspaceId, filePath);
           setFileArrayBuffer(buf);
         } catch (err) {
           console.error('[FilePanel] Failed to load PDF:', err);
@@ -468,7 +478,7 @@ function FilePanel({
         setFileLoading(true);
         setFileMime('excel');
         try {
-          const buf = await downloadWorkspaceFileAsArrayBuffer(workspaceId, filePath);
+          const buf = await downloadFileAsArrayBufferFn(workspaceId, filePath);
           setFileArrayBuffer(buf);
         } catch (err) {
           console.error('[FilePanel] Failed to load Excel file:', err);
@@ -480,7 +490,7 @@ function FilePanel({
       }
       // For other binary files, trigger download
       try {
-        await triggerFileDownload(workspaceId, filePath);
+        await triggerDownloadFn(workspaceId, filePath);
       } catch (err) {
         console.error('[FilePanel] Failed to download file:', err);
       }
@@ -491,7 +501,7 @@ function FilePanel({
     setSelectedFile(filePath);
     setFileLoading(true);
     try {
-      const data = await readWorkspaceFile(workspaceId, filePath);
+      const data = await readFileFn(workspaceId, filePath);
       setFileContent(data.content || '');
       setFileMime(data.mime || 'text/plain');
     } catch (err) {
@@ -595,7 +605,7 @@ function FilePanel({
         <div className="flex items-center gap-1">
           {!selectedFile && !selectMode && (
             <>
-              {files.length > 0 && (
+              {!readOnly && files.length > 0 && (
                 <button
                   onClick={() => setSelectMode(true)}
                   className="file-panel-icon-btn"
@@ -604,38 +614,44 @@ function FilePanel({
                   <CheckSquare className="h-3.5 w-3.5" />
                 </button>
               )}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="file-panel-icon-btn"
-                title="Upload file"
-                disabled={uploadProgress !== null}
-              >
-                <Upload className="h-3.5 w-3.5" />
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                onChange={handleFileInputChange}
-              />
-              <button
-                onClick={handleBackup}
-                className="file-panel-icon-btn"
-                title="Backup files to database"
-                disabled={backingUp}
-              >
-                <HardDrive className={`h-3.5 w-3.5 ${backingUp ? 'animate-pulse' : ''}`} />
-              </button>
-              <button
-                onClick={onRefreshFiles}
-                className="file-panel-icon-btn"
-                title="Refresh"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${filesLoading ? 'animate-spin' : ''}`} />
-              </button>
+              {!readOnly && (
+                <>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="file-panel-icon-btn"
+                    title="Upload file"
+                    disabled={uploadProgress !== null}
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={handleFileInputChange}
+                  />
+                  <button
+                    onClick={handleBackup}
+                    className="file-panel-icon-btn"
+                    title="Backup files to database"
+                    disabled={backingUp}
+                  >
+                    <HardDrive className={`h-3.5 w-3.5 ${backingUp ? 'animate-pulse' : ''}`} />
+                  </button>
+                </>
+              )}
+              {!readOnly && (
+                <button
+                  onClick={onRefreshFiles}
+                  className="file-panel-icon-btn"
+                  title="Refresh"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${filesLoading ? 'animate-spin' : ''}`} />
+                </button>
+              )}
             </>
           )}
-          {!selectedFile && selectMode && (
+          {!readOnly && !selectedFile && selectMode && (
             <>
               <span className="text-xs" style={{ color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>
                 {selectedPaths.size} selected
@@ -676,7 +692,7 @@ function FilePanel({
               <button
                 onClick={async () => {
                   try {
-                    await triggerFileDownload(workspaceId, selectedFile);
+                    await triggerDownloadFn(workspaceId, selectedFile);
                   } catch (err) {
                     console.error('[FilePanel] Download failed:', err);
                   }
@@ -896,14 +912,14 @@ function FilePanel({
       {/* Content */}
       <div
         className="file-panel-content-wrapper"
-        onDragEnter={!selectedFile ? handleDragEnter : undefined}
-        onDragLeave={!selectedFile ? handleDragLeave : undefined}
-        onDragOver={!selectedFile ? handleDragOver : undefined}
-        onDrop={!selectedFile ? handleDrop : undefined}
+        onDragEnter={!readOnly && !selectedFile ? handleDragEnter : undefined}
+        onDragLeave={!readOnly && !selectedFile ? handleDragLeave : undefined}
+        onDragOver={!readOnly && !selectedFile ? handleDragOver : undefined}
+        onDrop={!readOnly && !selectedFile ? handleDrop : undefined}
         style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden' }}
       >
         {/* Drag overlay */}
-        {isDragOver && !selectedFile && (
+        {!readOnly && isDragOver && !selectedFile && (
           <div className="file-panel-drag-overlay">
             <Upload className="h-8 w-8" style={{ color: 'var(--color-accent-primary)' }} />
             <span>Drop file to upload</span>
@@ -921,25 +937,25 @@ function FilePanel({
               </div>
             ) : fileMime === 'pdf' ? (
               <Suspense fallback={<DocumentLoadingFallback />}>
-                <DocumentErrorBoundary fallback={<DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />}>
+                <DocumentErrorBoundary fallback={<DocumentErrorFallback onDownload={() => triggerDownloadFn(workspaceId, selectedFile).catch((err) => console.error('[FilePanel] Download failed:', err))} />}>
                   <PdfViewer data={fileArrayBuffer} />
                 </DocumentErrorBoundary>
               </Suspense>
             ) : fileMime === 'excel' ? (
               <Suspense fallback={<DocumentLoadingFallback />}>
-                <DocumentErrorBoundary fallback={<DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />}>
+                <DocumentErrorBoundary fallback={<DocumentErrorFallback onDownload={() => triggerDownloadFn(workspaceId, selectedFile).catch((err) => console.error('[FilePanel] Download failed:', err))} />}>
                   <ExcelViewer data={fileArrayBuffer} />
                 </DocumentErrorBoundary>
               </Suspense>
             ) : getFileExtension(selectedFile) === 'csv' ? (
               <Suspense fallback={<DocumentLoadingFallback />}>
-                <DocumentErrorBoundary fallback={<DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />}>
+                <DocumentErrorBoundary fallback={<DocumentErrorFallback onDownload={() => triggerDownloadFn(workspaceId, selectedFile).catch((err) => console.error('[FilePanel] Download failed:', err))} />}>
                   <CsvViewer content={fileContent} />
                 </DocumentErrorBoundary>
               </Suspense>
             ) : ['html', 'htm'].includes(getFileExtension(selectedFile)) ? (
               <Suspense fallback={<DocumentLoadingFallback />}>
-                <DocumentErrorBoundary fallback={<DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />}>
+                <DocumentErrorBoundary fallback={<DocumentErrorFallback onDownload={() => triggerDownloadFn(workspaceId, selectedFile).catch((err) => console.error('[FilePanel] Download failed:', err))} />}>
                   <HtmlViewer content={fileContent} />
                 </DocumentErrorBoundary>
               </Suspense>
@@ -948,7 +964,7 @@ function FilePanel({
                 {fileMime === 'image' ? (
                   <img src={fileContent} alt={fileName} className="max-w-full rounded" />
                 ) : fileMime === 'error' ? (
-                  <DocumentErrorFallback workspaceId={workspaceId} filePath={selectedFile} />
+                  <DocumentErrorFallback onDownload={() => triggerDownloadFn(workspaceId, selectedFile).catch((err) => console.error('[FilePanel] Download failed:', err))} />
                 ) : selectedFile?.startsWith('/large_tool_results/') ? (
                   <div
                     ref={markdownRef}
@@ -1070,7 +1086,7 @@ function FilePanel({
                               <Icon className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
                             )}
                             <span className="text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>{name}</span>
-                            {!selectMode && (backedUpSet.has(filePath) || modifiedSet.has(filePath)) && (
+                            {!readOnly && !selectMode && (backedUpSet.has(filePath) || modifiedSet.has(filePath)) && (
                               <span
                                 className={`file-panel-backup-dot ${backedUpSet.has(filePath) ? 'backed-up' : 'modified'}`}
                                 title={backedUpSet.has(filePath) ? 'Backed up' : 'Modified since last backup'}

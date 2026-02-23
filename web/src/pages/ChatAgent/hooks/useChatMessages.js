@@ -93,6 +93,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
   // Token usage tracking (for context window progress ring)
   const [tokenUsage, setTokenUsage] = useState(null);
+  const [isShared, setIsShared] = useState(false);
 
   // Track current plan mode so HITL resume can forward it
   const currentPlanModeRef = useRef(false);
@@ -1375,6 +1376,11 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       });
 
       if (cancelled) return;
+
+      // Capture share status from workflow status response
+      if (status.is_shared !== undefined) {
+        setIsShared(status.is_shared);
+      }
 
       await loadConversationHistory();
 
@@ -2895,6 +2901,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     handleApproveStartQuestion,
     handleRejectStartQuestion,
     tokenUsage,
+    isShared,
     // Resolve subagentId (e.g. toolCallId from segment) to stable agent_id for card operations.
     resolveSubagentIdToAgentId: (subagentId) =>
       toolCallIdToTaskIdMapRef.current.get(subagentId) || subagentId,

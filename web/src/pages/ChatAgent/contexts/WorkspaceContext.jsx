@@ -1,9 +1,11 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 
-const WorkspaceIdContext = createContext(null);
+const WorkspaceContext = createContext({ workspaceId: null, downloadFile: null });
 
-export const WorkspaceProvider = ({ workspaceId, children }) => (
-  <WorkspaceIdContext.Provider value={workspaceId}>{children}</WorkspaceIdContext.Provider>
-);
+export const WorkspaceProvider = ({ workspaceId, downloadFile, children }) => {
+  const value = useMemo(() => ({ workspaceId, downloadFile }), [workspaceId, downloadFile]);
+  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
+};
 
-export const useWorkspaceId = () => useContext(WorkspaceIdContext);
+export const useWorkspaceId = () => useContext(WorkspaceContext).workspaceId;
+export const useWorkspaceDownloadFile = () => useContext(WorkspaceContext).downloadFile;

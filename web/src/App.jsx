@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar/Sidebar';
 import Main from './components/Main/Main';
 import LoginPage from './pages/Login/LoginPage';
+import SharedChatView from './pages/SharedChat/SharedChatView';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from './contexts/AuthContext';
 import './App.css';
@@ -42,6 +43,7 @@ function App() {
     <Routes>
       <Route path="/" element={isLoggedIn ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
       <Route path="/callback" element={<AuthCallback />} />
+      <Route path="/s/:shareToken" element={<SharedChatView />} />
       <Route path="/*" element={
         isLoggedIn ? (
           <div className="app-layout">

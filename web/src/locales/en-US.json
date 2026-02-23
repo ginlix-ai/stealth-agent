@@ -179,7 +179,17 @@
     "invalidThread": "Invalid thread. Please try again.",
     "failedDeleteThread": "Failed to delete thread. Please try again.",
     "failedRenameThread": "Failed to rename thread. Please try again.",
-    "viewAll": "View all"
+    "viewAll": "View all",
+    "shared": "Shared"
+  },
+  "share": {
+    "shareConversation": "Share conversation",
+    "publicLinkEnabled": "Public link enabled",
+    "copyLink": "Copy link",
+    "permissions": "Permissions",
+    "allowFileBrowsing": "Allow file browsing",
+    "allowFileDownload": "Allow file download",
+    "anyoneWithLink": "Anyone with this link can view the conversation."
   },
   "chat": {
     "running": "Running: {{tool}}",

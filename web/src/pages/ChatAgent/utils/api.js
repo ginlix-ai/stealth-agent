@@ -429,6 +429,31 @@ export async function refreshWorkspace(workspaceId) {
   return data;
 }
 
+// --- Thread Sharing ---
+
+/**
+ * Get current share status for a thread
+ * @param {string} threadId
+ * @returns {Promise<Object>} { is_shared, share_token, share_url, permissions }
+ */
+export async function getThreadShareStatus(threadId) {
+  if (!threadId) throw new Error('Thread ID is required');
+  const { data } = await api.get(`/api/v1/threads/${threadId}/share`);
+  return data;
+}
+
+/**
+ * Update sharing settings for a thread
+ * @param {string} threadId
+ * @param {Object} body - { is_shared: bool, permissions?: { allow_files?: bool, allow_download?: bool } }
+ * @returns {Promise<Object>} { is_shared, share_token, share_url, permissions }
+ */
+export async function updateThreadSharing(threadId, body) {
+  if (!threadId) throw new Error('Thread ID is required');
+  const { data } = await api.post(`/api/v1/threads/${threadId}/share`, body);
+  return data;
+}
+
 export async function uploadWorkspaceFile(workspaceId, file, destPath = null, onProgress = null) {
   const formData = new FormData();
   formData.append('file', file);

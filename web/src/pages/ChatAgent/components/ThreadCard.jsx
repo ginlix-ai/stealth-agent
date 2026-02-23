@@ -1,5 +1,6 @@
 import React from 'react';
-import { Trash2, Edit2 } from 'lucide-react';
+import { Trash2, Edit2, Globe } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * ThreadCard Component
@@ -17,6 +18,7 @@ import { Trash2, Edit2 } from 'lucide-react';
  * @param {Function} onRename - Callback when edit icon is clicked (receives thread)
  */
 function ThreadCard({ thread, onClick, onDelete, onRename }) {
+  const { t } = useTranslation();
   const handleDeleteClick = (e) => {
     e.stopPropagation(); // Prevent card click when clicking delete icon
     if (onDelete) {
@@ -61,6 +63,15 @@ function ThreadCard({ thread, onClick, onDelete, onRename }) {
           </p>
         )}
       </div>
+
+      {/* Shared indicator */}
+      {thread.is_shared && (
+        <Globe
+          className="h-3.5 w-3.5 flex-shrink-0"
+          style={{ color: 'var(--color-accent-primary)' }}
+          title={t('thread.shared')}
+        />
+      )}
 
       {/* Action icons - Show on hover */}
       {(onRename || onDelete) && (

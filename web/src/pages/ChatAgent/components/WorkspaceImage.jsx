@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useWorkspaceId } from '../contexts/WorkspaceContext';
+import { useWorkspaceId, useWorkspaceDownloadFile } from '../contexts/WorkspaceContext';
 import { downloadWorkspaceFile } from '../utils/api';
 
-// Module-level cache: workspaceId:path → blobUrl
+// Module-level cache: key:path → blobUrl
 const blobCache = new Map();
 
 function isExternalUrl(src) {
@@ -15,9 +15,10 @@ function normalizeSandboxPath(src) {
 
 function WorkspaceImage({ src, alt, ...props }) {
   const workspaceId = useWorkspaceId();
-  const shouldFetch = !!(workspaceId && src && !isExternalUrl(src));
-  const normalizedPath = shouldFetch ? normalizeSandboxPath(src) : '';
-  const cacheKey = shouldFetch ? `${workspaceId}:${normalizedPath}` : '';
+  const downloadFileFn = useWorkspaceDownloadFile();
+  const canFetch = !!(src && !isExternalUrl(src) && (workspaceId || downloadFileFn));
+  const normalizedPath = canFetch ? normalizeSandboxPath(src) : '';
+  const cacheKey = canFetch ? `${workspaceId || 'shared'}:${normalizedPath}` : '';
 
   const [state, setState] = useState(() =>
     cacheKey && blobCache.has(cacheKey) ? 'loaded' : 'idle'
@@ -27,7 +28,7 @@ function WorkspaceImage({ src, alt, ...props }) {
   );
 
   useEffect(() => {
-    if (!shouldFetch) return;
+    if (!canFetch) return;
 
     const cached = blobCache.get(cacheKey);
     if (cached) {
@@ -39,7 +40,11 @@ function WorkspaceImage({ src, alt, ...props }) {
     let cancelled = false;
     setState('loading');
 
-    downloadWorkspaceFile(workspaceId, normalizedPath)
+    const fetcher = downloadFileFn
+      ? downloadFileFn(normalizedPath)
+      : downloadWorkspaceFile(workspaceId, normalizedPath);
+
+    fetcher
       .then((url) => {
         if (cancelled) return;
         blobCache.set(cacheKey, url);
@@ -52,10 +57,10 @@ function WorkspaceImage({ src, alt, ...props }) {
       });
 
     return () => { cancelled = true; };
-  }, [shouldFetch, cacheKey, workspaceId, normalizedPath]);
+  }, [canFetch, cacheKey, workspaceId, normalizedPath, downloadFileFn]);
 
   // Pass through: no context, no src, or external URL
-  if (!shouldFetch) {
+  if (!canFetch) {
     return (
       <img
         className="rounded-lg my-2"
@@ -69,9 +74,10 @@ function WorkspaceImage({ src, alt, ...props }) {
 
   if (state === 'loading' || state === 'idle') {
     return (
-      <div
+      <span
         className="rounded-lg my-2 animate-pulse"
         style={{
+          display: 'block',
           width: '100%',
           maxWidth: 480,
           height: 200,

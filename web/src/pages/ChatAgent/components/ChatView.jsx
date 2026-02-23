@@ -18,6 +18,7 @@ import DetailPanel from './DetailPanel';
 import MessageList, { normalizeSubagentText } from './MessageList';
 import Markdown from './Markdown';
 import AgentSidebar from './AgentSidebar';
+import ShareButton from './ShareButton';
 import { WorkspaceProvider } from '../contexts/WorkspaceContext';
 import SubagentStatusBar from './SubagentStatusBar';
 import TodoDrawer from './TodoDrawer';
@@ -264,6 +265,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     handleRejectStartQuestion,
     tokenUsage,
     threadId: currentThreadId,
+    isShared: threadIsShared,
     getSubagentHistory,
     resolveSubagentIdToAgentId,
   } = useChatMessages(workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, completePendingTodos, handleOnboardingRelatedToolComplete, refreshFiles, agentMode, clearSubagentCards, handleWorkspaceCreated);
@@ -860,6 +862,9 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
           </div>
 
           <div className="flex items-center gap-2">
+            {currentThreadId && currentThreadId !== '__default__' && (
+              <ShareButton threadId={currentThreadId} initialIsShared={threadIsShared} />
+            )}
             {!isFlashMode && (
               <button
                 onClick={handleToggleFilePanel}

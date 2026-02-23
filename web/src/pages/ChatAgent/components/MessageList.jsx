@@ -156,7 +156,7 @@ function AttachmentCard({ attachment }) {
  * - Streaming indicators
  * - Error state styling
  */
-function MessageList({ messages, hideAvatar, compactToolCalls, isSubagentView, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion, onApproveCreateWorkspace, onRejectCreateWorkspace, onApproveStartQuestion, onRejectStartQuestion }) {
+function MessageList({ messages, hideAvatar, compactToolCalls, isSubagentView, readOnly, allowFiles, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion, onApproveCreateWorkspace, onRejectCreateWorkspace, onApproveStartQuestion, onRejectStartQuestion }) {
   // Empty state - show when no messages exist (hidden in subagent view)
   if (messages.length === 0) {
     if (isSubagentView) return null;
@@ -180,6 +180,8 @@ function MessageList({ messages, hideAvatar, compactToolCalls, isSubagentView, o
           hideAvatar={isSubagentView || hideAvatar}
           compactToolCalls={compactToolCalls}
           isSubagentView={isSubagentView}
+          readOnly={readOnly}
+          allowFiles={allowFiles}
           onOpenSubagentTask={onOpenSubagentTask}
           onOpenFile={onOpenFile}
           onOpenDir={onOpenDir}
@@ -205,7 +207,7 @@ function MessageList({ messages, hideAvatar, compactToolCalls, isSubagentView, o
  * Renders a single message bubble with appropriate styling
  * based on role (user/assistant) and state (streaming/error)
  */
-function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion, onApproveCreateWorkspace, onRejectCreateWorkspace, onApproveStartQuestion, onRejectStartQuestion }) {
+function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, readOnly, allowFiles, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion, onApproveCreateWorkspace, onRejectCreateWorkspace, onApproveStartQuestion, onRejectStartQuestion }) {
   const { user } = useAuth();
   const { theme } = useTheme();
   const logo = theme === 'light' ? logoDark : logoLight;
@@ -285,6 +287,8 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, 
               onApproveStartQuestion={onApproveStartQuestion}
               onRejectStartQuestion={onRejectStartQuestion}
               textOnly={true}
+              readOnly={readOnly}
+              allowFiles={allowFiles}
             />
           ) : (
             // Fallback for messages without segments (backward compatibility) - main chat shows text only
@@ -357,7 +361,7 @@ const MAX_IN_PROGRESS_MS = 15000; // max time a tool call can stay in-progress i
 /** Tools that should stay in the live zone for their entire duration (no MAX_IN_PROGRESS_MS cap) */
 const ALWAYS_LIVE_TOOLS = new Set(['Wait']);
 
-function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, todoListProcesses, subagentTasks, planApprovals = {}, userQuestions = {}, workspaceProposals = {}, questionProposals = {}, pendingToolCallChunks = {}, isStreaming, hasError, isAssistant = false, compactToolCalls = false, isSubagentView = false, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion, onApproveCreateWorkspace, onRejectCreateWorkspace, onApproveStartQuestion, onRejectStartQuestion, textOnly = false }) {
+function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesses, todoListProcesses, subagentTasks, planApprovals = {}, userQuestions = {}, workspaceProposals = {}, questionProposals = {}, pendingToolCallChunks = {}, isStreaming, hasError, isAssistant = false, compactToolCalls = false, isSubagentView = false, readOnly = false, allowFiles = false, onOpenSubagentTask, onOpenFile, onOpenDir, onToolCallDetailClick, onApprovePlan, onRejectPlan, onPlanDetailClick, onAnswerQuestion, onSkipQuestion, onApproveCreateWorkspace, onRejectCreateWorkspace, onApproveStartQuestion, onRejectStartQuestion, textOnly = false }) {
   // Force re-render timer for recently-completed tool calls that need minimum exposure
   const [, setTick] = useState(0);
   const expiryTimerRef = useRef(null);
@@ -732,8 +736,8 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
                 status={task.status}
                 resumed={task.resumed}
                 resumeTargetId={task.resumeTargetId}
-                onOpen={onOpenSubagentTask}
-                onDetailOpen={onToolCallDetailClick}
+                onOpen={readOnly ? undefined : onOpenSubagentTask}
+                onDetailOpen={readOnly ? undefined : onToolCallDetailClick}
                 toolCallProcess={toolCallProcess}
               />
             );
@@ -746,9 +750,9 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
               <PlanApprovalCard
                 key={block.key}
                 planData={pd}
-                onApprove={onApprovePlan}
-                onReject={onRejectPlan}
-                onDetailClick={() => onPlanDetailClick?.(pd)}
+                onApprove={readOnly ? undefined : onApprovePlan}
+                onReject={readOnly ? undefined : onRejectPlan}
+                onDetailClick={readOnly ? undefined : () => onPlanDetailClick?.(pd)}
               />
             );
           }
@@ -760,13 +764,14 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
               <UserQuestionCard
                 key={block.key}
                 questionData={qd}
-                onAnswer={(answer) => onAnswerQuestion(answer, block.segment.questionId, qd.interruptId)}
-                onSkip={() => onSkipQuestion(block.segment.questionId, qd.interruptId)}
+                onAnswer={readOnly ? undefined : (answer) => onAnswerQuestion(answer, block.segment.questionId, qd.interruptId)}
+                onSkip={readOnly ? undefined : () => onSkipQuestion(block.segment.questionId, qd.interruptId)}
               />
             );
           }
 
           if (block.type === 'create_workspace') {
+            if (readOnly) return null;
             const wd = workspaceProposals[block.segment.proposalId];
             if (!wd) return null;
             return (
@@ -780,6 +785,7 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
           }
 
           if (block.type === 'start_question') {
+            if (readOnly) return null;
             const sqd = questionProposals[block.segment.proposalId];
             if (!sqd) return null;
             return (
@@ -804,8 +810,8 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
             onOpenFile={onOpenFile}
           />
         )}
-        {detectedFiles.length > 0 && (
-          <FileMentionCards filePaths={detectedFiles} onOpenFile={onOpenFile} onOpenDir={onOpenDir} />
+        {detectedFiles.length > 0 && (!readOnly || allowFiles) && (
+          <FileMentionCards filePaths={detectedFiles} onOpenFile={(readOnly && !allowFiles) ? undefined : onOpenFile} onOpenDir={(readOnly && !allowFiles) ? undefined : onOpenDir} />
         )}
       </div>
     );

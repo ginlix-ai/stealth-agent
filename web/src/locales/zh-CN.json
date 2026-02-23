@@ -179,7 +179,17 @@
     "invalidThread": "无效对话，请重试。",
     "failedDeleteThread": "删除对话失败，请重试。",
     "failedRenameThread": "重命名对话失败，请重试。",
-    "viewAll": "查看全部"
+    "viewAll": "查看全部",
+    "shared": "已分享"
+  },
+  "share": {
+    "shareConversation": "分享对话",
+    "publicLinkEnabled": "公开链接已启用",
+    "copyLink": "复制链接",
+    "permissions": "权限",
+    "allowFileBrowsing": "允许浏览文件",
+    "allowFileDownload": "允许下载文件",
+    "anyoneWithLink": "任何拥有此链接的人都可以查看对话。"
   },
   "chat": {
     "running": "运行中: {{tool}}",
