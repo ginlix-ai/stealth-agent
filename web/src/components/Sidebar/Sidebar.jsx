@@ -6,7 +6,6 @@ import logoLight from '../../assets/img/logo.svg';
 import logoDark from '../../assets/img/logo-dark.svg';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChatSession } from '../../pages/ChatAgent/hooks/utils/chatSessionRestore';
-import { supabase } from '../../lib/supabase';
 import './Sidebar.css';
 
 function Sidebar() {
@@ -86,27 +85,14 @@ function Sidebar() {
           );
         })}
         {accountUrl && (
-          <button
+          <a
+            href={accountUrl}
             className="sidebar-nav-item"
             aria-label={t('sidebar.account', 'Account')}
             title={t('sidebar.account', 'Account')}
-            onClick={async () => {
-              // Same-origin: just navigate (session shared via localStorage)
-              // Cross-origin (dev): pass tokens via URL hash for session transfer
-              const isCrossOrigin = accountUrl.startsWith('http') &&
-                !accountUrl.startsWith(window.location.origin);
-              if (isCrossOrigin && supabase) {
-                const { data: { session } } = await supabase.auth.getSession();
-                if (session?.access_token && session?.refresh_token) {
-                  window.location.href = `${accountUrl}#access_token=${session.access_token}&refresh_token=${session.refresh_token}`;
-                  return;
-                }
-              }
-              window.location.href = accountUrl;
-            }}
           >
             <UserCircle className="sidebar-nav-icon" />
-          </button>
+          </a>
         )}
       </nav>
     </aside>

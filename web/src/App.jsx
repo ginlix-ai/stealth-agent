@@ -6,25 +6,7 @@ import LoginPage from './pages/Login/LoginPage';
 import SharedChatView from './pages/SharedChat/SharedChatView';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from './contexts/AuthContext';
-import { supabase } from './lib/supabase';
 import './App.css';
-
-/**
- * Redirect to a URL, appending Supabase session tokens in the hash
- * for cross-origin session transfer (e.g., ginlix-auth on a different port).
- * Same-origin redirects work without tokens (shared localStorage).
- */
-async function redirectWithTokens(url) {
-  const isCrossOrigin = url.startsWith('http') && !url.startsWith(window.location.origin);
-  if (isCrossOrigin && supabase) {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token && session?.refresh_token) {
-      window.location.href = `${url}#access_token=${session.access_token}&refresh_token=${session.refresh_token}`;
-      return;
-    }
-  }
-  window.location.href = url;
-}
 
 /** Handles the OAuth redirect from Supabase — shows a spinner then redirects to /dashboard. */
 function AuthCallback() {
@@ -38,7 +20,7 @@ function AuthCallback() {
       const params = new URLSearchParams(window.location.search);
       const redirectTo = params.get('redirect');
       if (redirectTo && (redirectTo.startsWith('/') || redirectTo.startsWith('http'))) {
-        redirectWithTokens(redirectTo);
+        window.location.href = redirectTo;
         return;
       }
       navigate('/dashboard', { replace: true });
@@ -57,7 +39,7 @@ function RootRedirect() {
   const params = new URLSearchParams(window.location.search);
   const redirectTo = params.get('redirect');
   if (redirectTo && (redirectTo.startsWith('/') || redirectTo.startsWith('http'))) {
-    redirectWithTokens(redirectTo);
+    window.location.href = redirectTo;
     return null;
   }
   return <Navigate to="/dashboard" replace />;
