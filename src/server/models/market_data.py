@@ -6,7 +6,7 @@ This module provides request and response models for FMP intraday data proxy end
 
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # Supported intervals for intraday data
@@ -25,6 +25,13 @@ class IntradayDataPoint(BaseModel):
     low: float = Field(..., description="Low price")
     close: float = Field(..., description="Closing price")
     volume: int = Field(..., description="Trading volume")
+
+    @field_validator("volume", mode="before")
+    @classmethod
+    def coerce_volume_to_int(cls, v: object) -> int:
+        if isinstance(v, float):
+            return int(v)
+        return v
 
 
 class CacheMetadata(BaseModel):
