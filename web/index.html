@@ -2,18 +2,28 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/logo-favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function(){
+        var t = localStorage.getItem('theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        document.documentElement.setAttribute('data-theme', t);
+      })();
+    </script>
+    <style>
+      @view-transition { navigation: auto; }
+      html { background: hsl(222.2 47% 5%); }
+      html[data-theme="light"] { background: hsl(30 25% 93%); }
+    </style>
+    <link rel="icon" type="image/svg+xml" href="/logo-favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
     <title>LangAlpha</title>
   </head>
   <body>
     <script>
       (function(){
-        var t = localStorage.getItem('theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-        document.documentElement.setAttribute('data-theme', t);
+        var t = document.documentElement.getAttribute('data-theme');
         var favicon = document.querySelector('link[rel="icon"]');
         if (favicon) favicon.href = t === 'light' ? '/logo-favicon.svg' : '/logo-favicon-dark.svg';
       })();
