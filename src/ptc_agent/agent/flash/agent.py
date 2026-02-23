@@ -63,9 +63,12 @@ class FlashAgent:
 
         # Use flash-specific LLM if configured, otherwise fall back to main LLM
         if config.llm.flash:
-            from src.llms import create_llm
-
-            self.llm: Any = create_llm(config.llm.flash)
+            # If an llm_client was pre-created (e.g. OAuth/BYOK), use it directly
+            if config.llm_client is not None:
+                self.llm: Any = config.llm_client
+            else:
+                from src.llms import create_llm
+                self.llm = create_llm(config.llm.flash)
             model = config.llm.flash
             provider = "llm_config"
         else:

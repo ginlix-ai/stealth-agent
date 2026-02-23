@@ -125,7 +125,7 @@ class LLM:
         self.base_url = self.provider_info.get("base_url")
 
         # Store response API flags for OpenAI SDK
-        self.use_response_api = self.provider_info.get("use_response_api", False) if self.sdk == "openai" else False
+        self.use_response_api = self.provider_info.get("use_response_api", False) if self.sdk in ("openai", "codex") else False
         self.use_previous_response_id = self.provider_info.get("use_previous_response_id", False) if self.sdk == "openai" else False
 
         # Optional default headers from provider config
@@ -144,6 +144,8 @@ class LLM:
         # Use the resolved SDK (already determined in __init__)
         if self.sdk == "openai":
             return self._get_openai_llm()
+        elif self.sdk == "codex":
+            return self._get_codex_llm()
         elif self.sdk == "deepseek":
             return self._get_deepseek_llm()
         elif self.sdk == "qwq":
@@ -208,6 +210,33 @@ class LLM:
             params["extra_body"] = self.extra_body
 
         return ChatOpenAI(**params)
+
+    def _get_codex_llm(self):
+        """Get Codex OAuth LLM (store=false, stateless)."""
+        from src.llms.extension import ChatCodexOpenAI
+
+        params = {
+            "model": self.model,
+            "api_key": self._resolve_api_key(),
+            "streaming": True,
+            "stream_usage": True,
+            "max_retries": 5,
+            "timeout": 600.0,
+        }
+        params.update(self._resolve_base_url("base_url"))
+
+        if self.default_headers:
+            params["default_headers"] = self.default_headers
+
+        if self.use_response_api:
+            params["output_version"] = "responses/v1"
+
+        params.update(self.parameters)
+
+        if self.extra_body:
+            params["extra_body"] = self.extra_body
+
+        return ChatCodexOpenAI(**params)
 
     def _get_deepseek_llm(self):
         """Get DeepSeek or DeepSeek-compatible LLM."""
@@ -311,19 +340,25 @@ class LLM:
 
 
 # Backward compatibility functions
-def create_llm(model: str, api_key: str | None = None, **kwargs):
+def create_llm(model: str, api_key: str | None = None, default_headers: dict | None = None, **kwargs):
     """
     Convenience function for creating an LLM instance.
 
     Args:
         model: The model name
         api_key: Optional API key override (e.g. from BYOK)
+        default_headers: Optional headers to merge onto the LLM instance
+            (e.g. ChatGPT-Account-Id for Codex OAuth)
         **kwargs: Additional parameters to override
 
     Returns:
         A LangChain chat model instance
     """
-    return LLM(model, api_key=api_key, **kwargs).get_llm()
+    instance = LLM(model, api_key=api_key, **kwargs)
+    if default_headers:
+        existing = instance.default_headers or {}
+        instance.default_headers = {**existing, **default_headers}
+    return instance.get_llm()
 
 
 def get_llm_by_type(llm_type: str) -> BaseChatModel:

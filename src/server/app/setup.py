@@ -362,6 +362,7 @@ from src.server.app.usage import router as usage_router
 from src.server.app.memberships import router as memberships_router
 from src.server.app.api_keys import router as api_keys_router
 from src.server.app.automations import router as automations_router
+from src.server.app.oauth import router as oauth_router
 
 # Include all routers
 app.include_router(threads_router)  # /api/v1/threads/* - Thread CRUD, messages, control
@@ -380,4 +381,5 @@ app.include_router(usage_router)  # /api/v1/usage/* - Usage limits and code rede
 app.include_router(memberships_router)  # /api/v1/memberships - Membership definitions (public)
 app.include_router(api_keys_router)  # /api/v1/users/me/api-keys + /api/v1/models - BYOK & model config
 app.include_router(automations_router)  # /api/v1/automations/* - Scheduled automation triggers
+app.include_router(oauth_router)  # /api/v1/oauth/* - OAuth provider connections (Codex)
 app.include_router(health_router)  # /health - Health check

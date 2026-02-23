@@ -225,6 +225,44 @@ async def resolve_byok_llm_client(user_id: str, model_name: str, byok_active: bo
     return create_llm(model_name, api_key=user_key)
 
 
+async def resolve_oauth_llm_client(user_id: str, model_name: str):
+    """Resolve OAuth-connected LLM client. Independent of BYOK toggle."""
+    from src.llms.llm import LLM as LLMFactory, create_llm
+
+    mc = LLMFactory.get_model_config()
+    model_info = mc.get_model_config(model_name)
+    if not model_info:
+        return None
+
+    provider_info = mc.get_provider_info(model_info["provider"])
+    if provider_info.get("auth_type") != "oauth":
+        return None
+
+    from src.server.services.codex_oauth import get_valid_token
+    token_data = await get_valid_token(user_id)
+    if not token_data:
+        return None
+
+    access_token = token_data["access_token"]
+    if not access_token or not isinstance(access_token, str):
+        logger.error(f"[CHAT] Codex OAuth token is empty or not a string: type={type(access_token)}")
+        return None
+
+    token_type = "sk-key" if access_token.startswith("sk-") else "oauth-jwt"
+    account_id = token_data.get("account_id", "")
+    logger.info(f"[CHAT] Using Codex OAuth for provider={model_info['provider']} token_type={token_type} account_id={account_id[:8]}...")
+
+    headers = {}
+    if account_id:
+        headers["ChatGPT-Account-Id"] = account_id
+
+    return create_llm(
+        model_name,
+        api_key=access_token,
+        default_headers=headers if headers else None,
+    )
+
+
 async def get_model_preference(user_id: str) -> dict:
     """Return model preferences from other_preference (not agent_preference, which is dumped to agent context)."""
     from src.server.database.user import get_user_preferences
@@ -269,13 +307,22 @@ async def resolve_llm_config(
         else:
             logger.info(f"[CHAT] No {pref_key} set, using system default: {getattr(config.llm, model_field, None) or config.llm.name}")
 
-    # BYOK injection — resolve the effective model from whichever field we just set
+    # Resolve the effective model from whichever field we just set
     effective_model = getattr(config.llm, model_field, None) or config.llm.name
-    byok_client = await resolve_byok_llm_client(user_id, effective_model, byok_active)
-    if byok_client:
+
+    # Try OAuth-connected providers first (independent of BYOK toggle)
+    oauth_client = await resolve_oauth_llm_client(user_id, effective_model)
+    if oauth_client:
         if config is base_config:
             config = config.model_copy(deep=True)
-        config.llm_client = byok_client
+        config.llm_client = oauth_client
+    # Then try BYOK
+    elif byok_active:
+        byok_client = await resolve_byok_llm_client(user_id, effective_model, byok_active)
+        if byok_client:
+            if config is base_config:
+                config = config.model_copy(deep=True)
+            config.llm_client = byok_client
 
     return config
 
