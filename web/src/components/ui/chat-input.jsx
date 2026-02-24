@@ -3,6 +3,7 @@ import {
   Plus, ArrowUp, X, FileText, Loader2, Archive, Square,
   ScrollText, ChartCandlestick, Zap, FileStack, ChevronDown, FolderOpen, TextSelect,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { TokenUsageRing } from './token-usage-ring';
 import './chat-input.css';
 
@@ -115,6 +116,7 @@ const ChatInput = forwardRef(function ChatInput({
   // Token usage (context window progress)
   tokenUsage = null,
 }, ref) {
+  const { t } = useTranslation();
   const [message, setMessage] = useState('');
   const [attachedFiles, setAttachedFiles] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -414,7 +416,7 @@ const ChatInput = forwardRef(function ChatInput({
     if (snippetMentions.length > 0) {
       const blocks = snippetMentions.map((f) => {
         if (f.source === 'chat') {
-          return `\n<details>\n<summary>[From agent response]</summary>\n\n\`\`\`\n${f.snippet}\n\`\`\`\n</details>`;
+          return `\n<details>\n<summary>[${t('context.fromAgentResponse')}]</summary>\n\n\`\`\`\n${f.snippet}\n\`\`\`\n</details>`;
         }
         const lineInfo = f.lineStart != null
           ? ` (lines ${f.lineStart}-${f.lineEnd}, ${f.lineCount} line${f.lineCount !== 1 ? 's' : ''})`
@@ -625,7 +627,7 @@ const ChatInput = forwardRef(function ChatInput({
                 type="button"
                 aria-label="Attach file"
               >
-                <Plus className="w-5 h-5" />
+                <Plus className="w-4 h-4" />
               </button>
 
               {/* Token Usage Ring */}
@@ -748,9 +750,9 @@ const ChatInput = forwardRef(function ChatInput({
                   type="button"
                 >
                   {isStopping ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <Square className="h-3.5 w-3.5" fill="currentColor" />
+                    <Square className="h-4 w-4" fill="currentColor" />
                   )}
                 </button>
               ) : (

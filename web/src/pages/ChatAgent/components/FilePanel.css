@@ -16,7 +16,7 @@
   }
 
   .file-panel-icon-btn {
-    padding: 4px;
+    padding: 6px;
     border-radius: 4px;
     color: var(--color-text-tertiary);
     transition: all 0.15s;
@@ -348,6 +348,11 @@
     flex-shrink: 0;
   }
 
+  [data-theme="light"] .file-panel-edit-hint {
+    background-color: rgba(85, 72, 217, 0.06);
+    border-bottom-color: rgba(85, 72, 217, 0.15);
+  }
+
   /* ====== Print Settings Toolbar ====== */
   .print-settings-toolbar {
     display: flex;
@@ -638,9 +643,9 @@
     gap: 6px;
     padding: 5px 10px;
     border-radius: 8px;
-    background: var(--color-bg-card, #1e1e2e);
-    border: 1px solid var(--color-accent-overlay);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-muted);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
     backdrop-filter: blur(12px);
     cursor: pointer;
     font-size: 12px;
@@ -653,7 +658,7 @@
   .file-panel-selection-tooltip:hover {
     background: var(--color-accent-soft);
     border-color: var(--color-accent-primary);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
   }
 
   /* ====== Right-click Context Menu ====== */

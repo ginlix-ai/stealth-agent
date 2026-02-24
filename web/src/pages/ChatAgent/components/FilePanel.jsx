@@ -3,6 +3,7 @@ import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download, Upload, F
 import { useReactToPrint } from 'react-to-print';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { useTranslation } from 'react-i18next';
 import { readWorkspaceFile, readWorkspaceFileFull, writeWorkspaceFile, downloadWorkspaceFile, downloadWorkspaceFileAsArrayBuffer, triggerFileDownload, uploadWorkspaceFile, deleteWorkspaceFiles, backupWorkspaceFiles, getBackupStatus } from '../utils/api';
 import { stripLineNumbers } from './toolDisplayConfig';
 import Markdown from './Markdown';
@@ -195,6 +196,7 @@ function FilePanel({
   apiAdapter = null,
   onAddContext = null,
 }) {
+  const { t } = useTranslation();
   // Resolve API functions — use adapter overrides if provided, otherwise fall back to authenticated imports
   const readFileFn = apiAdapter?.readFile
     ? (_, path) => apiAdapter.readFile(path)
@@ -596,11 +598,11 @@ function FilePanel({
     deleteWorkspaceFiles(workspaceId, paths)
       .then((result) => {
         if (result.errors?.length > 0) {
-          setDeleteError(`${result.errors.length} file(s) failed to delete`);
+          setDeleteError(t('filePanel.deletePartialFail', { count: result.errors.length }));
         }
       })
       .catch((err) => {
-        setDeleteError(err?.response?.data?.detail || err?.message || 'Delete failed');
+        setDeleteError(err?.response?.data?.detail || err?.message || t('filePanel.deleteFailed'));
       })
       .finally(() => {
         setDeleteLoading(false);
@@ -752,7 +754,7 @@ function FilePanel({
 
   const handleBack = () => {
     if (hasUnsavedChanges) {
-      if (!window.confirm('You have unsaved changes. Discard them?')) return;
+      if (!window.confirm(t('filePanel.discardUnsaved'))) return;
     }
     if (fileMime === 'image' && fileContent) {
       URL.revokeObjectURL(fileContent);
@@ -781,7 +783,7 @@ function FilePanel({
       const fullContent = data.content || '';
       // Guard against very large files in browser editor
       if (fullContent.length > 500 * 1024) {
-        setSaveError('File is too large to edit in the browser (>500KB)');
+        setSaveError(t('filePanel.fileTooLarge'));
         return;
       }
       setEditContent(fullContent);
@@ -790,7 +792,7 @@ function FilePanel({
       setIsEditing(true);
     } catch (err) {
       console.error('[FilePanel] Failed to fetch full file for editing:', err);
-      setSaveError(err?.response?.data?.detail || err?.message || 'Failed to load file for editing');
+      setSaveError(err?.response?.data?.detail || err?.message || t('filePanel.loadEditFailed'));
     }
   }, [selectedFile, workspaceId, readFileFullFn]);
 
@@ -800,7 +802,7 @@ function FilePanel({
 
   const handleSave = useCallback(async () => {
     if (!selectedFile || !workspaceId || editContent === null) return;
-    if (!window.confirm('Save changes? This will overwrite the file in the sandbox and cannot be undone.')) return;
+    if (!window.confirm(t('filePanel.confirmSave'))) return;
     setIsSaving(true);
     setSaveError(null);
     try {
@@ -812,7 +814,7 @@ function FilePanel({
       setOriginalContent(null);
     } catch (err) {
       console.error('[FilePanel] Save failed:', err);
-      setSaveError(err?.response?.data?.detail || err?.message || 'Save failed');
+      setSaveError(err?.response?.data?.detail || err?.message || t('filePanel.saveFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -820,7 +822,7 @@ function FilePanel({
 
   const handleCancelEdit = useCallback(() => {
     if (hasUnsavedChanges) {
-      if (!window.confirm('Discard unsaved changes?')) return;
+      if (!window.confirm(t('filePanel.discardChanges'))) return;
     }
     setIsEditing(false);
     setEditContent(null);
@@ -920,16 +922,16 @@ function FilePanel({
       <div className="file-panel-header">
         <div className="flex items-center gap-2 min-w-0">
           {selectedFile ? (
-            <button onClick={handleBack} className="file-panel-icon-btn" title="Back to file list">
+            <button onClick={handleBack} className="file-panel-icon-btn" title={t('filePanel.backToFileList')}>
               <ArrowLeft className="h-4 w-4" />
             </button>
           ) : targetDirectory ? (
-            <button onClick={() => onTargetDirHandled?.()} className="file-panel-icon-btn" title="Back to all files">
+            <button onClick={() => onTargetDirHandled?.()} className="file-panel-icon-btn" title={t('filePanel.backToAllFiles')}>
               <ArrowLeft className="h-4 w-4" />
             </button>
           ) : null}
           <span className="text-sm font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
-            {selectedFile ? (<>{fileName}{hasUnsavedChanges && <span style={{ color: 'var(--color-text-tertiary)' }}> *</span>}</>) : targetDirectory ? `${targetDirectory}/` : 'Workspace Files'}
+            {selectedFile ? (<>{fileName}{hasUnsavedChanges && <span style={{ color: 'var(--color-text-tertiary)' }}> *</span>}</>) : targetDirectory ? `${targetDirectory}/` : t('chat.workspaceFiles')}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -939,9 +941,9 @@ function FilePanel({
                 <button
                   onClick={() => setSelectMode(true)}
                   className="file-panel-icon-btn"
-                  title="Select files"
+                  title={t('filePanel.selectFiles')}
                 >
-                  <CheckSquare className="h-3.5 w-3.5" />
+                  <CheckSquare className="h-4 w-4" />
                 </button>
               )}
               {!readOnly && (
@@ -949,10 +951,10 @@ function FilePanel({
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     className="file-panel-icon-btn"
-                    title="Upload file"
+                    title={t('filePanel.uploadFile')}
                     disabled={uploadProgress !== null}
                   >
-                    <Upload className="h-3.5 w-3.5" />
+                    <Upload className="h-4 w-4" />
                   </button>
                   <input
                     ref={fileInputRef}
@@ -963,10 +965,10 @@ function FilePanel({
                   <button
                     onClick={handleBackup}
                     className="file-panel-icon-btn"
-                    title="Backup files to database"
+                    title={t('filePanel.backupFiles')}
                     disabled={backingUp}
                   >
-                    <HardDrive className={`h-3.5 w-3.5 ${backingUp ? 'animate-pulse' : ''}`} />
+                    <HardDrive className={`h-4 w-4 ${backingUp ? 'animate-pulse' : ''}`} />
                   </button>
                 </>
               )}
@@ -974,9 +976,9 @@ function FilePanel({
                 <button
                   onClick={onRefreshFiles}
                   className="file-panel-icon-btn"
-                  title="Refresh"
+                  title={t('filePanel.refresh')}
                 >
-                  <RefreshCw className={`h-3.5 w-3.5 ${filesLoading ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`h-4 w-4 ${filesLoading ? 'animate-spin' : ''}`} />
                 </button>
               )}
             </>
@@ -1005,14 +1007,14 @@ function FilePanel({
                 <button
                   onClick={handleDelete}
                   className="file-panel-icon-btn"
-                  title="Delete selected"
+                  title={t('filePanel.deleteSelected')}
                   disabled={selectedPaths.size === 0 || deleteLoading}
                   style={selectedPaths.size > 0 ? { color: 'var(--color-icon-danger)' } : undefined}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-4 w-4" />
                 </button>
               )}
-              <button onClick={exitSelectMode} className="file-panel-icon-btn" title="Cancel selection">
+              <button onClick={exitSelectMode} className="file-panel-icon-btn" title={t('filePanel.cancelSelection')}>
                 <X className="h-4 w-4" />
               </button>
             </>
@@ -1028,26 +1030,26 @@ function FilePanel({
                   }
                 }}
                 className="file-panel-icon-btn"
-                title="Download"
+                title={t('filePanel.download')}
               >
-                <Download className="h-3.5 w-3.5" />
+                <Download className="h-4 w-4" />
               </button>
               {canEdit && (
                 <button
                   onClick={handleStartEdit}
                   className="file-panel-icon-btn"
-                  title="Edit file"
+                  title={t('filePanel.editFile')}
                 >
-                  <Pencil className="h-3.5 w-3.5" />
+                  <Pencil className="h-4 w-4" />
                 </button>
               )}
               {(getFileExtension(selectedFile) === 'md' || fileMime?.includes('markdown')) && (
                 <button
                   onClick={() => setPrintMode((v) => !v)}
                   className={`file-panel-icon-btn ${printMode ? 'file-panel-icon-btn-active' : ''}`}
-                  title={printMode ? 'Close print settings' : 'Save as PDF'}
+                  title={printMode ? t('filePanel.closePrintSettings') : t('filePanel.savePdf')}
                 >
-                  <Printer className="h-3.5 w-3.5" />
+                  <Printer className="h-4 w-4" />
                 </button>
               )}
             </>
@@ -1062,47 +1064,47 @@ function FilePanel({
               <button
                 onClick={() => editorRef.current?.trigger('toolbar', 'undo')}
                 className="file-panel-icon-btn"
-                title="Undo (Cmd+Z)"
+                title={t('filePanel.undo')}
                 disabled={!canUndo}
               >
-                <Undo2 className="h-3.5 w-3.5" />
+                <Undo2 className="h-4 w-4" />
               </button>
               <button
                 onClick={() => editorRef.current?.trigger('toolbar', 'redo')}
                 className="file-panel-icon-btn"
-                title="Redo (Cmd+Shift+Z)"
+                title={t('filePanel.redo')}
                 disabled={!canRedo}
               >
-                <Redo2 className="h-3.5 w-3.5" />
+                <Redo2 className="h-4 w-4" />
               </button>
               {hasUnsavedChanges && (
                 <button
                   onClick={() => setShowDiff((d) => !d)}
                   className={`file-panel-icon-btn ${showDiff ? 'file-panel-icon-btn-active' : ''}`}
-                  title={showDiff ? 'Hide diff' : 'Show diff'}
+                  title={showDiff ? t('filePanel.hideDiff') : t('filePanel.showDiff')}
                 >
-                  <FileDiff className="h-3.5 w-3.5" />
+                  <FileDiff className="h-4 w-4" />
                 </button>
               )}
               <button
                 onClick={handleSave}
                 className="file-panel-icon-btn"
-                title="Save (Cmd+S)"
+                title={t('filePanel.save')}
                 disabled={!hasUnsavedChanges || isSaving}
               >
-                <Save className={`h-3.5 w-3.5 ${isSaving ? 'animate-pulse' : ''}`} />
+                <Save className={`h-4 w-4 ${isSaving ? 'animate-pulse' : ''}`} />
               </button>
               <button
                 onClick={handleCancelEdit}
                 className="file-panel-icon-btn"
-                title="Cancel editing"
+                title={t('filePanel.cancelEditing')}
               >
                 <X className="h-4 w-4" />
               </button>
             </>
           )}
           {!selectMode && !isEditing && (
-            <button onClick={onClose} className="file-panel-icon-btn" title="Close">
+            <button onClick={onClose} className="file-panel-icon-btn" title={t('filePanel.close')}>
               <X className="h-4 w-4" />
             </button>
           )}
@@ -1123,8 +1125,8 @@ function FilePanel({
       {uploadError && (
         <div className="file-panel-upload-error">
           <span>{uploadError}</span>
-          <button onClick={() => setUploadError(null)} className="file-panel-icon-btn" style={{ padding: 2 }}>
-            <X className="h-3 w-3" />
+          <button onClick={() => setUploadError(null)} className="file-panel-icon-btn">
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
@@ -1138,8 +1140,8 @@ function FilePanel({
       {deleteError && (
         <div className="file-panel-upload-error">
           <span>{deleteError}</span>
-          <button onClick={() => setDeleteError(null)} className="file-panel-icon-btn" style={{ padding: 2 }}>
-            <X className="h-3 w-3" />
+          <button onClick={() => setDeleteError(null)} className="file-panel-icon-btn">
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
@@ -1167,7 +1169,7 @@ function FilePanel({
       {isEditing && (
         <div className="file-panel-edit-hint">
           <Pencil className="h-3 w-3" style={{ flexShrink: 0 }} />
-          <span>Editing — changes are not saved until you press Save</span>
+          <span>{t('filePanel.editingHint')}</span>
         </div>
       )}
 
@@ -1283,7 +1285,7 @@ function FilePanel({
           <div className="file-panel-sort-wrapper" ref={sortMenuRef}>
             <button
               className="file-panel-icon-btn"
-              title="Sort files"
+              title={t('filePanel.sortFiles')}
               onClick={() => setShowSortMenu((v) => !v)}
             >
               <ArrowUpDown className="h-3.5 w-3.5" />
@@ -1335,8 +1337,10 @@ function FilePanel({
             >
               <TextSelect className="h-3.5 w-3.5" style={{ color: 'var(--color-accent-primary)' }} />
               {selectionTooltip.lineStart != null
-                ? `Add L${selectionTooltip.lineStart}${selectionTooltip.lineEnd !== selectionTooltip.lineStart ? `-${selectionTooltip.lineEnd}` : ''} to context`
-                : 'Add to context'}
+                ? (selectionTooltip.lineEnd !== selectionTooltip.lineStart
+                    ? t('context.addLinesToContext', { start: selectionTooltip.lineStart, end: selectionTooltip.lineEnd })
+                    : t('context.addLineToContext', { line: selectionTooltip.lineStart }))
+                : t('context.addToContext')}
             </div>
           )}
 
@@ -1353,7 +1357,7 @@ function FilePanel({
                   onClick={() => handleContextMenuAction('add-context', contextMenu.filePath)}
                 >
                   <TextSelect className="h-3.5 w-3.5" style={{ color: 'var(--color-text-tertiary)' }} />
-                  Add to context
+                  {t('context.addToContext')}
                 </div>
               )}
               <div
@@ -1361,7 +1365,7 @@ function FilePanel({
                 onClick={() => handleContextMenuAction('open', contextMenu.filePath)}
               >
                 <FolderOpen className="h-3.5 w-3.5" style={{ color: 'var(--color-text-tertiary)' }} />
-                Open file
+                {t('context.openFile')}
               </div>
             </div>
           )}

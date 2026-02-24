@@ -465,7 +465,7 @@ function Markdown({ content, variant = 'panel', className = '', style }) {
       className={`${config.className} ${className}`.trim()}
       style={{ ...config.style, ...style }}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeRaw]} components={config.components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[[rehypeKatex, { strict: false }], rehypeRaw]} components={config.components}>
         {processed}
       </ReactMarkdown>
     </div>

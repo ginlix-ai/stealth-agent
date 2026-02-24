@@ -1005,7 +1005,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                     onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleAddMessageContext(); }}
                   >
                     <TextSelect className="h-3.5 w-3.5" style={{ color: 'var(--color-accent-primary)' }} />
-                    {lines > 1 ? `Add ${lines} lines to context` : 'Add to context'}
+                    {lines > 1 ? t('context.addNLinesToContext', { count: lines }) : t('context.addToContext')}
                   </div>
                 );
               })()}
