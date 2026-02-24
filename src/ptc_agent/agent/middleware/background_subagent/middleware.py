@@ -271,6 +271,7 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
                 tool_call_id=f"hydrated-{task_id}",
                 task_id=task_id,
                 description=metadata.get("description", "Restored subagent"),
+                prompt=metadata.get("description", "Restored subagent"),
                 subagent_type=subagent_type,
                 completed=True,
                 result_seen=True,
@@ -297,10 +298,10 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
     ) -> ToolMessage | Command:
         """Intercept task tool calls and spawn in background.
 
-        Routing logic:
-        1. ``task_id`` present + task is running → queue follow-up via Redis
-        2. ``task_id`` present + task is completed → reset and resume in background
-        3. No ``task_id`` → new task (existing logic)
+        Routing logic based on ``action`` parameter:
+        1. ``action="update"`` + ``task_id`` → queue follow-up via Redis to running task
+        2. ``action="resume"`` + ``task_id`` → reset completed task and respawn in background
+        3. ``action="init"`` (default) → new task spawn
 
         For all non-Task tools, passes through to the handler normally.
         """
@@ -318,6 +319,8 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
             raise RuntimeError("Tool call ID is required for background tasks")
         args = tool_call.get("args", {})
         description = args.get("description", "unknown task")
+        prompt = args.get("prompt", "")
+        action = args.get("action", "init")
         target_task_id = args.get("task_id")
         subagent_type = args.get("subagent_type")
 
@@ -328,8 +331,91 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
             else ""
         )
 
-        # --- Three-way routing based on task_id ---
-        if target_task_id is not None:
+        # --- Action-based routing ---
+        if action == "update":
+            # --- UPDATE: Instruct a running task via Redis ---
+            if not target_task_id:
+                return ToolMessage(
+                    content="Error: task_id is required for 'update' action.",
+                    tool_call_id=tool_call_id,
+                    name="Task",
+                )
+
+            task = await self.registry.get_by_task_id(target_task_id)
+
+            # Hydration fallback: reconstruct from checkpoint if registry lost the task
+            if task is None:
+                task = await self._hydrate_from_checkpoint(
+                    target_task_id, parent_thread_id
+                )
+
+            if task is None:
+                return ToolMessage(
+                    content=f"Error: Task-{target_task_id} not found.",
+                    tool_call_id=tool_call_id,
+                    name="Task",
+                )
+
+            if task.cancelled:
+                return ToolMessage(
+                    content=f"Error: Task-{target_task_id} was cancelled and cannot be updated.",
+                    tool_call_id=tool_call_id,
+                    name="Task",
+                )
+
+            # Validate subagent_type if explicitly provided
+            if subagent_type and subagent_type != task.subagent_type:
+                return ToolMessage(
+                    content=f"Error: Task-{target_task_id} is a '{task.subagent_type}' agent, not '{subagent_type}'.",
+                    tool_call_id=tool_call_id,
+                    name="Task",
+                )
+
+            if not task.is_pending:
+                return ToolMessage(
+                    content=f"Error: Task-{target_task_id} is not running. Use action='resume' to resume a completed task.",
+                    tool_call_id=tool_call_id,
+                    name="Task",
+                )
+
+            success = await self._queue_followup_to_redis(
+                task.tool_call_id, prompt
+            )
+            if success:
+                logger.info(
+                    "Queued follow-up for running task",
+                    task_id=target_task_id,
+                    display_id=task.display_id,
+                )
+                return ToolMessage(
+                    content=f"Follow-up sent to **{task.display_id}**. The subagent will receive your instructions before its next reasoning step.",
+                    tool_call_id=tool_call_id,
+                    name="Task",
+                    additional_kwargs={
+                        "task_artifact": {
+                            "task_id": task.task_id,
+                            "action": "update",
+                            "description": description,
+                            "prompt": prompt,
+                        }
+                    },
+                )
+            else:
+                return ToolMessage(
+                    content=f"Error: Could not deliver follow-up to {task.display_id} -- message queue not available.",
+                    tool_call_id=tool_call_id,
+                    name="Task",
+                )
+
+        elif action == "resume":
+            # --- RESUME: Reset a completed task and respawn ---
+            if not target_task_id:
+                return ToolMessage(
+                    content="Error: task_id is required for 'resume' action.",
+                    tool_call_id=tool_call_id,
+                    name="Task",
+                )
+
             task = await self.registry.get_by_task_id(target_task_id)
 
             # Hydration fallback: reconstruct from checkpoint if registry lost the task
@@ -361,30 +447,12 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
                 )
 
             if task.is_pending:
-                # --- FOLLOW-UP: Task is still running → queue via Redis ---
-                success = await self._queue_followup_to_redis(
-                    task.tool_call_id, description
+                return ToolMessage(
+                    content=f"Error: Task-{target_task_id} is still running. Use action='update' to send instructions to a running task.",
+                    tool_call_id=tool_call_id,
+                    name="Task",
                 )
-                if success:
-                    logger.info(
-                        "Queued follow-up for running task",
-                        task_id=target_task_id,
-                        display_id=task.display_id,
-                    )
-                    return ToolMessage(
-                        content=f"Follow-up sent to **{task.display_id}**. The subagent will receive your instructions before its next reasoning step.",
-                        tool_call_id=tool_call_id,
-                        name="Task",
-                        additional_kwargs={"task_artifact": {"task_id": task.task_id, "action": "message_queued", "description": description}},
-                    )
-                else:
-                    return ToolMessage(
-                        content=f"Error: Could not deliver follow-up to {task.display_id} — message queue not available.",
-                        tool_call_id=tool_call_id,
-                        name="Task",
-                    )
 
-            # --- RESUME: Task is completed → reset and respawn ---
             logger.info(
                 "Resuming completed task in background",
                 task_id=target_task_id,
@@ -444,64 +512,82 @@ class BackgroundSubagentMiddleware(AgentMiddleware):
                 content=pseudo_result,
                 tool_call_id=tool_call_id,
                 name="Task",
-                additional_kwargs={"task_artifact": {"task_id": task.task_id, "action": "resumed", "description": description, "type": task.subagent_type}},
+                additional_kwargs={
+                    "task_artifact": {
+                        "task_id": task.task_id,
+                        "action": "resume",
+                        "description": description,
+                        "prompt": prompt,
+                        "type": task.subagent_type,
+                    }
+                },
             )
 
-        # --- NEW TASK: No task_id → existing logic ---
-        if subagent_type is None:
-            subagent_type = "general-purpose"
+        else:
+            # --- INIT (default): New task ---
+            if subagent_type is None:
+                subagent_type = "general-purpose"
 
-        # Register the task first to get the task_id
-        task = await self.registry.register(
-            tool_call_id=tool_call_id,
-            description=description,
-            subagent_type=subagent_type,
-            asyncio_task=None,  # Will be set after task creation
-        )
-        logger.info(
-            "Intercepting task tool call for background execution",
-            tool_call_id=tool_call_id,
-            task_id=task.task_id,
-            display_id=task.display_id,
-            subagent_type=subagent_type,
-            description=description[:100],
-        )
+            # Register the task first to get the task_id
+            task = await self.registry.register(
+                tool_call_id=tool_call_id,
+                description=description,
+                prompt=prompt,
+                subagent_type=subagent_type,
+                asyncio_task=None,  # Will be set after task creation
+            )
+            logger.info(
+                "Intercepting task tool call for background execution",
+                tool_call_id=tool_call_id,
+                task_id=task.task_id,
+                display_id=task.display_id,
+                subagent_type=subagent_type,
+                description=description[:100],
+            )
 
-        current_background_tool_call_id.set(tool_call_id)
-        current_background_agent_id.set(task.agent_id)
+            current_background_tool_call_id.set(tool_call_id)
+            current_background_agent_id.set(task.agent_id)
 
-        # Create a dedicated token tracker for this subagent
-        subagent_token_tracker = PerCallTokenTracker()
+            # Create a dedicated token tracker for this subagent
+            subagent_token_tracker = PerCallTokenTracker()
 
-        # Spawn background task
-        asyncio_task = asyncio.create_task(
-            _run_background_task(task, handler, request, subagent_token_tracker, "Background subagent"),
-            name=f"background_subagent_{task.display_id}",
-        )
+            # Spawn background task
+            asyncio_task = asyncio.create_task(
+                _run_background_task(task, handler, request, subagent_token_tracker, "Background subagent"),
+                name=f"background_subagent_{task.display_id}",
+            )
 
-        # Update the task with the asyncio task reference
-        task.asyncio_task = asyncio_task
+            # Update the task with the asyncio task reference
+            task.asyncio_task = asyncio_task
 
-        # Return immediate pseudo-result with Task-N format
-        short_description = _truncate_description(description, max_sentences=2)
-        pseudo_result = (
-            f"Background subagent deployed: **{task.display_id}**\n"
-            f"- Type: {subagent_type}\n"
-            f"- Task: {short_description}\n"
-            f"- Status: Running in background\n\n"
-            f"You can:\n"
-            f"- Continue with other work\n"
-            f'- Use `TaskOutput(task_id="{task.task_id}")` to get progress or result\n'
-            f'- Use `Wait(task_id="{task.task_id}")` to block until complete\n'
-            f"- Use `Wait()` to wait for all background tasks"
-        )
+            # Return immediate pseudo-result with Task-N format
+            short_description = _truncate_description(description, max_sentences=2)
+            pseudo_result = (
+                f"Background subagent deployed: **{task.display_id}**\n"
+                f"- Type: {subagent_type}\n"
+                f"- Task: {short_description}\n"
+                f"- Status: Running in background\n\n"
+                f"You can:\n"
+                f"- Continue with other work\n"
+                f'- Use `TaskOutput(task_id="{task.task_id}")` to get progress or result\n'
+                f'- Use `Wait(task_id="{task.task_id}")` to block until complete\n'
+                f"- Use `Wait()` to wait for all background tasks"
+            )
 
-        return ToolMessage(
-            content=pseudo_result,
-            tool_call_id=tool_call_id,
-            name="Task",
-            additional_kwargs={"task_artifact": {"task_id": task.task_id, "action": "spawned", "description": description, "type": subagent_type}},
-        )
+            return ToolMessage(
+                content=pseudo_result,
+                tool_call_id=tool_call_id,
+                name="Task",
+                additional_kwargs={
+                    "task_artifact": {
+                        "task_id": task.task_id,
+                        "action": "init",
+                        "description": description,
+                        "prompt": prompt,
+                        "type": subagent_type,
+                    }
+                },
+            )
 
     def clear_registry(self) -> None:
         """Clear the task registry.

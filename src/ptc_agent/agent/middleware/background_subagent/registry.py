@@ -34,6 +34,9 @@ class BackgroundTask:
     description: str
     """Short description/label of the task."""
 
+    prompt: str
+    """Detailed instructions for the subagent."""
+
     subagent_type: str
     """Type of subagent (e.g., 'research', 'general-purpose')."""
 
@@ -140,6 +143,7 @@ class BackgroundTaskRegistry:
         self,
         tool_call_id: str,
         description: str,
+        prompt: str,
         subagent_type: str,
         asyncio_task: asyncio.Task | None = None,
     ) -> BackgroundTask:
@@ -148,6 +152,7 @@ class BackgroundTaskRegistry:
         Args:
             tool_call_id: The LangGraph tool_call_id
             description: Description of the task
+            prompt: Detailed instructions for the subagent
             subagent_type: Type of subagent
             asyncio_task: The asyncio.Task running the subagent (can be set later)
 
@@ -163,6 +168,7 @@ class BackgroundTaskRegistry:
                 tool_call_id=tool_call_id,
                 task_id=task_id,
                 description=description,
+                prompt=prompt,
                 subagent_type=subagent_type,
                 asyncio_task=asyncio_task,
                 agent_id=agent_id,
@@ -178,6 +184,7 @@ class BackgroundTaskRegistry:
                 display_id=task.display_id,
                 subagent_type=subagent_type,
                 description=description[:50],
+                prompt=prompt[:50],
             )
 
             return task

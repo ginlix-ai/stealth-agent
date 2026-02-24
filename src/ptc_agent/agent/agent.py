@@ -104,22 +104,6 @@ DEFAULT_MAX_CONCURRENT_TASK_UNITS = 3
 DEFAULT_MAX_TASK_ITERATIONS = 3
 DEFAULT_MAX_GENERAL_ITERATIONS = 10
 
-# Description for the SubAgentMiddleware Task tool
-SUBAGENT_MIDDLEWARE_DESCRIPTION = """Launch a subagent for complex, multi-step tasks.
-
-Args:
-    description: Detailed task instructions for the subagent
-    subagent_type: Agent type to use
-
-Usage:
-- Use for: Complex tasks, isolated research, context-heavy operations
-- NOT for: Simple 1-2 tool operations (do directly)
-- Parallel: Launch multiple agents in single message for concurrent tasks
-- Results: Subagent returns final report only (intermediate steps hidden)
-
-The subagent works autonomously. Provide clear, complete instructions."""
-
-
 class PTCAgent:
     """Agent that uses Programmatic Tool Calling (PTC) pattern for MCP tool execution.
 
@@ -159,34 +143,6 @@ class PTCAgent:
             provider=provider,
             model=model,
         )
-
-    def _get_subagent_summary(self, mcp_registry: MCPRegistry | None = None) -> str:
-        """Get formatted subagent summary for prompts.
-
-        Returns a summary of configured subagents. If called after create_agent(),
-        returns the actual subagents that were created. If called before, returns
-        a summary based on configured subagent names.
-
-        Args:
-            mcp_registry: Optional MCP registry (unused, kept for API consistency)
-
-        Returns:
-            Formatted subagent summary string
-        """
-        if self.subagents:
-            # Format from stored subagent info (after create_agent was called)
-            lines = []
-            for name, info in self.subagents.items():
-                description = info.get("description", "")
-                tools = info.get("tools", [])
-                lines.append(f"- **{name}**: {description}")
-                if tools:
-                    lines.append(f"  Tools: {', '.join(tools)}")
-            return "\n".join(lines) if lines else "No sub-agents configured."
-        # Before create_agent, show configured subagent names
-        if self.config.subagents_enabled:
-            return f"Configured subagents: {', '.join(self.config.subagents_enabled)}"
-        return "No sub-agents configured."
 
     def _build_system_prompt(
         self,
@@ -564,10 +520,7 @@ class PTCAgent:
                     default_model=model,
                     default_tools=tools,
                     subagents=subagents if subagents else [],
-                    task_description=SUBAGENT_MIDDLEWARE_DESCRIPTION,
-                    system_prompt=None,  # Disable verbose TASK_SYSTEM_PROMPT injection
                     default_middleware=subagent_middleware,
-                    general_purpose_agent=True,
                     registry=background_middleware.registry,
                     checkpointer=checkpointer,
                 ),
