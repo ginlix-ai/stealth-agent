@@ -176,6 +176,14 @@ def find_model_pricing(model_name: str, provider: Optional[str] = None) -> Optio
     # Normalize for case-insensitive comparison
     model_name_lower = model_name.lower()
 
+    # Normalize punctuation (dots ↔ hyphens) for fuzzy matching.
+    # Some providers return model IDs with hyphens (e.g., "doubao-seed-2-0-pro")
+    # while providers.json uses dots (e.g., "doubao-seed-2.0-pro").
+    def _normalize(s: str) -> str:
+        return s.lower().replace('.', '-')
+
+    model_name_normalized = _normalize(model_name)
+
     # Determine which providers to search
     if provider and provider in manifest['models']:
         # Provider-specific search
@@ -203,6 +211,27 @@ def find_model_pricing(model_name: str, provider: Optional[str] = None) -> Optio
                     if alias.lower() == model_name_lower:
                         logger.debug(
                             f"Found pricing for '{model_name}' via alias '{alias}' "
+                            f"(model_id: {model_id}) in provider '{prov}'"
+                        )
+                        return model.get('pricing')
+
+    # STEP 2.5: Normalized matching (dots ↔ hyphens)
+    for prov, models in providers_to_search:
+        for model in models:
+            model_id = model.get('id', '')
+            if _normalize(model_id) == model_name_normalized:
+                logger.debug(
+                    f"Found pricing for '{model_name}' via normalized match "
+                    f"(model_id: {model_id}) in provider '{prov}'"
+                )
+                return model.get('pricing')
+
+            aliases = model.get('alias', [])
+            if isinstance(aliases, list):
+                for alias in aliases:
+                    if _normalize(alias) == model_name_normalized:
+                        logger.debug(
+                            f"Found pricing for '{model_name}' via normalized alias '{alias}' "
                             f"(model_id: {model_id}) in provider '{prov}'"
                         )
                         return model.get('pricing')
