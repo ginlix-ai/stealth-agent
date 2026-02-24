@@ -213,7 +213,12 @@
     "startQuestion": "Start a Question",
     "letsGo": "Let's Go",
     "skip": "Skip",
-    "workspaceStarting": "Starting workspace..."
+    "workspaceStarting": "Starting workspace...",
+    "placeholderDefault": "What would you like to know? Type @ to mention a file",
+    "placeholderPendingRejection": "Describe how to revise the plan...",
+    "placeholderInterrupted": "Send new instructions to the agent...",
+    "placeholderLoading": "Type a follow-up — it will be queued...",
+    "placeholderSubagentsRunning": "Workers still running. Send a message or click a worker to instruct it."
   },
   "context": {
     "addToContext": "Add to context",

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, FolderOpen, Bot, StopCircle, ScrollText, AlertTriangle, CheckCircle2, Circle, Loader2, TextSelect } from 'lucide-react';
@@ -274,6 +274,15 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     getSubagentHistory,
     resolveSubagentIdToAgentId,
   } = useChatMessages(workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, completePendingTodos, handleOnboardingRelatedToolComplete, refreshFiles, agentMode, clearSubagentCards, handleWorkspaceCreated);
+
+  const chatPlaceholder = useMemo(() => {
+    if (pendingRejection) return t('chat.placeholderPendingRejection');
+    if (wasInterrupted && !isLoading && !pendingInterrupt && !pendingRejection)
+      return t('chat.placeholderInterrupted');
+    if (isLoading) return t('chat.placeholderLoading');
+    if (hasActiveSubagents) return t('chat.placeholderSubagentsRunning');
+    return t('chat.placeholderDefault');
+  }, [pendingRejection, wasInterrupted, isLoading, pendingInterrupt, hasActiveSubagents, t]);
 
   // Ref to avoid stale closure in unmount cleanup
   const currentThreadIdRef = useRef(currentThreadId);
@@ -1150,6 +1159,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                       disabled={isLoadingHistory || !workspaceId || !!pendingInterrupt}
                       onStop={handleSoftInterrupt}
                       isLoading={isLoading}
+                      placeholder={chatPlaceholder}
                       files={workspaceFiles}
                       tokenUsage={tokenUsage}
                     />
