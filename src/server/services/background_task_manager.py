@@ -1500,7 +1500,6 @@ class BackgroundTaskManager:
             workspace_id: Workspace ID for the usage record
             user_id: User ID for the usage record
         """
-        from src.utils.tracking.core import calculate_cost_from_per_call_records
         from src.server.services.usage_persistence_service import UsagePersistenceService
 
         tasks_with_records = [t for t in tasks if t.per_call_records]
@@ -1511,15 +1510,6 @@ class BackgroundTaskManager:
 
         for task in tasks_with_records:
             try:
-                subagent_costs = calculate_cost_from_per_call_records(task.per_call_records)
-                if not subagent_costs or subagent_costs.get("total_cost", 0) == 0:
-                    continue
-
-                # Enrich token_usage with subagent identity
-                subagent_costs["task_id"] = task.task_id
-                subagent_costs["agent_id"] = task.agent_id
-                subagent_costs["subagent_type"] = task.subagent_type
-
                 usage_service = UsagePersistenceService(
                     thread_id=thread_id,
                     workspace_id=workspace_id,
@@ -1527,8 +1517,12 @@ class BackgroundTaskManager:
                 )
                 await usage_service.track_llm_usage(task.per_call_records)
 
-                # Override token_usage to include subagent identity fields
-                usage_service._token_usage = subagent_costs
+                # Enrich the computed token_usage with subagent identity
+                # (track_llm_usage already aggregated tokens + costs correctly)
+                if usage_service._token_usage is not None:
+                    usage_service._token_usage["task_id"] = task.task_id
+                    usage_service._token_usage["agent_id"] = task.agent_id
+                    usage_service._token_usage["subagent_type"] = task.subagent_type
 
                 await usage_service.persist_usage(
                     response_id=response_id,

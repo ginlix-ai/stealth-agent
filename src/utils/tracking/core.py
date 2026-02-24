@@ -964,12 +964,6 @@ def calculate_cost_from_per_call_records(
         # Detect provider for this model
         provider = detect_provider_for_model(model_name)
 
-        # Get pricing information
-        pricing = find_model_pricing(model_name, provider=provider)
-        if not pricing:
-            logger.debug(f"No pricing found for model: {model_name} (provider: {provider})")
-            continue
-
         # Extract token counts from this specific call
         input_tokens = usage.get('input_tokens', 0)
         output_tokens = usage.get('output_tokens', 0)
@@ -1002,18 +996,25 @@ def calculate_cost_from_per_call_records(
                     if cache_5m_tokens == 0 and cache_1h_tokens == 0:
                         cache_5m_tokens = cache_creation
 
-        # Calculate cost for THIS CALL ONLY (accurate tiered pricing)
-        cost_result = calculate_total_cost(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cached_tokens=cached_tokens,
-            cache_5m_tokens=cache_5m_tokens,
-            cache_1h_tokens=cache_1h_tokens,
-            pricing=pricing
-        )
-
-        call_cost = cost_result['total_cost']
-        call_breakdown = cost_result.get('breakdown', {})
+        # Get pricing information — cost is 0 when pricing unavailable,
+        # but token counts are still aggregated so usage is never lost.
+        pricing = find_model_pricing(model_name, provider=provider)
+        if pricing:
+            # Calculate cost for THIS CALL ONLY (accurate tiered pricing)
+            cost_result = calculate_total_cost(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_tokens=cached_tokens,
+                cache_5m_tokens=cache_5m_tokens,
+                cache_1h_tokens=cache_1h_tokens,
+                pricing=pricing
+            )
+            call_cost = cost_result['total_cost']
+            call_breakdown = cost_result.get('breakdown', {})
+        else:
+            logger.debug(f"No pricing found for model: {model_name} (provider: {provider}), recording tokens with zero cost")
+            call_cost = 0.0
+            call_breakdown = {}
 
         # Store per-call cost record
         per_call_costs.append({
