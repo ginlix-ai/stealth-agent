@@ -405,6 +405,34 @@ export async function getBackupStatus(workspaceId) {
   return data;
 }
 
+/**
+ * Write full file content to a sandbox file
+ * @param {string} workspaceId
+ * @param {string} filePath - e.g. "results/report.py"
+ * @param {string} content - File content to write
+ * @returns {Promise<Object>} { workspace_id, path, size }
+ */
+export async function writeWorkspaceFile(workspaceId, filePath, content) {
+  const { data } = await api.put(`/api/v1/workspaces/${workspaceId}/files/write`,
+    { content },
+    { params: { path: filePath } }
+  );
+  return data;
+}
+
+/**
+ * Read a file without line-limit pagination (for edit mode)
+ * @param {string} workspaceId
+ * @param {string} filePath
+ * @returns {Promise<Object>} { workspace_id, path, content, mime }
+ */
+export async function readWorkspaceFileFull(workspaceId, filePath) {
+  const { data } = await api.get(`/api/v1/workspaces/${workspaceId}/files/read`, {
+    params: { path: filePath, unlimited: true },
+  });
+  return data;
+}
+
 export async function deleteWorkspaceFiles(workspaceId, paths) {
   const { data } = await api.delete(`/api/v1/workspaces/${workspaceId}/files`, {
     data: { paths },

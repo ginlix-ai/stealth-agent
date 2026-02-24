@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
-import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download, Upload, Folder, ChevronRight, ChevronDown, ArrowUpDown, AlertTriangle, Trash2, CheckSquare, Square, HardDrive, Printer, Minus, Plus } from 'lucide-react';
+import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download, Upload, Folder, ChevronRight, ChevronDown, ArrowUpDown, AlertTriangle, Trash2, CheckSquare, Square, HardDrive, Printer, Minus, Plus, Pencil, Save, FileDiff, Undo2, Redo2 } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { readWorkspaceFile, downloadWorkspaceFile, downloadWorkspaceFileAsArrayBuffer, triggerFileDownload, uploadWorkspaceFile, deleteWorkspaceFiles, backupWorkspaceFiles, getBackupStatus } from '../utils/api';
+import { readWorkspaceFile, readWorkspaceFileFull, writeWorkspaceFile, downloadWorkspaceFile, downloadWorkspaceFileAsArrayBuffer, triggerFileDownload, uploadWorkspaceFile, deleteWorkspaceFiles, backupWorkspaceFiles, getBackupStatus } from '../utils/api';
 import { stripLineNumbers } from './toolDisplayConfig';
 import Markdown from './Markdown';
 import DocumentErrorBoundary from './viewers/DocumentErrorBoundary';
@@ -13,12 +13,18 @@ const PdfViewer = React.lazy(() => import('./viewers/PdfViewer'));
 const ExcelViewer = React.lazy(() => import('./viewers/ExcelViewer'));
 const CsvViewer = React.lazy(() => import('./viewers/CsvViewer'));
 const HtmlViewer = React.lazy(() => import('./viewers/HtmlViewer'));
+const CodeEditor = React.lazy(() => import('./viewers/CodeEditor'));
 
 const EXT_TO_LANG = {
   py: 'python', js: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
   json: 'json', html: 'html', css: 'css', sql: 'sql', sh: 'bash', bash: 'bash',
   yaml: 'yaml', yml: 'yaml', xml: 'xml', java: 'java', go: 'go', rs: 'rust', rb: 'ruby',
 };
+
+const EDITABLE_EXTENSIONS = new Set([
+  ...Object.keys(EXT_TO_LANG),
+  'md', 'txt', 'csv', 'env', 'toml', 'cfg', 'ini', 'log',
+]);
 
 function getFileIcon(fileName) {
   const ext = fileName.split('.').pop()?.toLowerCase();
@@ -201,6 +207,12 @@ function FilePanel({
   const triggerDownloadFn = apiAdapter?.triggerDownload
     ? (_, path) => apiAdapter.triggerDownload(path)
     : triggerFileDownload;
+  const writeFileFn = apiAdapter?.writeFile
+    ? (_, path, content) => apiAdapter.writeFile(path, content)
+    : writeWorkspaceFile;
+  const readFileFullFn = apiAdapter?.readFileFull
+    ? (_, path) => apiAdapter.readFileFull(path)
+    : readWorkspaceFileFull;
 
   // File detail view state
   const [selectedFile, setSelectedFile] = useState(null);
@@ -214,6 +226,22 @@ function FilePanel({
   const [uploadError, setUploadError] = useState(null);
   const fileInputRef = useRef(null);
   const markdownRef = useRef(null);
+
+  // Edit mode state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [showDiff, setShowDiff] = useState(false);
+  const [originalContent, setOriginalContent] = useState(null);
+  const editorRef = useRef(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  const handleUndoRedoChange = useCallback(({ canUndo: u, canRedo: r }) => {
+    setCanUndo(u);
+    setCanRedo(r);
+  }, []);
 
   // Print / PDF export state
   const [printMode, setPrintMode] = useState(false);
@@ -513,7 +541,25 @@ function FilePanel({
     }
   };
 
+  // Compute whether current file is editable
+  const selectedExt = selectedFile ? getFileExtension(selectedFile.split('/').pop() || '') : '';
+  const canEdit = selectedFile
+    && !readOnly
+    && !printMode
+    && EDITABLE_EXTENSIONS.has(selectedExt)
+    && fileMime !== 'image'
+    && fileMime !== 'error'
+    && fileMime !== 'pdf'
+    && fileMime !== 'excel'
+    && !['html', 'htm'].includes(selectedExt)
+    && !selectedFile.startsWith('/large_tool_results/');
+
+  const hasUnsavedChanges = isEditing && editContent !== null && editContent !== fileContent;
+
   const handleBack = () => {
+    if (hasUnsavedChanges) {
+      if (!window.confirm('You have unsaved changes. Discard them?')) return;
+    }
     if (fileMime === 'image' && fileContent) {
       URL.revokeObjectURL(fileContent);
     }
@@ -522,8 +568,98 @@ function FilePanel({
     setFileArrayBuffer(null);
     setFileMime(null);
     setPrintMode(false);
+    setIsEditing(false);
+    setEditContent(null);
+    setShowDiff(false);
+    setOriginalContent(null);
+    editorRef.current = null;
+    setCanUndo(false);
+    setCanRedo(false);
+    setSaveError(null);
     // Don't clear targetDirectory — stay in directory view after closing file detail
   };
+
+  const handleStartEdit = useCallback(async () => {
+    if (!selectedFile || !workspaceId) return;
+    setSaveError(null);
+    try {
+      const data = await readFileFullFn(workspaceId, selectedFile);
+      const fullContent = data.content || '';
+      // Guard against very large files in browser editor
+      if (fullContent.length > 500 * 1024) {
+        setSaveError('File is too large to edit in the browser (>500KB)');
+        return;
+      }
+      setEditContent(fullContent);
+      setOriginalContent(fullContent);
+      setFileContent(fullContent);
+      setIsEditing(true);
+    } catch (err) {
+      console.error('[FilePanel] Failed to fetch full file for editing:', err);
+      setSaveError(err?.response?.data?.detail || err?.message || 'Failed to load file for editing');
+    }
+  }, [selectedFile, workspaceId, readFileFullFn]);
+
+  const handleEditorChange = useCallback((value) => {
+    setEditContent(value);
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (!selectedFile || !workspaceId || editContent === null) return;
+    if (!window.confirm('Save changes? This will overwrite the file in the sandbox and cannot be undone.')) return;
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await writeFileFn(workspaceId, selectedFile, editContent);
+      setFileContent(editContent);
+      setIsEditing(false);
+      setEditContent(null);
+      setShowDiff(false);
+      setOriginalContent(null);
+    } catch (err) {
+      console.error('[FilePanel] Save failed:', err);
+      setSaveError(err?.response?.data?.detail || err?.message || 'Save failed');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [selectedFile, workspaceId, editContent, writeFileFn]);
+
+  const handleCancelEdit = useCallback(() => {
+    if (hasUnsavedChanges) {
+      if (!window.confirm('Discard unsaved changes?')) return;
+    }
+    setIsEditing(false);
+    setEditContent(null);
+    setShowDiff(false);
+    setOriginalContent(null);
+    setSaveError(null);
+  }, [hasUnsavedChanges]);
+
+  // Cmd/Ctrl+S keyboard shortcut for save
+  useEffect(() => {
+    if (!isEditing) return;
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        if (editContent !== null && editContent !== fileContent) {
+          handleSave();
+        }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isEditing, editContent, fileContent, handleSave]);
+
+  // beforeunload guard for unsaved changes
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const handler = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedChanges]);
 
   // Upload handling
   const handleUpload = useCallback(async (file) => {
@@ -599,7 +735,7 @@ function FilePanel({
             </button>
           ) : null}
           <span className="text-sm font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
-            {selectedFile ? fileName : targetDirectory ? `${targetDirectory}/` : 'Workspace Files'}
+            {selectedFile ? (<>{fileName}{hasUnsavedChanges && <span style={{ color: 'var(--color-text-tertiary)' }}> *</span>}</>) : targetDirectory ? `${targetDirectory}/` : 'Workspace Files'}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -687,7 +823,7 @@ function FilePanel({
               </button>
             </>
           )}
-          {selectedFile && (
+          {selectedFile && !isEditing && (
             <>
               <button
                 onClick={async () => {
@@ -702,6 +838,15 @@ function FilePanel({
               >
                 <Download className="h-3.5 w-3.5" />
               </button>
+              {canEdit && (
+                <button
+                  onClick={handleStartEdit}
+                  className="file-panel-icon-btn"
+                  title="Edit file"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
               {(getFileExtension(selectedFile) === 'md' || fileMime?.includes('markdown')) && (
                 <button
                   onClick={() => setPrintMode((v) => !v)}
@@ -713,7 +858,56 @@ function FilePanel({
               )}
             </>
           )}
-          {!selectMode && (
+          {selectedFile && isEditing && (
+            <>
+              {saveError && (
+                <span className="text-xs truncate" style={{ color: 'var(--color-icon-danger)', maxWidth: 120 }} title={saveError}>
+                  {saveError}
+                </span>
+              )}
+              <button
+                onClick={() => editorRef.current?.trigger('toolbar', 'undo')}
+                className="file-panel-icon-btn"
+                title="Undo (Cmd+Z)"
+                disabled={!canUndo}
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => editorRef.current?.trigger('toolbar', 'redo')}
+                className="file-panel-icon-btn"
+                title="Redo (Cmd+Shift+Z)"
+                disabled={!canRedo}
+              >
+                <Redo2 className="h-3.5 w-3.5" />
+              </button>
+              {hasUnsavedChanges && (
+                <button
+                  onClick={() => setShowDiff((d) => !d)}
+                  className={`file-panel-icon-btn ${showDiff ? 'file-panel-icon-btn-active' : ''}`}
+                  title={showDiff ? 'Hide diff' : 'Show diff'}
+                >
+                  <FileDiff className="h-3.5 w-3.5" />
+                </button>
+              )}
+              <button
+                onClick={handleSave}
+                className="file-panel-icon-btn"
+                title="Save (Cmd+S)"
+                disabled={!hasUnsavedChanges || isSaving}
+              >
+                <Save className={`h-3.5 w-3.5 ${isSaving ? 'animate-pulse' : ''}`} />
+              </button>
+              <button
+                onClick={handleCancelEdit}
+                className="file-panel-icon-btn"
+                title="Cancel editing"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </>
+          )}
+          {!selectMode && !isEditing && (
             <button onClick={onClose} className="file-panel-icon-btn" title="Close">
               <X className="h-4 w-4" />
             </button>
@@ -773,6 +967,14 @@ function FilePanel({
       {/* Backup progress (indeterminate) */}
       {backingUp && (
         <div className="file-panel-progress-indeterminate" />
+      )}
+
+      {/* Editing hint banner */}
+      {isEditing && (
+        <div className="file-panel-edit-hint">
+          <Pencil className="h-3 w-3" style={{ flexShrink: 0 }} />
+          <span>Editing — changes are not saved until you press Save</span>
+        </div>
       )}
 
       {/* Print settings toolbar */}
@@ -948,17 +1150,31 @@ function FilePanel({
                 </DocumentErrorBoundary>
               </Suspense>
             ) : getFileExtension(selectedFile) === 'csv' ? (
-              <Suspense fallback={<DocumentLoadingFallback />}>
-                <DocumentErrorBoundary fallback={<DocumentErrorFallback onDownload={() => triggerDownloadFn(workspaceId, selectedFile).catch((err) => console.error('[FilePanel] Download failed:', err))} />}>
-                  <CsvViewer content={fileContent} />
-                </DocumentErrorBoundary>
-              </Suspense>
+              isEditing ? (
+                <div className="file-panel-editor-container">
+                  <Suspense fallback={<DocumentLoadingFallback />}>
+                    <CodeEditor value={editContent} onChange={handleEditorChange} fileName={selectedFile} diffMode={showDiff} originalValue={originalContent} editorRef={editorRef} onUndoRedoChange={handleUndoRedoChange} />
+                  </Suspense>
+                </div>
+              ) : (
+                <Suspense fallback={<DocumentLoadingFallback />}>
+                  <DocumentErrorBoundary fallback={<DocumentErrorFallback onDownload={() => triggerDownloadFn(workspaceId, selectedFile).catch((err) => console.error('[FilePanel] Download failed:', err))} />}>
+                    <CsvViewer content={fileContent} />
+                  </DocumentErrorBoundary>
+                </Suspense>
+              )
             ) : ['html', 'htm'].includes(getFileExtension(selectedFile)) ? (
               <Suspense fallback={<DocumentLoadingFallback />}>
                 <DocumentErrorBoundary fallback={<DocumentErrorFallback onDownload={() => triggerDownloadFn(workspaceId, selectedFile).catch((err) => console.error('[FilePanel] Download failed:', err))} />}>
                   <HtmlViewer content={fileContent} />
                 </DocumentErrorBoundary>
               </Suspense>
+            ) : isEditing ? (
+              <div className="file-panel-editor-container">
+                <Suspense fallback={<DocumentLoadingFallback />}>
+                  <CodeEditor value={editContent} onChange={handleEditorChange} fileName={selectedFile} diffMode={showDiff} originalValue={originalContent} editorRef={editorRef} onUndoRedoChange={handleUndoRedoChange} />
+                </Suspense>
+              </div>
             ) : (
               <div className="p-4">
                 {fileMime === 'image' ? (
