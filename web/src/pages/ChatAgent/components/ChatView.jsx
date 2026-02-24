@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, FolderOpen, Bot, StopCircle, ScrollText, AlertTriangle, CheckCircle2, Circle, Loader2 } from 'lucide-react';
+import { ArrowLeft, FolderOpen, Bot, StopCircle, ScrollText, AlertTriangle, CheckCircle2, Circle, Loader2, TextSelect } from 'lucide-react';
 import { ScrollArea } from '../../../components/ui/scroll-area';
 import { useAuth } from '../../../contexts/AuthContext';
 import { updateCurrentUser } from '../../Dashboard/utils/api';
@@ -105,6 +105,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
   const { t } = useTranslation();
   const scrollAreaRef = useRef(null);
   const subagentScrollAreaRef = useRef(null);
+  const chatInputRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
   const { refreshUser } = useAuth();
@@ -571,6 +572,74 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     }
   }, [rightPanelType]);
 
+  // Add context from FilePanel or message selection to ChatInput
+  const handleAddContext = useCallback((ctx) => {
+    chatInputRef.current?.addContext(ctx);
+  }, []);
+
+  // Message text selection → "Add to context" tooltip
+  const [msgSelectionTooltip, setMsgSelectionTooltip] = useState(null); // { x, y, text }
+  const msgAreaRef = useRef(null);
+
+  const handleMessageMouseUp = useCallback(() => {
+    // Small delay to let the browser finalize the selection
+    setTimeout(() => {
+      const sel = window.getSelection();
+      if (!sel || !sel.toString().trim()) {
+        setMsgSelectionTooltip(null);
+        return;
+      }
+      const text = sel.toString();
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      const area = msgAreaRef.current;
+      const areaRect = area?.getBoundingClientRect();
+      if (!areaRect) return;
+
+      // The actual scroll container is the inner div of ScrollArea (overflow: auto)
+      const scrollContainer = area.querySelector('[class*="overflow-auto"]') || area;
+      const scrollTop = scrollContainer.scrollTop || 0;
+
+      setMsgSelectionTooltip({
+        x: rect.left - areaRect.left + rect.width / 2,
+        y: rect.top - areaRect.top + scrollTop - 8,
+        text,
+      });
+    }, 10);
+  }, []);
+
+  const handleAddMessageContext = useCallback(() => {
+    if (!msgSelectionTooltip) return;
+    const text = msgSelectionTooltip.text;
+    const lineCount = (text.match(/\n/g) || []).length + 1;
+    // Label: show line count for multi-line, or truncated text for single-line
+    const label = lineCount > 1
+      ? `chat: ${lineCount} lines`
+      : (text.length > 30 ? text.slice(0, 27).trim() + '...' : text);
+    chatInputRef.current?.addContext({
+      snippet: text,
+      label,
+      lineCount,
+      source: 'chat',
+    });
+    setMsgSelectionTooltip(null);
+    window.getSelection()?.removeAllRanges();
+  }, [msgSelectionTooltip]);
+
+  // Clear tooltip on mousedown (unless clicking the tooltip itself)
+  useEffect(() => {
+    if (!msgSelectionTooltip) return;
+    const handler = (e) => {
+      if (e.target.closest?.('.chat-selection-tooltip')) return;
+      setTimeout(() => {
+        const sel = window.getSelection();
+        if (!sel || !sel.toString().trim()) setMsgSelectionTooltip(null);
+      }, 10);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [msgSelectionTooltip]);
+
   // Toggle sidebar visibility
   const handleToggleSidebar = useCallback(() => {
     setSidebarVisible(prev => !prev);
@@ -914,12 +983,32 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
           <div className="flex-1 flex flex-col overflow-hidden min-w-0">
             {/* Messages Area - Fixed height, scrollable */}
             <div
+              ref={msgAreaRef}
               className="flex-1 overflow-hidden"
               style={{
                 minHeight: 0,
                 height: 0, // Force flex-1 to work properly
+                position: 'relative',
               }}
+              onMouseUp={handleMessageMouseUp}
             >
+              {/* Message selection tooltip */}
+              {msgSelectionTooltip && (() => {
+                const lines = (msgSelectionTooltip.text.match(/\n/g) || []).length + 1;
+                return (
+                  <div
+                    className="chat-selection-tooltip file-panel-selection-tooltip"
+                    style={{
+                      left: Math.max(8, msgSelectionTooltip.x - 60),
+                      top: Math.max(4, msgSelectionTooltip.y - 32),
+                    }}
+                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleAddMessageContext(); }}
+                  >
+                    <TextSelect className="h-3.5 w-3.5" style={{ color: 'var(--color-accent-primary)' }} />
+                    {lines > 1 ? `Add ${lines} lines to context` : 'Add to context'}
+                  </div>
+                );
+              })()}
               {activeAgentId === 'main' ? (
                 <ScrollArea ref={scrollAreaRef} className="h-full w-full">
                   <div className="px-6 py-4 flex justify-center">
@@ -1056,6 +1145,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                       </div>
                     )}
                     <ChatInput
+                      ref={chatInputRef}
                       onSend={handleSendWithAttachments}
                       disabled={isLoadingHistory || !workspaceId || !!pendingInterrupt}
                       onStop={handleSoftInterrupt}
@@ -1093,6 +1183,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                 filesLoading={filesLoading}
                 filesError={filesError}
                 onRefreshFiles={refreshFiles}
+                onAddContext={handleAddContext}
               />
             ) : rightPanelType === 'detail' && (detailToolCall || detailPlanData) ? (
               <DetailPanel

@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import {
   Plus, ArrowUp, X, FileText, Loader2, Archive, Square,
-  ScrollText, ChartCandlestick, Zap, FileStack, ChevronDown, FolderOpen,
+  ScrollText, ChartCandlestick, Zap, FileStack, ChevronDown, FolderOpen, TextSelect,
 } from 'lucide-react';
 import { TokenUsageRing } from './token-usage-ring';
 import './chat-input.css';
@@ -91,7 +91,7 @@ const MAX_FILES = 5;
  * @param {string}    prefillMessage
  * @param {Function}  onClearPrefill
  */
-function ChatInput({
+const ChatInput = forwardRef(function ChatInput({
   onSend,
   disabled = false,
   isLoading = false,
@@ -114,7 +114,7 @@ function ChatInput({
   onClearPrefill = null,
   // Token usage (context window progress)
   tokenUsage = null,
-}) {
+}, ref) {
   const [message, setMessage] = useState('');
   const [attachedFiles, setAttachedFiles] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -129,6 +129,34 @@ function ChatInput({
 
   // Stop button state
   const [isStopping, setIsStopping] = useState(false);
+
+  // Expose addContext method for external callers (e.g. FilePanel, message selection)
+  useImperativeHandle(ref, () => ({
+    addContext({ path, snippet, label, lineStart, lineEnd, lineCount, source }) {
+      if (snippet) {
+        // Snippet context — add pill with snippet data, don't modify textarea
+        setMentionedFiles((prev) => {
+          // Deduplicate by exact snippet content (handles multiple selections)
+          if (prev.some((f) => f.snippet === snippet && f.path === (path || '') && f.source === (source || undefined))) return prev;
+          return [...prev, { path: path || '', snippet, label, lineStart, lineEnd, lineCount, source }];
+        });
+      } else if (path) {
+        // Whole file context — same behavior as selectFile via @mention
+        setMentionedFiles((prev) => {
+          if (prev.some((f) => f.path === path && !f.snippet)) return prev;
+          return [...prev, { path }];
+        });
+        // Insert @path into message text
+        setMessage((prev) => {
+          if (prev.includes('@' + path)) return prev;
+          const prefix = prev && !prev.endsWith(' ') ? prev + ' ' : prev;
+          return prefix + '@' + path + ' ';
+        });
+      }
+      // Focus the textarea
+      setTimeout(() => textareaRef.current?.focus(), 0);
+    },
+  }), []);
 
   // Workspace dropdown
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
@@ -343,8 +371,12 @@ function ChatInput({
     }, 0);
   }, [mentionStart, message]);
 
-  const removeMention = useCallback((path) => {
-    setMentionedFiles((prev) => prev.filter((f) => f.path !== path));
+  const removeMention = useCallback((path, label, snippet) => {
+    setMentionedFiles((prev) => prev.filter((f) => {
+      if (snippet) return !(f.snippet === snippet && f.path === path);
+      if (label) return !(f.path === path && f.label === label);
+      return !(f.path === path && !f.label);
+    }));
   }, []);
 
   // Scroll active autocomplete item into view
@@ -364,7 +396,7 @@ function ChatInput({
   }, []);
 
   // --- Send ---
-  const hasContent = message.trim() || attachedFiles.length > 0 || !!chartImage;
+  const hasContent = message.trim() || attachedFiles.length > 0 || !!chartImage || mentionedFiles.some((f) => f.snippet);
 
   const handleSend = useCallback(() => {
     if (!hasContent || disabled) return;
@@ -376,7 +408,22 @@ function ChatInput({
         type: f.type,
         preview: f.preview,
       }));
-    onSend(message, planMode, readyAttachments);
+    // Append snippet blocks to message for mentions that have snippets
+    let finalMessage = message;
+    const snippetMentions = mentionedFiles.filter((f) => f.snippet);
+    if (snippetMentions.length > 0) {
+      const blocks = snippetMentions.map((f) => {
+        if (f.source === 'chat') {
+          return `\n<details>\n<summary>[From agent response]</summary>\n\n\`\`\`\n${f.snippet}\n\`\`\`\n</details>`;
+        }
+        const lineInfo = f.lineStart != null
+          ? ` (lines ${f.lineStart}-${f.lineEnd}, ${f.lineCount} line${f.lineCount !== 1 ? 's' : ''})`
+          : '';
+        return `\n<details>\n<summary>@${f.path}${lineInfo}</summary>\n\n\`\`\`\n${f.snippet}\n\`\`\`\n</details>`;
+      });
+      finalMessage = finalMessage.trimEnd() + '\n' + blocks.join('\n');
+    }
+    onSend(finalMessage, planMode, readyAttachments);
     setMessage('');
     setAttachedFiles([]);
     setMentionedFiles([]);
@@ -384,7 +431,7 @@ function ChatInput({
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [hasContent, disabled, message, planMode, attachedFiles, chartImage, onSend]);
+  }, [hasContent, disabled, message, planMode, attachedFiles, chartImage, onSend, mentionedFiles]);
 
   // --- Keyboard ---
   const handleKeyDown = useCallback((e) => {
@@ -447,15 +494,24 @@ function ChatInput({
           {/* Mention pills */}
           {mentionedFiles.length > 0 && (
             <div className="mention-pills">
-              {mentionedFiles.map((f) => {
-                const name = f.path.split('/').pop();
+              {mentionedFiles.map((f, idx) => {
+                const isSnippet = !!f.snippet;
+                const name = isSnippet ? f.label : f.path.split('/').pop();
+                const pillKey = (f.path || '') + '::' + (f.label || '') + '::' + idx;
                 return (
-                  <div key={f.path} className="mention-pill" title={f.path}>
-                    <FileText className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
+                  <div
+                    key={pillKey}
+                    className={`mention-pill ${isSnippet ? 'mention-pill-snippet' : ''}`}
+                    title={isSnippet ? f.snippet : f.path}
+                  >
+                    {isSnippet
+                      ? <TextSelect className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
+                      : <FileText className="h-3 w-3 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
+                    }
                     <span>{name}</span>
                     <button
                       className="mention-pill-remove"
-                      onClick={(e) => { e.stopPropagation(); removeMention(f.path); }}
+                      onClick={(e) => { e.stopPropagation(); removeMention(f.path, f.label, f.snippet); }}
                       title="Remove"
                     >
                       <X className="h-2.5 w-2.5" />
@@ -739,6 +795,6 @@ function ChatInput({
       />
     </div>
   );
-}
+});
 
 export default ChatInput;

@@ -56,11 +56,15 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [showFilePanel, setShowFilePanel] = useState(false);
   const [showSandboxPanel, setShowSandboxPanel] = useState(false);
-  const [filePanelWidth, setFilePanelWidth] = useState(420);
+  const [filePanelWidth, setFilePanelWidth] = useState(850);
   const [filePanelTargetFile, setFilePanelTargetFile] = useState(null);
   // Initialize files from cache for instant display on return navigation
   const [files, setFiles] = useState(() => cache?.current?.[workspaceId]?.files || []);
   const isDraggingRef = useRef(false);
+  const chatInputRef = useRef(null);
+  const handleAddContext = useCallback((ctx) => {
+    chatInputRef.current?.addContext(ctx);
+  }, []);
 
   // Infinite scroll pagination state
   const [totalThreads, setTotalThreads] = useState(null);
@@ -583,6 +587,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
             {/* Chat Input */}
             <div className="w-full">
               <ChatInput
+                ref={chatInputRef}
                 onSend={handleSendMessage}
                 disabled={isSendingMessage || !workspaceId}
                 files={panelFiles}
@@ -696,6 +701,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
               filesLoading={panelFilesLoading}
               filesError={panelFilesError}
               onRefreshFiles={refreshPanelFiles}
+              onAddContext={handleAddContext}
             />
           </div>
         </>

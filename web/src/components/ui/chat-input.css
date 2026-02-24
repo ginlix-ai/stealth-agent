@@ -47,6 +47,13 @@
   background-color: var(--color-border-muted);
 }
 
+/* ====== Snippet pill variant ====== */
+
+.mention-pill-snippet {
+  border: 1px dashed var(--color-accent-overlay);
+  background-color: var(--color-accent-soft);
+}
+
 /* ====== Plan Mode toggle glow ====== */
 
 .plan-mode-toggle-active {

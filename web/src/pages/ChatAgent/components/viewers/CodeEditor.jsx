@@ -30,7 +30,7 @@ const EDITOR_OPTIONS = {
   padding: { top: 8 },
 };
 
-export default function CodeEditor({ value, onChange, fileName, readOnly = false, height = '100%', diffMode = false, originalValue, editorRef, onUndoRedoChange }) {
+export default function CodeEditor({ value, onChange, fileName, readOnly = false, height = '100%', diffMode = false, originalValue, editorRef, onUndoRedoChange, onTextSelect }) {
   const language = getLanguageFromFileName(fileName);
   const theme = getTheme();
   const showDiff = diffMode && originalValue != null;
@@ -63,6 +63,32 @@ export default function CodeEditor({ value, onChange, fileName, readOnly = false
               onUndoRedoChange?.({ canUndo: undoDepth > 0, canRedo: redoDepth > 0 });
               onChange?.(editor.getValue());
             });
+            // Text selection callback for "Add to context"
+            if (onTextSelect) {
+              editor.onDidChangeCursorSelection((e) => {
+                const sel = editor.getSelection();
+                if (!sel || sel.isEmpty()) {
+                  onTextSelect(null);
+                  return;
+                }
+                const text = editor.getModel().getValueInRange(sel);
+                if (!text.trim()) {
+                  onTextSelect(null);
+                  return;
+                }
+                // Get visual position of selection start for tooltip placement
+                const pos = editor.getScrolledVisiblePosition(sel.getStartPosition());
+                const editorDom = editor.getDomNode();
+                const editorRect = editorDom?.getBoundingClientRect();
+                const rect = (pos && editorRect) ? {
+                  left: editorRect.left + pos.left,
+                  top: editorRect.top + pos.top,
+                  width: 0,
+                  height: pos.height || 18,
+                } : null;
+                onTextSelect({ text, startLine: sel.startLineNumber, endLine: sel.endLineNumber, rect });
+              });
+            }
           }}
           options={{ ...EDITOR_OPTIONS, readOnly }}
         />
@@ -81,6 +107,30 @@ export default function CodeEditor({ value, onChange, fileName, readOnly = false
               modifiedEditor.onDidChangeModelContent(() => {
                 onChange?.(modifiedEditor.getValue());
               });
+              if (onTextSelect) {
+                modifiedEditor.onDidChangeCursorSelection((e) => {
+                  const sel = modifiedEditor.getSelection();
+                  if (!sel || sel.isEmpty()) {
+                    onTextSelect(null);
+                    return;
+                  }
+                  const text = modifiedEditor.getModel().getValueInRange(sel);
+                  if (!text.trim()) {
+                    onTextSelect(null);
+                    return;
+                  }
+                  const pos = modifiedEditor.getScrolledVisiblePosition(sel.getStartPosition());
+                  const editorDom = modifiedEditor.getDomNode();
+                  const editorRect = editorDom?.getBoundingClientRect();
+                  const rect = (pos && editorRect) ? {
+                    left: editorRect.left + pos.left,
+                    top: editorRect.top + pos.top,
+                    width: 0,
+                    height: pos.height || 18,
+                  } : null;
+                  onTextSelect({ text, startLine: sel.startLineNumber, endLine: sel.endLineNumber, rect });
+                });
+              }
             }}
             options={{ ...EDITOR_OPTIONS, readOnly, renderSideBySide: true }}
           />

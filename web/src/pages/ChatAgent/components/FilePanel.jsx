@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
-import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download, Upload, Folder, ChevronRight, ChevronDown, ArrowUpDown, AlertTriangle, Trash2, CheckSquare, Square, HardDrive, Printer, Minus, Plus, Pencil, Save, FileDiff, Undo2, Redo2 } from 'lucide-react';
+import { ArrowLeft, X, FileText, FileImage, File, RefreshCw, Download, Upload, Folder, ChevronRight, ChevronDown, ArrowUpDown, AlertTriangle, Trash2, CheckSquare, Square, HardDrive, Printer, Minus, Plus, Pencil, Save, FileDiff, Undo2, Redo2, TextSelect, FolderOpen } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -193,6 +193,7 @@ function FilePanel({
   onRefreshFiles,
   readOnly = false,
   apiAdapter = null,
+  onAddContext = null,
 }) {
   // Resolve API functions — use adapter overrides if provided, otherwise fall back to authenticated imports
   const readFileFn = apiAdapter?.readFile
@@ -242,6 +243,199 @@ function FilePanel({
     setCanUndo(u);
     setCanRedo(r);
   }, []);
+
+  // Selection tooltip state ("Add to context")
+  const [selectionTooltip, setSelectionTooltip] = useState(null); // { x, y, text, lineStart?, lineEnd? }
+  const contentWrapperRef = useRef(null);
+
+  // Right-click context menu state
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, filePath }
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = () => setContextMenu(null);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [contextMenu]);
+
+  // Clear selection tooltip when navigating away from a file
+  useEffect(() => {
+    setSelectionTooltip(null);
+  }, [selectedFile]);
+
+  // Clear selection tooltip on mousedown if selection is empty
+  useEffect(() => {
+    if (!selectionTooltip) return;
+    const handler = () => {
+      setTimeout(() => {
+        const sel = window.getSelection();
+        if (!sel || !sel.toString().trim()) setSelectionTooltip(null);
+      }, 10);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [selectionTooltip]);
+
+  // Handle text selection in read-only views (Markdown, SyntaxHighlighter, etc.)
+  const handleContentMouseUp = useCallback(() => {
+    if (!onAddContext || !selectedFile) return;
+    // Small delay to let the browser finalize the selection
+    setTimeout(() => {
+      const sel = window.getSelection();
+      if (!sel || !sel.toString().trim()) {
+        setSelectionTooltip(null);
+        return;
+      }
+      const text = sel.toString();
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      const wrapper = contentWrapperRef.current;
+      const wrapperRect = wrapper?.getBoundingClientRect();
+      if (!wrapperRect) return;
+
+      // Account for scroll position — the tooltip is position:absolute inside a scrollable container
+      const scrollTop = wrapper.scrollTop || 0;
+      const scrollLeft = wrapper.scrollLeft || 0;
+
+      // Determine accurate SOURCE line numbers (matching what the agent sees)
+      let lineStart, lineEnd;
+
+      const startNode = range.startContainer.nodeType === 3
+        ? range.startContainer.parentElement
+        : range.startContainer;
+      const endNode = range.endContainer.nodeType === 3
+        ? range.endContainer.parentElement
+        : range.endContainer;
+
+      // Method 1: data-line attributes from SyntaxHighlighter (wrapLines + lineProps)
+      // These give exact source line numbers for code views
+      const startLineEl = startNode?.closest?.('[data-line]');
+      const endLineEl = endNode?.closest?.('[data-line]');
+      if (startLineEl && endLineEl) {
+        lineStart = parseInt(startLineEl.dataset.line, 10);
+        lineEnd = parseInt(endLineEl.dataset.line, 10);
+      }
+
+      // Method 2: Source-text matching — search for selected text in raw fileContent
+      // This is critical for markdown views where DOM text differs from source
+      if (lineStart == null && fileContent && typeof fileContent === 'string') {
+        const selectedLines = text.split('\n').filter((l) => l.trim());
+        const firstLine = (selectedLines[0] || '').trim();
+        const lastLine = selectedLines.length > 1 ? (selectedLines[selectedLines.length - 1] || '').trim() : firstLine;
+
+        // Extract significant words (3+ chars) for fuzzy matching in source
+        const getSearchWords = (line) => line.split(/\s+/).filter((w) => w.replace(/[^a-zA-Z0-9]/g, '').length > 2);
+
+        const findLineInSource = (searchLine, fromLine = 0) => {
+          const words = getSearchWords(searchLine);
+          if (words.length < 2) {
+            // For short selections, try direct substring match
+            const fragment = searchLine.substring(0, Math.min(searchLine.length, 40));
+            if (fragment.length >= 5) {
+              const sourceLines = fileContent.split('\n');
+              for (let i = fromLine; i < sourceLines.length; i++) {
+                if (sourceLines[i].includes(fragment)) return i + 1;
+              }
+            }
+            return null;
+          }
+          // Build regex: allow markdown syntax characters between words
+          try {
+            const pattern = words.slice(0, 8).map((w) =>
+              w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            ).join('[\\s\\S]{0,30}');
+            const regex = new RegExp(pattern);
+            const sourceLines = fileContent.split('\n');
+            for (let i = fromLine; i < sourceLines.length; i++) {
+              if (regex.test(sourceLines[i])) return i + 1;
+            }
+          } catch { /* regex failed — fall through */ }
+          return null;
+        };
+
+        lineStart = findLineInSource(firstLine);
+        if (lineStart != null) {
+          if (firstLine !== lastLine) {
+            lineEnd = findLineInSource(lastLine, lineStart - 1);
+          }
+          if (lineEnd == null) lineEnd = lineStart + (text.match(/\n/g) || []).length;
+        }
+      }
+
+      // Method 3: DOM range counting fallback (for non-markdown views if data-line missed)
+      if (lineStart == null) {
+        try {
+          const contentRoot = startNode?.closest?.('pre') || startNode?.closest?.('.p-4');
+          if (contentRoot && !startNode?.closest?.('.markdown-print-content')) {
+            const preRange = document.createRange();
+            preRange.selectNodeContents(contentRoot);
+            preRange.setEnd(range.startContainer, range.startOffset);
+            const fragment = preRange.cloneContents();
+            fragment.querySelectorAll('[style*="user-select"]').forEach((el) => el.remove());
+            const textBefore = fragment.textContent;
+            lineStart = (textBefore.match(/\n/g) || []).length + 1;
+            lineEnd = lineStart + (text.match(/\n/g) || []).length;
+          }
+        } catch {
+          // Range operations can throw in edge cases — fall through
+        }
+      }
+
+      setSelectionTooltip({
+        x: rect.left - wrapperRect.left + scrollLeft + rect.width / 2,
+        y: rect.top - wrapperRect.top + scrollTop - 8,
+        text,
+        lineStart,
+        lineEnd,
+      });
+    }, 10);
+  }, [onAddContext, selectedFile, fileContent]);
+
+  // Handle text selection from Monaco editor (CodeEditor)
+  const handleEditorTextSelect = useCallback((selData) => {
+    if (!onAddContext || !selectedFile) return;
+    if (!selData) {
+      setSelectionTooltip(null);
+      return;
+    }
+    // Position tooltip near the selection using rect from Monaco
+    const wrapper = contentWrapperRef.current;
+    const wrapperRect = wrapper?.getBoundingClientRect();
+    let x = 120, y = 8;
+    if (selData.rect && wrapperRect) {
+      x = selData.rect.left - wrapperRect.left + 50;
+      y = selData.rect.top - wrapperRect.top - 8;
+    }
+    setSelectionTooltip({
+      x, y,
+      text: selData.text,
+      lineStart: selData.startLine,
+      lineEnd: selData.endLine,
+    });
+  }, [onAddContext, selectedFile]);
+
+  const handleAddSelectionContext = useCallback(() => {
+    if (!selectionTooltip || !selectedFile || !onAddContext) return;
+    const { text, lineStart, lineEnd } = selectionTooltip;
+    const fileName = selectedFile.split('/').pop();
+    const lineCount = lineStart != null && lineEnd != null ? lineEnd - lineStart + 1 : (text.match(/\n/g) || []).length + 1;
+    const label = lineStart != null
+      ? (lineStart === lineEnd ? `${fileName}:L${lineStart}` : `${fileName}:L${lineStart}-${lineEnd}`)
+      : fileName;
+    onAddContext({ path: selectedFile, snippet: text, label, lineStart, lineEnd, lineCount });
+    setSelectionTooltip(null);
+    window.getSelection()?.removeAllRanges();
+  }, [selectionTooltip, selectedFile, onAddContext]);
+
+  const handleContextMenuAction = useCallback((action, filePath) => {
+    setContextMenu(null);
+    if (action === 'add-context' && onAddContext) {
+      onAddContext({ path: filePath });
+    } else if (action === 'open') {
+      handleFileClick(filePath);
+    }
+  }, [onAddContext]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Print / PDF export state
   const [printMode, setPrintMode] = useState(false);
@@ -1128,7 +1322,50 @@ function FilePanel({
           </div>
         )}
 
-        <div className="file-panel-content">
+        <div className="file-panel-content" ref={contentWrapperRef}>
+          {/* Selection tooltip */}
+          {selectionTooltip && onAddContext && (
+            <div
+              className="file-panel-selection-tooltip"
+              style={{
+                left: Math.max(8, selectionTooltip.x - 60),
+                top: Math.max(4, selectionTooltip.y - 32),
+              }}
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleAddSelectionContext(); }}
+            >
+              <TextSelect className="h-3.5 w-3.5" style={{ color: 'var(--color-accent-primary)' }} />
+              {selectionTooltip.lineStart != null
+                ? `Add L${selectionTooltip.lineStart}${selectionTooltip.lineEnd !== selectionTooltip.lineStart ? `-${selectionTooltip.lineEnd}` : ''} to context`
+                : 'Add to context'}
+            </div>
+          )}
+
+          {/* Right-click context menu */}
+          {contextMenu && (
+            <div
+              className="file-panel-context-menu"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              {onAddContext && (
+                <div
+                  className="file-panel-context-menu-item"
+                  onClick={() => handleContextMenuAction('add-context', contextMenu.filePath)}
+                >
+                  <TextSelect className="h-3.5 w-3.5" style={{ color: 'var(--color-text-tertiary)' }} />
+                  Add to context
+                </div>
+              )}
+              <div
+                className="file-panel-context-menu-item"
+                onClick={() => handleContextMenuAction('open', contextMenu.filePath)}
+              >
+                <FolderOpen className="h-3.5 w-3.5" style={{ color: 'var(--color-text-tertiary)' }} />
+                Open file
+              </div>
+            </div>
+          )}
+
           {selectedFile ? (
             // File Detail View
             fileLoading ? (
@@ -1153,7 +1390,7 @@ function FilePanel({
               isEditing ? (
                 <div className="file-panel-editor-container">
                   <Suspense fallback={<DocumentLoadingFallback />}>
-                    <CodeEditor value={editContent} onChange={handleEditorChange} fileName={selectedFile} diffMode={showDiff} originalValue={originalContent} editorRef={editorRef} onUndoRedoChange={handleUndoRedoChange} />
+                    <CodeEditor value={editContent} onChange={handleEditorChange} fileName={selectedFile} diffMode={showDiff} originalValue={originalContent} editorRef={editorRef} onUndoRedoChange={handleUndoRedoChange} onTextSelect={onAddContext ? handleEditorTextSelect : undefined} />
                   </Suspense>
                 </div>
               ) : (
@@ -1172,11 +1409,11 @@ function FilePanel({
             ) : isEditing ? (
               <div className="file-panel-editor-container">
                 <Suspense fallback={<DocumentLoadingFallback />}>
-                  <CodeEditor value={editContent} onChange={handleEditorChange} fileName={selectedFile} diffMode={showDiff} originalValue={originalContent} editorRef={editorRef} onUndoRedoChange={handleUndoRedoChange} />
+                  <CodeEditor value={editContent} onChange={handleEditorChange} fileName={selectedFile} diffMode={showDiff} originalValue={originalContent} editorRef={editorRef} onUndoRedoChange={handleUndoRedoChange} onTextSelect={onAddContext ? handleEditorTextSelect : undefined} />
                 </Suspense>
               </div>
             ) : (
-              <div className="p-4">
+              <div className="p-4" onMouseUp={handleContentMouseUp}>
                 {fileMime === 'image' ? (
                   <img src={fileContent} alt={fileName} className="max-w-full rounded" />
                 ) : fileMime === 'error' ? (
@@ -1203,6 +1440,10 @@ function FilePanel({
                     style={typeof window !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light' ? oneLight : oneDark}
                     customStyle={{ margin: 0, padding: 0, backgroundColor: 'transparent', fontSize: '12px', lineHeight: '1.6' }}
                     codeTagProps={{ style: { backgroundColor: 'transparent' } }}
+                    showLineNumbers
+                    lineNumberStyle={{ minWidth: '2.5em', paddingRight: '1em', color: 'var(--color-text-tertiary)', userSelect: 'none', fontSize: '11px', opacity: 0.5 }}
+                    wrapLines
+                    lineProps={(lineNumber) => ({ 'data-line': lineNumber })}
                     wrapLongLines
                   >
                     {fileContent}
@@ -1293,6 +1534,10 @@ function FilePanel({
                             key={filePath}
                             className={`file-panel-item ${!isRoot || groupedFiles.length > 1 ? 'file-panel-item-nested' : ''} ${selectMode && isSelected ? 'file-panel-item-selected' : ''}`}
                             onClick={() => selectMode ? toggleSelect(filePath) : handleFileClick(filePath)}
+                            onContextMenu={!selectMode && onAddContext ? (e) => {
+                              e.preventDefault();
+                              setContextMenu({ x: e.clientX, y: e.clientY, filePath });
+                            } : undefined}
                           >
                             {selectMode ? (
                               isSelected

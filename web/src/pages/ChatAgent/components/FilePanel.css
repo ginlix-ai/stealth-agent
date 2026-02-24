@@ -629,6 +629,58 @@
     }
   }
 
+  /* ====== Selection Tooltip ("Add to context") ====== */
+  .file-panel-selection-tooltip {
+    position: absolute;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 8px;
+    background: var(--color-bg-card, #1e1e2e);
+    border: 1px solid var(--color-accent-overlay);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(12px);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+    white-space: nowrap;
+    transition: background 0.1s, border-color 0.1s;
+    user-select: none;
+  }
+  .file-panel-selection-tooltip:hover {
+    background: var(--color-accent-soft);
+    border-color: var(--color-accent-primary);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+  }
+
+  /* ====== Right-click Context Menu ====== */
+  .file-panel-context-menu {
+    position: fixed;
+    z-index: 200;
+    background-color: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-muted);
+    border-radius: 6px;
+    overflow: hidden;
+    min-width: 160px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  }
+  .file-panel-context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--color-text-primary);
+    cursor: pointer;
+    transition: background-color 0.1s;
+  }
+  .file-panel-context-menu-item:hover {
+    background-color: var(--color-accent-soft);
+  }
+
   /* Monaco editor container — fills available panel height */
   .file-panel-editor-container {
     height: 100%;
