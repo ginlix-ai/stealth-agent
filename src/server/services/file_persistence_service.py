@@ -146,7 +146,11 @@ class FilePersistenceService:
         )
 
         find_result = await sandbox.execute_bash_command(find_cmd, timeout=30)
-        if not find_result.get("success") or not find_result.get("stdout", "").strip():
+        if not find_result.get("success"):
+            raise RuntimeError(
+                f"Failed to list sandbox files: {find_result.get('stderr', 'unknown error')}"
+            )
+        if not find_result.get("stdout", "").strip():
             return {}
 
         result: dict[str, dict[str, Any]] = {}

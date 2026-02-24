@@ -436,7 +436,6 @@ class WorkspaceManager:
                     logger.info(
                         f"Sandbox still initializing for {workspace_id}, skipping sync"
                     )
-                    await update_workspace_activity(workspace_id)
                     return session
                 else:
                     # Sandbox ready — check if sync is needed
@@ -444,7 +443,6 @@ class WorkspaceManager:
                     needs_sync = not self._sync_cooldown_ok(workspace_id) or needs_deferred_sync
                     if not needs_sync:
                         # Cooldown active, skip expensive Daytona calls
-                        await update_workspace_activity(workspace_id)
                         return session
 
             # No usable cached session — handle based on status

@@ -14,6 +14,7 @@ Design goals:
 Endpoints:
 - GET    /api/v1/workspaces/{workspace_id}/files
 - GET    /api/v1/workspaces/{workspace_id}/files/read
+- PUT    /api/v1/workspaces/{workspace_id}/files/write
 - GET    /api/v1/workspaces/{workspace_id}/files/download
 - POST   /api/v1/workspaces/{workspace_id}/files/upload
 - DELETE /api/v1/workspaces/{workspace_id}/files
@@ -350,6 +351,10 @@ async def read_workspace_file(
         le=DEFAULT_READ_LIMIT_LINES,
         description="Max lines.",
     ),
+    unlimited: bool = Query(
+        False,
+        description="Return the full file content without line-range pagination.",
+    ),
 ) -> dict[str, Any]:
     """Read a file from the workspace's sandbox, or from DB if stopped."""
 
@@ -380,8 +385,11 @@ async def read_workspace_file(
             )
 
         text_content = file_record.get("content_text", "")
-        lines = text_content.splitlines()
-        content = "\n".join(lines[offset : offset + limit])
+        if unlimited:
+            content = text_content
+        else:
+            lines = text_content.splitlines()
+            content = "\n".join(lines[offset : offset + limit])
         mime = file_record.get("mime_type") or "text/plain"
 
         return {
@@ -425,9 +433,12 @@ async def read_workspace_file(
             detail="File appears to be binary and cannot be read as text. Use GET /files/download instead.",
         )
 
-    # Apply line range
-    lines = text_content.splitlines()
-    content = "\n".join(lines[offset : offset + limit])
+    # Apply line range (skip when unlimited=True for edit mode)
+    if unlimited:
+        content = text_content
+    else:
+        lines = text_content.splitlines()
+        content = "\n".join(lines[offset : offset + limit])
 
     client_path = _to_client_path(sandbox, normalized)
     if _is_always_hidden_path(client_path):
@@ -443,6 +454,61 @@ async def read_workspace_file(
         "content": content,
         "mime": mime or "text/plain",
         "truncated": False,  # limit is enforced; UI can request more with offset.
+    }
+
+
+MAX_WRITE_BYTES = 10 * 1024 * 1024  # 10MB text write limit
+
+
+class WriteFileRequest(BaseModel):
+    content: str = Field(..., description="File content to write.")
+
+
+@router.put("/{workspace_id}/files/write")
+async def write_workspace_file(
+    workspace_id: str,
+    x_user_id: CurrentUserId,
+    path: str = Query(..., description="File path (virtual or absolute)."),
+    body: WriteFileRequest = Body(...),
+) -> dict[str, Any]:
+    """Write text content to a file in the workspace's sandbox."""
+
+    workspace = await db_get_workspace(workspace_id)
+    _require_workspace_owner(workspace, user_id=x_user_id, workspace_id=workspace_id)
+
+    if _is_flash_workspace(workspace):
+        raise HTTPException(
+            status_code=400, detail="Flash workspaces do not have a sandbox"
+        )
+
+    if workspace.get("status") in ("stopped", "stopping"):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot write files while workspace is stopped. Start the workspace first.",
+        )
+
+    content_bytes = body.content.encode("utf-8")
+    if len(content_bytes) > MAX_WRITE_BYTES:
+        raise HTTPException(status_code=413, detail="File content too large (max 10MB)")
+
+    sandbox = await _acquire_sandbox(workspace_id, x_user_id)
+
+    normalized, error = sandbox.validate_and_normalize_path(path)
+    if error:
+        raise HTTPException(status_code=403, detail=error)
+
+    try:
+        ok = await sandbox.awrite_file_text(normalized, body.content)
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Sandbox is still starting")
+    if not ok:
+        raise HTTPException(status_code=500, detail="Write failed")
+
+    client_path = _to_client_path(sandbox, normalized)
+    return {
+        "workspace_id": workspace_id,
+        "path": client_path,
+        "size": len(content_bytes),
     }
 
 
@@ -670,7 +736,17 @@ async def get_backup_status(
         }
 
     # Run find to get current sandbox file metadata
-    sandbox_meta = await FilePersistenceService.list_sandbox_files(sandbox)
+    try:
+        sandbox_meta = await FilePersistenceService.list_sandbox_files(sandbox)
+    except Exception:
+        total_size = await get_workspace_total_size(workspace_id)
+        return {
+            "workspace_id": workspace_id,
+            "backed_up": list(db_meta.keys()),
+            "modified": [],
+            "untracked": [],
+            "total_backed_up_size": total_size,
+        }
 
     backed_up: list[str] = []
     modified: list[str] = []
