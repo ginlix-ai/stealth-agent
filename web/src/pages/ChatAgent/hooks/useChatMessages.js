@@ -494,7 +494,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           }
           if (artifactType === 'task') {
             const payload = event.payload || {};
-            const { task_id, action, description, type } = payload;
+            const { task_id, action: rawAction, description, prompt, type } = payload;
+            const action = (() => { if (rawAction === 'spawned') return 'init'; if (rawAction === 'message_queued') return 'update'; if (rawAction === 'resumed') return 'resume'; return rawAction || 'init'; })();
             if (task_id) {
               const agentId = `task:${task_id}`;
               if (!subagentHistoryByTaskId.has(agentId)) {
@@ -502,16 +503,18 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                   messages: [],
                   events: [],
                   description: description || '',
+                  prompt: prompt || description || '',
                   type: type || 'general-purpose',
                   resumePoints: [],
                 });
               } else {
                 const existing = subagentHistoryByTaskId.get(agentId);
                 if (description && !existing.description) existing.description = description;
+                if (prompt && !existing.prompt) existing.prompt = prompt || description || '';
                 if (type && !existing.type) existing.type = type;
               }
               // Track resume boundaries for history replay
-              if (action === 'resumed') {
+              if (action === 'resume') {
                 const existing = subagentHistoryByTaskId.get(agentId);
                 if (existing) {
                   existing.resumePoints = existing.resumePoints || [];
@@ -522,7 +525,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 }
               }
               // Track message_queued actions for inline card "Updated" label
-              if (action === 'message_queued') {
+              if (action === 'update') {
                 messageQueuedAgentIds.add(agentId);
               }
               // Map tool_call_id from the event context
@@ -532,7 +535,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               // Match pending tool call IDs from earlier tool_calls events.
               // The artifact 'spawned' event drains the pending queue to
               // establish the toolCallId → agentId mapping for replay.
-              if (action === 'spawned') {
+              if (action === 'init') {
                 const pendingToolCallIds = historyPendingTaskToolCallIdsRef.current;
                 if (pendingToolCallIds.length > 0) {
                   const toolCallId = pendingToolCallIds[0];
@@ -612,15 +615,14 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             if (event.artifact.description) {
               const existing = subagentHistoryByTaskId.get(agentId);
               if (existing) {
-                // Only update if description was missing (don't overwrite original with stale)
-                if (!existing.description) {
-                  existing.description = event.artifact.description;
-                }
+                if (!existing.description) existing.description = event.artifact.description;
+                if (!existing.prompt) existing.prompt = event.artifact.prompt || event.artifact.description || '';
               } else {
                 subagentHistoryByTaskId.set(agentId, {
                   messages: [],
                   events: [],
                   description: event.artifact.description,
+                  prompt: event.artifact.prompt || event.artifact.description || '',
                   type: event.artifact.type || 'general-purpose',
                 });
               }
@@ -1122,6 +1124,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             subagentHistoryRef.current[taskId] = {
               taskId,
               description: taskMetadata?.description || '',
+              prompt: taskMetadata?.prompt || taskMetadata?.description || '',
               type: taskMetadata?.type || 'general-purpose',
               messages: finalMessages,
               status: 'completed', // History events are always completed
@@ -1163,8 +1166,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           let changed = false;
           const newTasks = { ...msg.subagentTasks };
           for (const [tcId, task] of Object.entries(newTasks)) {
-            if (task.resumeTargetId && messageQueuedAgentIds.has(task.resumeTargetId) && task.resumed && task.resumed !== 'updated') {
-              newTasks[tcId] = { ...task, resumed: 'updated' };
+            if (task.resumeTargetId && messageQueuedAgentIds.has(task.resumeTargetId) && task.action === 'resume') {
+              newTasks[tcId] = { ...task, action: 'update' };
               changed = true;
             }
           }
@@ -1476,6 +1479,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               displayId: `Task-${taskId}`,
               taskId: agentId,
               description: historyData.description || '',
+              prompt: historyData.prompt || historyData.description || '',
               type: historyData.type || 'general-purpose',
               status: 'active',
               isActive: true,
@@ -2001,11 +2005,12 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           onFileArtifact(event);
         } else if (artifactType === 'task') {
           const payload = event.payload || {};
-          const { task_id, action, description, type } = payload;
+          const { task_id, action: rawAction, description, prompt, type } = payload;
+          const action = (() => { if (rawAction === 'spawned') return 'init'; if (rawAction === 'message_queued') return 'update'; if (rawAction === 'resumed') return 'resume'; return rawAction || 'init'; })();
           if (!task_id) return;
           const agentId = `task:${task_id}`;
 
-          if (action === 'spawned') {
+          if (action === 'init') {
             // Drain pending Task tool call ID to establish toolCallId → agentId mapping
             // immediately, so clicking the inline card before tool_call_result resolves correctly
             if (pendingTaskToolCallIds.length > 0) {
@@ -2020,6 +2025,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 taskId: agentId,
                 type: type || 'general-purpose',
                 description: description || '',
+                prompt: prompt || description || '',
                 status: alreadyCompleted ? 'completed' : 'active',
                 isActive: !alreadyCompleted,
               });
@@ -2028,7 +2034,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               const currentThreadId = event.thread_id || threadIdRef.current;
               openSubagentStream(currentThreadId, task_id, processEvent);
             }
-          } else if (action === 'resumed') {
+          } else if (action === 'resume') {
             // Resume: preserve existing messages, inject user boundary, bump runIndex
             const taskRefsForResume = getOrCreateTaskRefs(refs, agentId);
 
@@ -2045,8 +2051,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             updatedMessages.push({
               id: `resume-${agentId}-${Date.now()}`,
               role: 'user',
-              content: description || 'Resume',
-              contentSegments: [{ type: 'text', content: description || 'Resume', order: 0 }],
+              content: prompt || description || 'Resume',
+              contentSegments: [{ type: 'text', content: prompt || description || 'Resume', order: 0 }],
               reasoningProcesses: {},
               toolCallProcesses: {},
             });
@@ -2063,6 +2069,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               // But after reconnect the card may have been wiped + recreated without a
               // description, so fall back to subagentHistoryRef as a safety net.
               const historyDesc = subagentHistoryRef.current?.[agentId]?.description;
+              const historyPrompt = subagentHistoryRef.current?.[agentId]?.prompt;
               updateSubagentCard(agentId, {
                 agentId,
                 displayId: `Task-${task_id}`,
@@ -2072,6 +2079,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 isActive: true,
                 messages: updatedMessages,
                 ...(historyDesc ? { description: historyDesc } : {}),
+                ...(historyPrompt ? { prompt: historyPrompt } : {}),
               });
             }
 
@@ -2084,9 +2092,9 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
             const currentThreadId = event.thread_id || threadIdRef.current;
             openSubagentStream(currentThreadId, task_id, processEvent);
-          } else if (action === 'message_queued') {
+          } else if (action === 'update') {
             if (updateSubagentCard) {
-              updateSubagentCard(agentId, { queuedMessage: payload.description });
+              updateSubagentCard(agentId, { queuedMessage: prompt || payload.description });
             }
             // Update inline card to show "Updated" instead of "Resumed"
             setMessages(prev => prev.map(msg => {
@@ -2094,8 +2102,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               let changed = false;
               const newTasks = { ...msg.subagentTasks };
               for (const [tcId, task] of Object.entries(newTasks)) {
-                if (task.resumeTargetId === agentId && task.resumed && task.resumed !== 'updated') {
-                  newTasks[tcId] = { ...task, resumed: 'updated' };
+                if (task.resumeTargetId === agentId && task.action === 'resume') {
+                  newTasks[tcId] = { ...task, action: 'update' };
                   changed = true;
                 }
               }

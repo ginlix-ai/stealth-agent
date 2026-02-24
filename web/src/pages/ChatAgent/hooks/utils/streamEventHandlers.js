@@ -4,6 +4,17 @@
  */
 
 /**
+ * Normalize old action values to new ones for backward compatibility.
+ * Old persisted events may use 'spawned', 'message_queued', 'resumed'.
+ */
+function normalizeAction(raw) {
+  if (raw === 'spawned') return 'init';
+  if (raw === 'message_queued') return 'update';
+  if (raw === 'resumed') return 'resume';
+  return raw || 'init';
+}
+
+/**
  * Extracts the last markdown bold title (**...**) from reasoning content for the icon label.
  * Used only during live streaming; history always shows "Reasoning".
  * @param {string} content - Accumulated reasoning text
@@ -303,7 +314,8 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
           // Mirrors historyEventHandlers.js logic for consistency
           const subagentTasks = { ...(msg.subagentTasks || {}) };
           const isTaskTool = toolCall.name === 'task' || toolCall.name === 'Task';
-          const isNewSpawn = !toolCall.args?.task_id;
+          const action = normalizeAction(toolCall.args?.action || (toolCall.args?.task_id ? 'resume' : 'init'));
+          const isNewSpawn = action === 'init';
           if (isTaskTool && toolCallId && isNewSpawn) {
             const subagentId = toolCallId;
             const hasExistingSubagentSegment = contentSegments.some(
@@ -314,7 +326,7 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
               contentSegments.push({
                 type: 'subagent_task',
                 subagentId,
-                order: contentOrderCounterRef.current,
+                order: currentOrder,
               });
             }
 
@@ -322,7 +334,9 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
               ...(subagentTasks[subagentId] || {}),
               subagentId,
               description: toolCall.args?.description || '',
+              prompt: toolCall.args?.prompt || toolCall.args?.description || '',
               type: toolCall.args?.subagent_type || 'general-purpose',
+              action: 'init',
               status: 'running',
             };
           } else if (isTaskTool && toolCallId && !isNewSpawn) {
@@ -334,15 +348,16 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
               type: 'subagent_task',
               subagentId: toolCallId,
               resumeTargetId,
-              order: contentOrderCounterRef.current,
+              order: currentOrder,
             });
             subagentTasks[toolCallId] = {
               subagentId: toolCallId,
               resumeTargetId,
               description: toolCall.args?.description || '',
+              prompt: toolCall.args?.prompt || toolCall.args?.description || '',
               type: toolCall.args?.subagent_type || 'general-purpose',
+              action,
               status: 'running',
-              resumed: true,
             };
           }
 

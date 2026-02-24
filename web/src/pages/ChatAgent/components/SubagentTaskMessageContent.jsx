@@ -32,7 +32,7 @@ function SubagentTaskMessageContent({
   description,
   type = 'general-purpose',
   status = 'unknown',
-  resumed = false, // false | true | 'updated'
+  action = 'init',
   resumeTargetId,
   onOpen,
   onDetailOpen,
@@ -74,7 +74,7 @@ function SubagentTaskMessageContent({
       onClick={handleCardClick}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-border-muted)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
-      title={resumed === 'updated' ? 'Click to view updated subagent' : resumed ? 'Click to view resumed subagent' : isRunning ? 'Click to view running subagent' : 'Click to view subagent details'}
+      title={action === 'update' ? 'Click to view updated subagent' : action === 'resume' ? 'Click to view resumed subagent' : isRunning ? 'Click to view running subagent' : 'Click to view subagent details'}
     >
       {/* Top row: icon + summary text */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -112,12 +112,12 @@ function SubagentTaskMessageContent({
         <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
           {type}
         </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: resumed ? 'var(--color-warning)' : isRunning ? 'var(--color-accent-primary)' : isCompleted ? 'var(--color-accent-primary)' : 'var(--color-text-tertiary)' }}>
-          {resumed === 'updated' && <RefreshCw style={{ width: 12, height: 12 }} />}
-          {resumed && resumed !== 'updated' && <RotateCw style={{ width: 12, height: 12 }} />}
-          {!resumed && isRunning && <Loader2 style={{ width: 12, height: 12, animation: 'spin 1s linear infinite' }} />}
-          {!resumed && isCompleted && <Check style={{ width: 12, height: 12 }} />}
-          {resumed === 'updated' ? 'Updated' : resumed ? 'Resumed' : isRunning ? 'Running' : isCompleted ? 'Completed' : status}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: (action === 'update' || action === 'resume') ? 'var(--color-warning)' : isRunning ? 'var(--color-accent-primary)' : isCompleted ? 'var(--color-accent-primary)' : 'var(--color-text-tertiary)' }}>
+          {action === 'update' && <RefreshCw style={{ width: 12, height: 12 }} />}
+          {action === 'resume' && <RotateCw style={{ width: 12, height: 12 }} />}
+          {action === 'init' && isRunning && <Loader2 style={{ width: 12, height: 12, animation: 'spin 1s linear infinite' }} />}
+          {action === 'init' && isCompleted && <Check style={{ width: 12, height: 12 }} />}
+          {action === 'update' ? 'Updated' : action === 'resume' ? 'Resumed' : isRunning ? 'Running' : isCompleted ? 'Completed' : status}
         </span>
       </div>
     </div>

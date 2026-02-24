@@ -4,6 +4,17 @@
  */
 
 /**
+ * Normalize old action values to new ones for backward compatibility.
+ * Old persisted events may use 'spawned', 'message_queued', 'resumed'.
+ */
+function normalizeAction(raw) {
+  if (raw === 'spawned') return 'init';
+  if (raw === 'message_queued') return 'update';
+  if (raw === 'resumed') return 'resume';
+  return raw || 'init';
+}
+
+/**
  * Helper to check if an event is from a subagent.
  * Backend convention: agent field uses "task:{task_id}" format (e.g., "task:pkyRHQ").
  * This aligns with LangGraph namespace convention (tools:uuid, model:uuid, task:id).
@@ -378,7 +389,8 @@ export function handleHistoryToolCalls({ assistantMessageId, toolCalls, pairStat
           // If this tool is the Task tool (subagent spawner), also create a subagent_task segment
           // Backend uses PascalCase "Task"; accept both for compatibility
           const isTaskTool = toolCall.name === 'task' || toolCall.name === 'Task';
-          const isNewSpawn = !toolCall.args?.task_id;
+          const action = normalizeAction(toolCall.args?.action || (toolCall.args?.task_id ? 'resume' : 'init'));
+          const isNewSpawn = action === 'init';
           if (isTaskTool && toolCallId && isNewSpawn) {
             const subagentId = toolCallId;
             // Only add the segment once per subagentId
@@ -399,7 +411,9 @@ export function handleHistoryToolCalls({ assistantMessageId, toolCalls, pairStat
               ...(subagentTasks[subagentId] || {}),
               subagentId,
               description: toolCall.args?.description || '',
+              prompt: toolCall.args?.prompt || toolCall.args?.description || '',
               type: toolCall.args?.subagent_type || 'general-purpose',
+              action: 'init',
               status: 'running',
             };
           } else if (isTaskTool && toolCallId && !isNewSpawn) {
@@ -417,9 +431,10 @@ export function handleHistoryToolCalls({ assistantMessageId, toolCalls, pairStat
               subagentId: toolCallId,
               resumeTargetId,
               description: toolCall.args?.description || '',
+              prompt: toolCall.args?.prompt || toolCall.args?.description || '',
               type: toolCall.args?.subagent_type || 'general-purpose',
+              action,
               status: 'running',
-              resumed: true,
             };
           }
 

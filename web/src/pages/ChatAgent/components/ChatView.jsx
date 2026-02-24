@@ -42,15 +42,18 @@ function SubagentStatusIndicator({ status, currentTool, toolCalls = 0, messages 
     return inProgress?.toolName || '';
   })();
 
-  // Effective status: prefer authoritative card status when completed,
-  // otherwise derive from message state, fall back to card status
+  // Effective status: only trust the authoritative card status for 'completed'
+  // (set by openSubagentStream.finally when the per-task SSE closes).
+  // Never derive 'completed' from message streaming gaps — those are transient,
+  // especially after update/resume actions where there's a natural pause between
+  // the old response ending and the new one starting.
   const effectiveStatus = status === 'completed'
     ? 'completed'
     : messages.length === 0
       ? 'initializing'
       : isMessageStreaming || derivedCurrentTool
         ? 'active'
-        : (lastAssistant && lastAssistant.isStreaming === false) ? 'completed' : status;
+        : status;
 
   const getIcon = () => {
     if (derivedCurrentTool) {
@@ -387,6 +390,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
       name: card.subagentData?.displayId || t('chat.worker'),
       taskId: card.subagentData?.taskId || card.subagentData?.agentId || '',
       description: card.subagentData?.description || '',
+      prompt: card.subagentData?.prompt || '',
       type: card.subagentData?.type || 'general-purpose',
       status: card.subagentData?.status || 'active',
       toolCalls: card.subagentData?.toolCalls || 0,
@@ -588,8 +592,10 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     //    no description yet, e.g., first open of a newly spawned task)
     const cardId = `subagent-${agentId}`;
     const existingDescription = cards[cardId]?.subagentData?.description;
+    const existingPrompt = cards[cardId]?.subagentData?.prompt;
     const existingType = cards[cardId]?.subagentData?.type;
     const finalDescription = history?.description || existingDescription || overrides.description || '';
+    const finalPrompt = history?.prompt || existingPrompt || overrides.prompt || '';
     const finalType = history?.type || existingType || overrides.type || 'general-purpose';
     const finalStatus = history?.status || overrides.status || 'completed';
 
@@ -601,6 +607,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
       agentId,
       taskId: agentId,
       description: finalDescription,
+      prompt: finalPrompt,
       type: finalType,
       isHistory: !!history,
       // isActive: true bypasses the inactive-card guard so stale fields get cleared.
@@ -633,7 +640,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
 
   // Open subagent task (navigate to subagent tab) - shared between MessageList and DetailPanel
   const handleOpenSubagentTask = useCallback((subagentInfo) => {
-    const { subagentId, description, type, status } = subagentInfo;
+    const { subagentId, description, prompt, type, status } = subagentInfo;
     // Resolve subagentId (may be toolCallId from segment) to stable agent_id for card operations
     const agentId = resolveSubagentIdToAgentId
       ? resolveSubagentIdToAgentId(subagentId)
@@ -644,7 +651,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
       return;
     }
 
-    refreshSubagentCard(agentId, { description, type, status });
+    refreshSubagentCard(agentId, { description, prompt, type, status });
 
     switchAgent(agentId);
     setSidebarVisible(true);
@@ -940,14 +947,28 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                 <ScrollArea ref={subagentScrollAreaRef} className="h-full w-full">
                   <div className="px-6 py-4 flex justify-center">
                     <div className="w-full max-w-3xl space-y-2.5">
-                      {/* Task description */}
+                      {/* Task description as header */}
                       {activeAgent.description && (
-                        <div style={{ color: 'var(--color-text-primary)' }}>
-                          <Markdown
-                            variant="chat"
-                            content={normalizeSubagentText(activeAgent.description)}
-                            className="text-sm leading-relaxed"
-                          />
+                        <div style={{ color: 'var(--color-text-secondary)', fontSize: 13, fontWeight: 500 }}>
+                          {activeAgent.description}
+                        </div>
+                      )}
+                      {/* Prompt as user message bubble — matches MessageBubble user style */}
+                      {activeAgent.prompt && (
+                        <div className="flex justify-end">
+                          <div
+                            className="max-w-[80%] rounded-lg rounded-tr-none px-4 py-3 overflow-hidden"
+                            style={{
+                              backgroundColor: 'var(--color-gray-292929)',
+                              color: 'var(--color-text-primary)',
+                            }}
+                          >
+                            <Markdown
+                              variant="chat"
+                              content={normalizeSubagentText(activeAgent.prompt)}
+                              className="text-sm leading-relaxed"
+                            />
+                          </div>
                         </div>
                       )}
                       {/* Status indicator */}

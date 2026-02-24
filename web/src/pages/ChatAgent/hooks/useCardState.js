@@ -205,6 +205,7 @@ export function useCardState(initialCards = {}) {
               agentId: agentId,
               taskId: agentId,
               description: '',
+              prompt: '',
               type: 'general-purpose',
               toolCalls: 0,
               currentTool: '',
