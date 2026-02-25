@@ -2,9 +2,11 @@ import React, { useState, useRef, useEffect, useCallback, useMemo, forwardRef, u
 import {
   Plus, ArrowUp, X, FileText, Loader2, Archive, Square,
   ScrollText, ChartCandlestick, Zap, FileStack, ChevronDown, FolderOpen, TextSelect,
+  Terminal, Bot,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { TokenUsageRing } from './token-usage-ring';
+import { getSkills } from '../../pages/ChatAgent/utils/api';
 import './chat-input.css';
 
 /* --- UTILS --- */
@@ -69,13 +71,16 @@ const FilePreviewCard = ({ file, onRemove }) => {
 /* --- CONSTANTS --- */
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_FILES = 5;
+const BUILTIN_SLASH_COMMANDS = [
+  { type: 'subagent', name: 'subagent' },
+];
 
 /* --- MAIN COMPONENT --- */
 
 /**
  * ChatInput — unified chat input component used across the entire app.
  *
- * @param {Function}  onSend              - (message, planMode, attachments) => void
+ * @param {Function}  onSend              - (message, planMode, attachments, slashCommands) => void
  * @param {boolean}   disabled
  * @param {boolean}   isLoading
  * @param {Function}  onStop
@@ -97,7 +102,7 @@ const ChatInput = forwardRef(function ChatInput({
   disabled = false,
   isLoading = false,
   onStop,
-  placeholder = 'What would you like to know? Type @ to mention a file',
+  placeholder = 'Type / for skills, @ for files',
   files: workspaceFiles = [],
   // Mode toggle
   mode,
@@ -128,6 +133,20 @@ const ChatInput = forwardRef(function ChatInput({
   const [autocompleteQuery, setAutocompleteQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const [mentionStart, setMentionStart] = useState(-1);
+
+  // /slash command state
+  const [slashCommands, setSlashCommands] = useState([]);
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [slashQuery, setSlashQuery] = useState('');
+  const [slashActiveIndex, setSlashActiveIndex] = useState(0);
+  const [slashStart, setSlashStart] = useState(-1);
+  const [skills, setSkills] = useState([]);
+
+  // Fetch skills filtered by agent mode (re-fetches when mode changes; cached per mode in api.js)
+  const skillsMode = mode === 'fast' ? 'flash' : 'ptc';
+  useEffect(() => {
+    getSkills(skillsMode).then(setSkills).catch(() => {});
+  }, [skillsMode]);
 
   // Stop button state
   const [isStopping, setIsStopping] = useState(false);
@@ -167,6 +186,7 @@ const ChatInput = forwardRef(function ChatInput({
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const autocompleteRef = useRef(null);
+  const slashMenuRef = useRef(null);
 
   const hasModeToggle = mode !== undefined && onModeChange !== undefined;
 
@@ -317,12 +337,61 @@ const ChatInput = forwardRef(function ChatInput({
     setActiveIndex(0);
   }, [filteredMentionFiles.length]);
 
-  // Detect @ trigger on input change
+  // --- /Slash Command Autocomplete ---
+  const filteredSlashCommands = useMemo(() => {
+    if (!showSlashMenu) return [];
+    const query = slashQuery.toLowerCase();
+    const items = [
+      ...skills.map((s) => ({ type: 'skill', name: s.name, description: s.description })),
+      ...BUILTIN_SLASH_COMMANDS.map((c) => ({ ...c, description: t(`chat.slashCommand.${c.name}Desc`) })),
+    ];
+    return items
+      .filter((item) => !slashCommands.some((c) => c.name === item.name))
+      .filter((item) => item.name.toLowerCase().includes(query) || item.description.toLowerCase().includes(query))
+      .slice(0, 10);
+  }, [skills, showSlashMenu, slashQuery, slashCommands, t]);
+
+  useEffect(() => {
+    setSlashActiveIndex(0);
+  }, [filteredSlashCommands.length]);
+
+  // Detect @ and / triggers on input change
   const handleChange = useCallback((e) => {
     const val = e.target.value;
     setMessage(val);
 
     const cursorPos = e.target.selectionStart;
+
+    // Detect / trigger for slash commands
+    let slashIdx = -1;
+    for (let i = cursorPos - 1; i >= 0; i--) {
+      const ch = val[i];
+      if (ch === '/') {
+        if (i === 0 || /\s/.test(val[i - 1])) {
+          slashIdx = i;
+        }
+        break;
+      }
+      if (/\s/.test(ch)) break;
+    }
+
+    if (slashIdx >= 0) {
+      const partial = val.slice(slashIdx + 1, cursorPos);
+      setSlashStart(slashIdx);
+      setSlashQuery(partial);
+      setShowSlashMenu(true);
+      // Close @mention when /slash is active
+      setShowAutocomplete(false);
+      setMentionStart(-1);
+      setAutocompleteQuery('');
+      return;
+    } else {
+      setShowSlashMenu(false);
+      setSlashStart(-1);
+      setSlashQuery('');
+    }
+
+    // Detect @ trigger for file mentions
     let atIdx = -1;
     for (let i = cursorPos - 1; i >= 0; i--) {
       const ch = val[i];
@@ -381,6 +450,36 @@ const ChatInput = forwardRef(function ChatInput({
     }));
   }, []);
 
+  const selectSlashCommand = useCallback((cmd) => {
+    if (slashStart < 0) return;
+    // Remove /query text from textarea
+    const cursorPos = textareaRef.current?.selectionStart ?? message.length;
+    const before = message.slice(0, slashStart);
+    const after = message.slice(cursorPos);
+    setMessage(before + after);
+
+    // Add command (deduplicate by name)
+    setSlashCommands((prev) => {
+      if (prev.some((c) => c.name === cmd.name)) return prev;
+      return [...prev, cmd];
+    });
+
+    setShowSlashMenu(false);
+    setSlashStart(-1);
+    setSlashQuery('');
+
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(before.length, before.length);
+      }
+    }, 0);
+  }, [slashStart, message]);
+
+  const removeSlashCommand = useCallback((name) => {
+    setSlashCommands((prev) => prev.filter((c) => c.name !== name));
+  }, []);
+
   // Scroll active autocomplete item into view
   useEffect(() => {
     if (!showAutocomplete || !autocompleteRef.current) return;
@@ -390,10 +489,20 @@ const ChatInput = forwardRef(function ChatInput({
     }
   }, [activeIndex, showAutocomplete]);
 
+  // Scroll active slash menu item into view
+  useEffect(() => {
+    if (!showSlashMenu || !slashMenuRef.current) return;
+    const items = slashMenuRef.current.querySelectorAll('.mention-autocomplete-item');
+    if (items[slashActiveIndex]) {
+      items[slashActiveIndex].scrollIntoView({ block: 'nearest' });
+    }
+  }, [slashActiveIndex, showSlashMenu]);
+
   // Close autocomplete on blur
   const handleBlur = useCallback(() => {
     setTimeout(() => {
       setShowAutocomplete(false);
+      setShowSlashMenu(false);
     }, 200);
   }, []);
 
@@ -425,18 +534,45 @@ const ChatInput = forwardRef(function ChatInput({
       });
       finalMessage = finalMessage.trimEnd() + '\n' + blocks.join('\n');
     }
-    onSend(finalMessage, planMode, readyAttachments);
+    onSend(finalMessage, planMode, readyAttachments, slashCommands);
     setMessage('');
     setAttachedFiles([]);
     setMentionedFiles([]);
+    setSlashCommands([]);
     setShowAutocomplete(false);
+    setShowSlashMenu(false);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [hasContent, disabled, message, planMode, attachedFiles, chartImage, onSend, mentionedFiles]);
+  }, [hasContent, disabled, message, planMode, attachedFiles, chartImage, onSend, mentionedFiles, slashCommands]);
 
   // --- Keyboard ---
   const handleKeyDown = useCallback((e) => {
+    // Slash command menu keyboard navigation
+    if (showSlashMenu && filteredSlashCommands.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSlashActiveIndex((prev) => (prev + 1) % filteredSlashCommands.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSlashActiveIndex((prev) => (prev - 1 + filteredSlashCommands.length) % filteredSlashCommands.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        selectSlashCommand(filteredSlashCommands[slashActiveIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowSlashMenu(false);
+        return;
+      }
+    }
+
+    // @mention autocomplete keyboard navigation
     if (showAutocomplete && filteredMentionFiles.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -468,7 +604,7 @@ const ChatInput = forwardRef(function ChatInput({
     if (e.key === 'Escape' && showAutocomplete) {
       setShowAutocomplete(false);
     }
-  }, [showAutocomplete, filteredMentionFiles, activeIndex, selectFile, handleSend]);
+  }, [showSlashMenu, filteredSlashCommands, slashActiveIndex, selectSlashCommand, showAutocomplete, filteredMentionFiles, activeIndex, selectFile, handleSend]);
 
   // Workspace selector helpers
   const selectedWorkspaceName = useMemo(() => {
@@ -493,9 +629,29 @@ const ChatInput = forwardRef(function ChatInput({
       >
         <div className="flex flex-col px-3 pt-3 pb-2 gap-2">
 
-          {/* Mention pills */}
-          {mentionedFiles.length > 0 && (
+          {/* Slash command pills + Mention pills */}
+          {(slashCommands.length > 0 || mentionedFiles.length > 0) && (
             <div className="mention-pills">
+              {slashCommands.map((cmd) => (
+                <div
+                  key={`slash-${cmd.name}`}
+                  className="mention-pill mention-pill-slash"
+                  title={cmd.description}
+                >
+                  {cmd.type === 'subagent'
+                    ? <Bot className="h-3 w-3 flex-shrink-0 mention-pill-icon" />
+                    : <Terminal className="h-3 w-3 flex-shrink-0 mention-pill-icon" />
+                  }
+                  <span>/{cmd.name}</span>
+                  <button
+                    className="mention-pill-remove"
+                    onClick={(e) => { e.stopPropagation(); removeSlashCommand(cmd.name); }}
+                    title="Remove"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </div>
+              ))}
               {mentionedFiles.map((f, idx) => {
                 const isSnippet = !!f.snippet;
                 const name = isSnippet ? f.label : f.path.split('/').pop();
@@ -575,6 +731,36 @@ const ChatInput = forwardRef(function ChatInput({
                     </div>
                   );
                 })
+              )}
+            </div>
+          )}
+
+          {/* Slash command dropdown */}
+          {showSlashMenu && (
+            <div className="mention-autocomplete" ref={slashMenuRef}>
+              {filteredSlashCommands.length === 0 ? (
+                <div className="mention-autocomplete-empty">
+                  {t('chat.slashCommand.noMatching')}
+                </div>
+              ) : (
+                filteredSlashCommands.map((cmd, idx) => (
+                  <div
+                    key={cmd.name}
+                    className={`mention-autocomplete-item ${idx === slashActiveIndex ? 'active' : ''}`}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      selectSlashCommand(cmd);
+                    }}
+                    onMouseEnter={() => setSlashActiveIndex(idx)}
+                  >
+                    {cmd.type === 'subagent'
+                      ? <Bot className="h-4 w-4 flex-shrink-0 slash-cmd-icon" />
+                      : <Terminal className="h-4 w-4 flex-shrink-0 slash-cmd-icon" />
+                    }
+                    <span className="slash-cmd-name">/{cmd.name}</span>
+                    <span className="slash-cmd-desc">{cmd.description}</span>
+                  </div>
+                ))
               )}
             </div>
           )}

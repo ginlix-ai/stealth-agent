@@ -217,11 +217,16 @@
     "letsGo": "开始",
     "skip": "跳过",
     "workspaceStarting": "正在启动工作区...",
-    "placeholderDefault": "想了解什么？输入 @ 引用文件",
+    "placeholderDefault": "输入 / 调用技能，@ 引用文件",
     "placeholderPendingRejection": "说说希望怎么调整...",
     "placeholderInterrupted": "输入新指令继续引导智能体...",
     "placeholderLoading": "可以继续输入，消息会排队发送...",
-    "placeholderSubagentsRunning": "工作者仍在运行，可输入消息或点击工作者单独指令"
+    "placeholderSubagentsRunning": "工作者仍在运行，可输入消息或点击工作者单独指令",
+    "slashCommand": {
+      "subagentName": "subagent",
+      "subagentDesc": "使用子代理完成此任务",
+      "noMatching": "无匹配命令"
+    }
   },
   "context": {
     "addToContext": "添加到上下文",

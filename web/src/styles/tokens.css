@@ -44,6 +44,10 @@
   --color-accent-overlay: rgba(108, 97, 243, 0.5);
   --color-accent-gradient: linear-gradient(90deg, #6155F5 0%, #8F88EC 28.85%, #39328F 100%);
 
+  --color-slash-icon: rgb(139, 92, 246);
+  --color-slash-pill-bg: rgba(139, 92, 246, 0.1);
+  --color-slash-pill-border: rgba(139, 92, 246, 0.3);
+
   --color-profit: #0FEDBE;
   --color-profit-soft: rgba(74, 222, 128, 0.2);
   --color-profit-border: rgba(74, 222, 128, 0.3);
@@ -157,6 +161,10 @@
   --color-accent-disabled: rgba(85, 72, 217, 0.35);
   --color-accent-overlay: rgba(85, 72, 217, 0.25);
   --color-accent-gradient: linear-gradient(135deg, #FDF8F0 0%, #F5EDE3 100%);
+
+  --color-slash-icon: rgb(109, 40, 217);
+  --color-slash-pill-bg: rgba(109, 40, 217, 0.08);
+  --color-slash-pill-border: rgba(109, 40, 217, 0.2);
 
   --color-profit: #16A34A;
   --color-profit-soft: rgba(22, 163, 74, 0.08);

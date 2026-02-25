@@ -217,11 +217,16 @@
     "letsGo": "Let's Go",
     "skip": "Skip",
     "workspaceStarting": "Starting workspace...",
-    "placeholderDefault": "What would you like to know? Type @ to mention a file",
+    "placeholderDefault": "Type / for skills, @ for files",
     "placeholderPendingRejection": "Describe how to revise the plan...",
     "placeholderInterrupted": "Send new instructions to the agent...",
     "placeholderLoading": "Type a follow-up — it will be queued...",
-    "placeholderSubagentsRunning": "Workers still running. Send a message or click a worker to instruct it."
+    "placeholderSubagentsRunning": "Workers still running. Send a message or click a worker to instruct it.",
+    "slashCommand": {
+      "subagentName": "subagent",
+      "subagentDesc": "Use subagents to complete this task",
+      "noMatching": "No matching commands"
+    }
   },
   "context": {
     "addToContext": "Add to context",

@@ -54,6 +54,39 @@
   background-color: var(--color-accent-soft);
 }
 
+/* ====== Slash command pill variant ====== */
+
+.mention-pill-slash {
+  border: 1px solid var(--color-slash-pill-border);
+  background-color: var(--color-slash-pill-bg);
+}
+
+.mention-pill-slash .mention-pill-icon {
+  color: var(--color-slash-icon);
+}
+
+.slash-cmd-icon {
+  color: var(--color-slash-icon);
+}
+
+/* ====== Slash command autocomplete description ====== */
+
+.mention-autocomplete-item .slash-cmd-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.mention-autocomplete-item .slash-cmd-desc {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
 /* ====== Plan Mode toggle glow ====== */
 
 .plan-mode-toggle-active {

@@ -482,6 +482,21 @@ export async function updateThreadSharing(threadId, body) {
   return data;
 }
 
+// --- Skills ---
+
+const _skillsPromises = {};  // module-level cache keyed by mode
+
+export async function getSkills(mode = null) {
+  const key = mode || '_all';
+  if (_skillsPromises[key]) return _skillsPromises[key];
+  _skillsPromises[key] = api.get('/api/v1/skills', { params: mode ? { mode } : {} })
+    .then(({ data }) => data.skills || [])
+    .catch(() => { delete _skillsPromises[key]; return []; });
+  return _skillsPromises[key];
+}
+
+// --- File Upload ---
+
 export async function uploadWorkspaceFile(workspaceId, file, destPath = null, onProgress = null) {
   const formData = new FormData();
   formData.append('file', file);

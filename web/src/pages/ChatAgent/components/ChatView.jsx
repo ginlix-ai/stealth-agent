@@ -337,13 +337,15 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     }
   }, [currentThreadId, threadId]);
 
-  // Wrapper: converts ChatInput's (message, planMode, attachments) into
+  // Wrapper: converts ChatInput's (message, planMode, attachments, slashCommands) into
   // handleSendMessage(message, planMode, additionalContext, attachmentMeta)
-  const handleSendWithAttachments = useCallback((message, planMode, attachments = []) => {
-    let additionalContext = null;
+  const handleSendWithAttachments = useCallback((message, planMode, attachments = [], slashCommands = []) => {
+    const contexts = [];
     let attachmentMeta = null;
+
+    // Image/PDF contexts from attachments
     if (attachments && attachments.length > 0) {
-      additionalContext = attachmentsToImageContexts(attachments);
+      contexts.push(...attachmentsToImageContexts(attachments));
       attachmentMeta = attachments.map((a) => ({
         name: a.file.name,
         type: a.type,
@@ -352,6 +354,17 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
         dataUrl: a.dataUrl,
       }));
     }
+
+    // Skill contexts from slash commands
+    for (const cmd of slashCommands) {
+      if (cmd.type === 'skill') {
+        contexts.push({ type: 'skills', name: cmd.name });
+      } else if (cmd.type === 'subagent') {
+        contexts.push({ type: 'directive', content: 'User wishes you to complete this task using subagents.' });
+      }
+    }
+
+    const additionalContext = contexts.length > 0 ? contexts : null;
     handleSendMessage(message, planMode, additionalContext, attachmentMeta);
   }, [handleSendMessage]);
 
