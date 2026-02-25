@@ -8,11 +8,13 @@ messages for the LLM.
 
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from src.server.models.additional_context import SkillContext
-from ptc_agent.agent.skills import get_skill, SkillMode
+from ptc_agent.agent.middleware.skills import get_skill, SkillMode
+from ptc_agent.agent.middleware.skills.content import (
+    load_skill_content,  # noqa: F401 — re-exported for backwards compatibility
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,7 @@ class SkillPrefixResult:
 def build_tool_descriptions(skill_name: str, mode: SkillMode | None = None) -> Optional[str]:
     """Build formatted tool descriptions for a skill.
 
-    Mirrors the format from DynamicSkillLoaderMiddleware._build_skill_result.
+    Mirrors the format from SkillsMiddleware._build_skill_result.
 
     Args:
         skill_name: Name of the skill
@@ -97,70 +99,6 @@ def parse_skill_contexts(
         )
 
     return skill_contexts
-
-
-def load_skill_content(
-    skill_name: str,
-    skill_dirs: Optional[List[str]] = None,
-    mode: SkillMode | None = None,
-) -> Optional[str]:
-    """Load SKILL.md content for a skill from local file system.
-
-    Searches through skill directories to find and load the SKILL.md file
-    for the specified skill.
-
-    Args:
-        skill_name: Name of the skill (e.g., 'user-profile')
-        skill_dirs: Optional list of local skill directories to search.
-                   If not provided, uses project_root/skills.
-        mode: Optional agent mode filter. If provided, only loads skills
-              whose exposure matches the mode.
-
-    Returns:
-        Content of SKILL.md as string, or None if not found
-
-    Example:
-        >>> content = load_skill_content("user-profile")
-        >>> if content:
-        ...     print(content[:50])
-    """
-    # Verify skill exists in registry (and matches mode if specified)
-    skill = get_skill(skill_name, mode=mode)
-    if not skill:
-        logger.warning(f"Skill '{skill_name}' not found in registry")
-        return None
-
-    # Default skill directory: project_root/skills
-    if skill_dirs is None:
-        # Find project root (where skills/ directory lives)
-        # Start from current working directory
-        project_root = Path.cwd()
-        skill_dirs = [str(project_root / "skills")]
-
-    # Search for SKILL.md in each directory (last wins)
-    content = None
-
-    for skill_dir in skill_dirs:
-        skill_md_path = Path(skill_dir) / skill_name / "SKILL.md"
-
-        if skill_md_path.exists():
-            try:
-                content = skill_md_path.read_text(encoding="utf-8")
-                logger.debug(
-                    f"Loaded SKILL.md for '{skill_name}' from {skill_md_path}"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to read SKILL.md for '{skill_name}' "
-                    f"from {skill_md_path}: {e}"
-                )
-
-    if content is None:
-        logger.warning(
-            f"SKILL.md not found for skill '{skill_name}' in any skill directory"
-        )
-
-    return content
 
 
 def build_skill_content(

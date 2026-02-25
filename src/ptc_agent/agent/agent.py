@@ -14,7 +14,6 @@ import structlog
 from langchain.agents import create_agent
 
 from ptc_agent.agent.backends import DaytonaBackend
-from deepagents.middleware import SkillsMiddleware
 from ptc_agent.agent.middleware import SubAgentMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
@@ -35,8 +34,8 @@ from ptc_agent.agent.middleware import (
     FileOperationMiddleware,
     # Todo operations SSE middleware
     TodoWriteMiddleware,
-    # Dynamic skill loader middleware
-    DynamicSkillLoaderMiddleware,
+    # Skills middleware
+    SkillsMiddleware,
     # Summarization middleware
     SummarizationMiddleware,
     # Large result eviction middleware
@@ -48,7 +47,10 @@ from ptc_agent.agent.middleware import (
     # Workspace context middleware
     WorkspaceContextMiddleware,
 )
-from ptc_agent.agent.middleware.background_subagent.registry import BackgroundTaskRegistry
+from ptc_agent.agent.middleware.background_subagent.registry import (
+    BackgroundTaskRegistry,
+)
+from ptc_agent.agent.middleware.skills.discovery import SkillMetadata
 from ptc_agent.agent.prompts import (
     format_current_time,
     format_subagent_summary,
@@ -87,7 +89,10 @@ except ImportError:
 
 # Import model resilience middleware
 try:
-    from langchain.agents.middleware import ModelRetryMiddleware, ModelFallbackMiddleware
+    from langchain.agents.middleware import (
+        ModelRetryMiddleware,
+        ModelFallbackMiddleware,
+    )
 except ImportError:
     ModelRetryMiddleware = None  # type: ignore[misc,assignment]
     ModelFallbackMiddleware = None  # type: ignore[misc,assignment]
@@ -105,6 +110,7 @@ logger = structlog.get_logger(__name__)
 DEFAULT_MAX_CONCURRENT_TASK_UNITS = 3
 DEFAULT_MAX_TASK_ITERATIONS = 3
 DEFAULT_MAX_GENERAL_ITERATIONS = 10
+
 
 class PTCAgent:
     """Agent that uses Programmatic Tool Calling (PTC) pattern for MCP tool execution.
@@ -306,7 +312,9 @@ class PTCAgent:
         short_thread_id = thread_id[:8] if thread_id else ""
 
         # Create the execute_code tool for MCP invocation
-        execute_code_tool = create_execute_code_tool(sandbox, mcp_registry, thread_id=short_thread_id)
+        execute_code_tool = create_execute_code_tool(
+            sandbox, mcp_registry, thread_id=short_thread_id
+        )
 
         # Create the Bash tool for shell command execution
         bash_tool = create_execute_bash_tool(sandbox, thread_id=short_thread_id)
@@ -369,7 +377,9 @@ class PTCAgent:
         )
 
         # File operation SSE middleware - emits events for write_file/edit_file
-        shared_middleware.append(FileOperationMiddleware(on_agent_md_write=on_agent_md_write))
+        shared_middleware.append(
+            FileOperationMiddleware(on_agent_md_write=on_agent_md_write)
+        )
 
         # Todo operation SSE middleware - emits events for TodoWrite
         shared_middleware.append(TodoWriteMiddleware())
@@ -379,8 +389,27 @@ class PTCAgent:
             shared_middleware.append(MultimodalMiddleware(sandbox=sandbox))
 
         # Add dynamic skill loader middleware for user onboarding etc.
-        skill_loader_middleware = DynamicSkillLoaderMiddleware(
+        # Includes filesystem scanning for user-installed skills when enabled
+        skill_sources = (
+            [f"{self.config.skills.sandbox_skills_base}/"]
+            if self.config.skills.enabled
+            else []
+        )
+
+        # Extract pre-parsed skill metadata from the sandbox's cached manifest
+        # so the middleware can skip re-downloading SKILL.md files it already knows about.
+        known_skills: dict[str, Any] = {}
+        if sandbox.skills_manifest and sandbox.skills_manifest.get("skills"):
+            known_skills = {
+                name: SkillMetadata(**meta)
+                for name, meta in sandbox.skills_manifest["skills"].items()
+            }
+
+        skill_loader_middleware = SkillsMiddleware(
             mode="ptc",
+            backend=backend,
+            sources=skill_sources,
+            known_skills=known_skills,
         )
         shared_middleware.append(skill_loader_middleware)
         tools.extend(skill_loader_middleware.tools)
@@ -459,7 +488,9 @@ class PTCAgent:
             else ".agent/large_tool_results"
         )
         system_prompt = self._build_system_prompt(
-            tool_summary, subagent_summary, user_profile,
+            tool_summary,
+            subagent_summary,
+            user_profile,
             plan_mode=plan_mode,
             current_time=current_time,
             thread_id=short_thread_id,
@@ -481,12 +512,6 @@ class PTCAgent:
         # Store native tools info for introspection (used by print_agent_config)
         self.native_tools = [t.name if hasattr(t, "name") else str(t) for t in tools]
 
-        # Build skill sources from config (sandbox paths where skills were uploaded)
-        skill_sources: list[str] | None = None
-        if self.config.skills.enabled:
-            # Single skills directory - both user and project skills uploaded here
-            skill_sources = [f"{self.config.skills.sandbox_skills_base}/"]
-
         logger.info(
             "Creating agent with custom middleware stack",
             tool_count=len(tools),
@@ -495,12 +520,6 @@ class PTCAgent:
         )
 
         # --- Build final middleware stacks ---
-        # Skills middleware (optional, based on config)
-        skills_middleware: list[Any] = []
-        if skill_sources:
-            skills_middleware = [
-                SkillsMiddleware(backend=backend, sources=skill_sources)
-            ]
 
         # Custom SSE-enabled summarization emits 'summarization_signal' events
         summarization = SummarizationMiddleware()
@@ -515,8 +534,9 @@ class PTCAgent:
             m
             for m in [
                 SubagentMessageQueueMiddleware(registry=background_middleware.registry),
-                *skills_middleware,
-                LargeResultEvictionMiddleware(backend=backend, eviction_dir=eviction_dir),
+                LargeResultEvictionMiddleware(
+                    backend=backend, eviction_dir=eviction_dir
+                ),
                 *shared_middleware,
                 summarization,
                 *model_resilience,
@@ -529,16 +549,15 @@ class PTCAgent:
         # Workspace context middleware (agent.md injection — main agent only)
         workspace_context_middleware: list[Any] = []
         if session is not None:
-            workspace_context_middleware = [
-                WorkspaceContextMiddleware(session=session)
-            ]
+            workspace_context_middleware = [WorkspaceContextMiddleware(session=session)]
 
         # Main agent middleware (includes SubAgentMiddleware + main_only)
         deepagent_middleware = [
             m
             for m in [
-                *skills_middleware,
-                LargeResultEvictionMiddleware(backend=backend, eviction_dir=eviction_dir),
+                LargeResultEvictionMiddleware(
+                    backend=backend, eviction_dir=eviction_dir
+                ),
                 SubAgentMiddleware(
                     default_model=model,
                     default_tools=tools,

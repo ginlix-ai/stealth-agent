@@ -79,20 +79,39 @@ class PTCSandbox:
     # Default Python dependencies installed in sandbox
     DEFAULT_DEPENDENCIES = [
         # Core
-        "mcp", "fastmcp", "pandas", "requests", "aiohttp", "httpx[http2]",
+        "mcp",
+        "fastmcp",
+        "pandas",
+        "requests",
+        "aiohttp",
+        "httpx[http2]",
         # Data science
-        "numpy", "scipy", "scikit-learn", "statsmodels",
+        "numpy",
+        "scipy",
+        "scikit-learn",
+        "statsmodels",
         # Financial data
         "yfinance",
         # Visualization
-        "matplotlib", "seaborn", "plotly", "mplfinance==0.12.10b0",
+        "matplotlib",
+        "seaborn",
+        "plotly",
+        "mplfinance==0.12.10b0",
         # Image analysis
-        "pillow", "opencv-python-headless", "scikit-image",
+        "pillow",
+        "opencv-python-headless",
+        "scikit-image",
         # File formats
-        "openpyxl", "xlrd", "python-docx", "pypdf",
-        "beautifulsoup4", "lxml", "pyyaml",
+        "openpyxl",
+        "xlrd",
+        "python-docx",
+        "pypdf",
+        "beautifulsoup4",
+        "lxml",
+        "pyyaml",
         # Utilities
-        "tqdm", "tabulate",
+        "tqdm",
+        "tabulate",
     ]
 
     def __init__(
@@ -132,6 +151,9 @@ class PTCSandbox:
         self._init_task: asyncio.Task[None] | None = None
         self._init_error: Exception | None = None
 
+        # Cached skills manifest (populated after sync_skills)
+        self._skills_manifest: dict[str, Any] | None = None
+
         logger.info("Initialized PTCSandbox")
 
     async def _wait_ready(self) -> None:
@@ -145,9 +167,7 @@ class PTCSandbox:
         try:
             await asyncio.wait_for(self._ready_event.wait(), timeout=300)
         except asyncio.TimeoutError:
-            raise RuntimeError(
-                "Sandbox initialization timed out after 300s"
-            )
+            raise RuntimeError("Sandbox initialization timed out after 300s")
 
         if self._init_error:
             raise RuntimeError(f"Sandbox initialization failed: {self._init_error}")
@@ -164,6 +184,15 @@ class PTCSandbox:
 
         # Using lazy init - check if event is set and no error
         return self._ready_event.is_set() and self._init_error is None
+
+    @property
+    def skills_manifest(self) -> dict[str, Any] | None:
+        """Cached skills manifest from the last ``sync_skills`` call.
+
+        Contains ``"version"``, ``"files"``, and ``"skills"`` (parsed metadata).
+        Returns None if ``sync_skills`` has not been called yet.
+        """
+        return self._skills_manifest
 
     def start_lazy_init(self, sandbox_id: str) -> None:
         """Start sandbox initialization in background (non-blocking).
@@ -290,7 +319,15 @@ class PTCSandbox:
             "python_version": self.SNAPSHOT_PYTHON_VERSION,
             "dependencies": self.DEFAULT_DEPENDENCIES,
             "mcp_packages": sorted(mcp_packages),  # Include MCP packages in hash
-            "apt_packages": ["curl", "nodejs", "ripgrep", "uv", "jq", "git", "unzip"],  # Include apt/curl-installed packages in hash
+            "apt_packages": [
+                "curl",
+                "nodejs",
+                "ripgrep",
+                "uv",
+                "jq",
+                "git",
+                "unzip",
+            ],  # Include apt/curl-installed packages in hash
         }
 
         config_str = json.dumps(config_data, sort_keys=True)
@@ -438,8 +475,10 @@ class PTCSandbox:
                     CreateSandboxFromSnapshotParams(
                         snapshot=snapshot_name,
                         auto_stop_interval=self.config.daytona.auto_stop_interval // 60,
-                        auto_archive_interval=self.config.daytona.auto_archive_interval // 60,
-                        auto_delete_interval=self.config.daytona.auto_delete_interval // 60,
+                        auto_archive_interval=self.config.daytona.auto_archive_interval
+                        // 60,
+                        auto_delete_interval=self.config.daytona.auto_delete_interval
+                        // 60,
                     ),
                     retry_policy=_DaytonaRetryPolicy.SAFE,
                     allow_reconnect=False,
@@ -461,7 +500,8 @@ class PTCSandbox:
                 self.daytona_client.create,
                 CreateSandboxFromSnapshotParams(
                     auto_stop_interval=self.config.daytona.auto_stop_interval // 60,
-                    auto_archive_interval=self.config.daytona.auto_archive_interval // 60,
+                    auto_archive_interval=self.config.daytona.auto_archive_interval
+                    // 60,
                     auto_delete_interval=self.config.daytona.auto_delete_interval // 60,
                 ),
                 retry_policy=_DaytonaRetryPolicy.SAFE,
@@ -1232,7 +1272,11 @@ class PTCSandbox:
         self, local_skill_roots: list[str]
     ) -> dict[str, Any]:
         def build() -> dict[str, Any]:
-            from ptc_agent.agent.skills import get_sandbox_skill_names, SKILL_REGISTRY
+            from ptc_agent.agent.middleware.skills import (
+                get_sandbox_skill_names,
+                SKILL_REGISTRY,
+            )
+            from ptc_agent.agent.middleware.skills.discovery import parse_skill_metadata
 
             # Skills eligible for sandbox upload (exposure "ptc" or "both")
             sandbox_skill_names = get_sandbox_skill_names()
@@ -1240,7 +1284,9 @@ class PTCSandbox:
             # from user-created skill dirs that aren't in the registry at all)
             all_registry_names = set(SKILL_REGISTRY.keys())
 
+            sandbox_skills_base = "/home/daytona/skills"
             files: dict[str, dict[str, int]] = {}
+            skills_metadata: dict[str, dict[str, Any]] = {}
             seen_skill_names: set[str] = set()
 
             for root_str in local_skill_roots:
@@ -1257,11 +1303,14 @@ class PTCSandbox:
 
                     # Skip flash-only skills (not needed in sandbox)
                     skill_name = skill_dir.name
-                    if skill_name not in sandbox_skill_names and skill_name in all_registry_names:
+                    if (
+                        skill_name not in sandbox_skill_names
+                        and skill_name in all_registry_names
+                    ):
                         continue
 
-                    # Later sources override earlier ones; mirror the sandbox upload behavior
-                    # by clearing all files from the overridden skill directory.
+                    # Later sources override earlier ones; mirror the sandbox
+                    # upload behavior by clearing files from the overridden dir.
                     if skill_name in seen_skill_names:
                         prefix = f"{skill_name}/"
                         for key in list(files.keys()):
@@ -1270,6 +1319,7 @@ class PTCSandbox:
                     else:
                         seen_skill_names.add(skill_name)
 
+                    # Collect file stats
                     for file_path in skill_dir.iterdir():
                         if not file_path.is_file():
                             continue
@@ -1281,12 +1331,23 @@ class PTCSandbox:
                             "mtime_ns": stat.st_mtime_ns,
                         }
 
+                    # Parse SKILL.md frontmatter in the same pass.
+                    # Later roots overwrite earlier entries (matching files behavior).
+                    try:
+                        content = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+                    except (OSError, UnicodeDecodeError):
+                        continue
+                    sandbox_path = f"{sandbox_skills_base}/{skill_name}/SKILL.md"
+                    meta = parse_skill_metadata(content, sandbox_path, skill_name)
+                    skills_metadata[skill_name] = dict(meta)
+
             payload = "\n".join(
                 f"{p}:{meta['size']}:{meta['mtime_ns']}"
                 for p, meta in sorted(files.items())
             )
             version = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-            return {"version": version, "files": files}
+
+            return {"version": version, "files": files, "skills": skills_metadata}
 
         return await asyncio.to_thread(build)
 
@@ -1294,7 +1355,10 @@ class PTCSandbox:
         self, local_skill_roots: list[str]
     ) -> set[str]:
         def build() -> set[str]:
-            from ptc_agent.agent.skills import get_sandbox_skill_names, SKILL_REGISTRY
+            from ptc_agent.agent.middleware.skills import (
+                get_sandbox_skill_names,
+                SKILL_REGISTRY,
+            )
 
             sandbox_skill_names = get_sandbox_skill_names()
             all_registry_names = set(SKILL_REGISTRY.keys())
@@ -1311,7 +1375,10 @@ class PTCSandbox:
                         continue
                     skill_name = skill_dir.name
                     # Skip flash-only skills so they get pruned from sandbox
-                    if skill_name not in sandbox_skill_names and skill_name in all_registry_names:
+                    if (
+                        skill_name not in sandbox_skill_names
+                        and skill_name in all_registry_names
+                    ):
                         continue
                     names.add(skill_name)
             return names
@@ -1404,20 +1471,28 @@ class PTCSandbox:
             force_refresh or (not reusing_sandbox) or (remote_version != local_version)
         )
         if not should_refresh:
+            self._skills_manifest = local_manifest
             return False
 
         local_skill_names = await self._collect_local_skill_names(local_roots)
         await self._prune_remote_skills(sandbox_base, local_skill_names)
 
         if not local_manifest.get("files"):
+            self._skills_manifest = local_manifest
             return False
 
         if on_progress:
             on_progress("Uploading skills...")
-        await self._upload_skills(local_skills_dirs)
+        await self._upload_skills(local_skills_dirs, manifest=local_manifest)
+        self._skills_manifest = local_manifest
         return True
 
-    async def _upload_skills(self, local_skills_dirs: list[tuple[str, str]]) -> None:
+    async def _upload_skills(
+        self,
+        local_skills_dirs: list[tuple[str, str]],
+        *,
+        manifest: dict[str, Any] | None = None,
+    ) -> None:
         """Upload skill files from local filesystem to sandbox.
 
         Skills are markdown-based instruction files that extend agent capabilities.
@@ -1428,12 +1503,14 @@ class PTCSandbox:
         Args:
             local_skills_dirs: List of (local_path, sandbox_path) tuples.
                 Example: [("~/.ptc-agent/skills", "/home/daytona/skills")]
+            manifest: Pre-computed skills manifest. If None, computed from local_skills_dirs.
         """
         assert self.sandbox is not None
         sandbox = self.sandbox
 
-        local_roots = [local_dir for local_dir, _ in local_skills_dirs]
-        manifest = await self._compute_skills_manifest(local_roots)
+        if manifest is None:
+            local_roots = [local_dir for local_dir, _ in local_skills_dirs]
+            manifest = await self._compute_skills_manifest(local_roots)
 
         if not manifest.get("files"):
             logger.debug("No skills found; skipping upload")
@@ -1475,7 +1552,10 @@ class PTCSandbox:
                 )
 
         # Skills eligible for sandbox upload (exposure "ptc" or "both")
-        from ptc_agent.agent.skills import get_sandbox_skill_names, SKILL_REGISTRY
+        from ptc_agent.agent.middleware.skills import (
+            get_sandbox_skill_names,
+            SKILL_REGISTRY,
+        )
 
         sandbox_skill_names = get_sandbox_skill_names()
         all_registry_names = set(SKILL_REGISTRY.keys())
@@ -1504,7 +1584,10 @@ class PTCSandbox:
                 # Skip flash-only skills (not needed in sandbox).
                 # Only skip skills explicitly marked as flash-only in the registry;
                 # skill dirs not in the registry at all are still uploaded.
-                if skill_name not in sandbox_skill_names and skill_name in all_registry_names:
+                if (
+                    skill_name not in sandbox_skill_names
+                    and skill_name in all_registry_names
+                ):
                     continue
 
                 sandbox_skill_dir = f"{sandbox_dir.rstrip('/')}/{skill_name}"
@@ -2645,7 +2728,9 @@ class PTCSandbox:
             return output.split("\n")
 
         except Exception as e:
-            logger.warning("Async glob failed", pattern=pattern, path=path, error=str(e))
+            logger.warning(
+                "Async glob failed", pattern=pattern, path=path, error=str(e)
+            )
             return []
 
     async def agrep_content(

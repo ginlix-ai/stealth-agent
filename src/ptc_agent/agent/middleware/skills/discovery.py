@@ -1,0 +1,290 @@
+"""Skill discovery — types, parsing, and optimized sandbox scanning.
+
+In-house implementation of skill metadata parsing and filesystem scanning,
+replacing the deepagents dependency. Follows the Agent Skills specification
+(https://agentskills.io/specification).
+"""
+
+import re
+from pathlib import PurePosixPath
+from typing import Any, TypedDict
+
+import structlog
+import yaml
+
+logger = structlog.get_logger(__name__)
+
+# --- Constants ---
+MAX_SKILL_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_SKILL_NAME_LENGTH = 64
+MAX_SKILL_DESCRIPTION_LENGTH = 1024
+MAX_SKILL_COMPATIBILITY_LENGTH = 500
+
+
+# --- Types ---
+
+
+class SkillMetadata(TypedDict):
+    """Metadata for a skill per Agent Skills specification."""
+
+    path: str
+    """Path to the SKILL.md file."""
+
+    name: str
+    """Skill identifier (lowercase alphanumeric + hyphens, 1-64 chars)."""
+
+    description: str
+    """What the skill does (1-1024 chars)."""
+
+    license: str | None
+    """License name or reference to bundled license file."""
+
+    compatibility: str | None
+    """Environment requirements (1-500 chars if provided)."""
+
+    metadata: dict[str, str]
+    """Arbitrary key-value mapping for additional metadata."""
+
+    allowed_tools: list[str]
+    """Tool names the skill recommends using."""
+
+    confirmed: bool
+    """True when valid frontmatter was parsed; False for fallback-discovered skills."""
+
+
+# --- Validation helpers ---
+
+
+def _validate_skill_name(name: str, directory_name: str) -> tuple[bool, str]:
+    """Validate skill name per Agent Skills specification."""
+    if not name:
+        return False, "name is required"
+    if len(name) > MAX_SKILL_NAME_LENGTH:
+        return False, "name exceeds 64 characters"
+    if name.startswith("-") or name.endswith("-") or "--" in name:
+        return False, "name must be lowercase alphanumeric with single hyphens only"
+    for c in name:
+        if c == "-":
+            continue
+        if (c.isalpha() and c.islower()) or c.isdigit():
+            continue
+        return False, "name must be lowercase alphanumeric with single hyphens only"
+    if name != directory_name:
+        return False, f"name '{name}' must match directory name '{directory_name}'"
+    return True, ""
+
+
+def _validate_metadata(raw: object, skill_path: str) -> dict[str, str]:
+    """Validate and normalize the metadata field from YAML frontmatter."""
+    if not isinstance(raw, dict):
+        if raw:
+            logger.warning(
+                "Ignoring non-dict metadata in %s (got %s)",
+                skill_path,
+                type(raw).__name__,
+            )
+        return {}
+    return {str(k): str(v) for k, v in raw.items()}
+
+
+# --- Parsing ---
+
+
+def _make_unconfirmed_metadata(
+    skill_path: str, directory_name: str
+) -> SkillMetadata:
+    """Build a fallback SkillMetadata for skills without valid frontmatter."""
+    return SkillMetadata(
+        name=directory_name,
+        description="",
+        path=skill_path,
+        metadata={},
+        license=None,
+        compatibility=None,
+        allowed_tools=[],
+        confirmed=False,
+    )
+
+
+def _parse_allowed_tools(raw_tools: object, skill_path: str) -> list[str]:
+    """Parse allowed-tools from frontmatter (list or legacy string format)."""
+    if isinstance(raw_tools, list):
+        return [str(t).strip() for t in raw_tools if str(t).strip()]
+    elif isinstance(raw_tools, str):
+        return [t.strip(",") for t in raw_tools.split() if t.strip(",")]
+    else:
+        if raw_tools is not None:
+            logger.warning(
+                "Ignoring unsupported 'allowed-tools' type in %s (got %s)",
+                skill_path,
+                type(raw_tools).__name__,
+            )
+        return []
+
+
+def parse_skill_metadata(
+    content: str,
+    skill_path: str,
+    directory_name: str,
+) -> SkillMetadata:
+    """Parse YAML frontmatter from ``SKILL.md`` content.
+
+    Always returns a SkillMetadata — skills without valid frontmatter get a
+    fallback entry with ``confirmed=False`` so they are still discoverable.
+
+    Args:
+        content: Raw text content of the SKILL.md file.
+        skill_path: Path to the SKILL.md (used in log messages and returned metadata).
+        directory_name: Name of the parent directory (validated against ``name`` field).
+
+    Returns:
+        Parsed SkillMetadata. ``confirmed`` is True when valid frontmatter was
+        parsed, False for fallback/incomplete entries.
+    """
+    if len(content) > MAX_SKILL_FILE_SIZE:
+        logger.warning(
+            "Skipping %s: content too large (%d bytes)", skill_path, len(content)
+        )
+        return _make_unconfirmed_metadata(skill_path, directory_name)
+
+    frontmatter_pattern = r"^---\s*\n(.*?)\n---\s*\n"
+    match = re.match(frontmatter_pattern, content, re.DOTALL)
+
+    if not match:
+        logger.debug("No YAML frontmatter in %s; using fallback metadata", skill_path)
+        return _make_unconfirmed_metadata(skill_path, directory_name)
+
+    frontmatter_str = match.group(1)
+
+    try:
+        frontmatter_data = yaml.safe_load(frontmatter_str)
+    except yaml.YAMLError as e:
+        logger.warning("Invalid YAML in %s: %s", skill_path, e)
+        return _make_unconfirmed_metadata(skill_path, directory_name)
+
+    if not isinstance(frontmatter_data, dict):
+        logger.warning("Frontmatter is not a mapping in %s; using fallback", skill_path)
+        return _make_unconfirmed_metadata(skill_path, directory_name)
+
+    name = str(frontmatter_data.get("name", "")).strip()
+    description = str(frontmatter_data.get("description", "")).strip()
+
+    confirmed = True
+    if not name:
+        name = directory_name
+        confirmed = False
+    if not description:
+        confirmed = False
+
+    is_valid, error = _validate_skill_name(name, directory_name)
+    if not is_valid:
+        logger.warning(
+            "Skill '%s' in %s: %s — using directory name",
+            name,
+            skill_path,
+            error,
+        )
+        name = directory_name
+        confirmed = False
+
+    description_str = description
+    if len(description_str) > MAX_SKILL_DESCRIPTION_LENGTH:
+        logger.warning(
+            "Description exceeds %d characters in %s, truncating",
+            MAX_SKILL_DESCRIPTION_LENGTH,
+            skill_path,
+        )
+        description_str = description_str[:MAX_SKILL_DESCRIPTION_LENGTH]
+
+    allowed_tools = _parse_allowed_tools(
+        frontmatter_data.get("allowed-tools"), skill_path
+    )
+
+    compatibility_str = str(frontmatter_data.get("compatibility", "")).strip() or None
+    if compatibility_str and len(compatibility_str) > MAX_SKILL_COMPATIBILITY_LENGTH:
+        logger.warning(
+            "Compatibility exceeds %d characters in %s, truncating",
+            MAX_SKILL_COMPATIBILITY_LENGTH,
+            skill_path,
+        )
+        compatibility_str = compatibility_str[:MAX_SKILL_COMPATIBILITY_LENGTH]
+
+    return SkillMetadata(
+        name=name,
+        description=description_str,
+        path=skill_path,
+        metadata=_validate_metadata(frontmatter_data.get("metadata", {}), skill_path),
+        license=str(frontmatter_data.get("license", "")).strip() or None,
+        compatibility=compatibility_str,
+        allowed_tools=allowed_tools,
+        confirmed=confirmed,
+    )
+
+
+# --- Optimized discovery ---
+
+
+async def adiscover_skills(
+    backend: Any,
+    source_path: str,
+    known_skills: dict[str, SkillMetadata],
+) -> list[SkillMetadata]:
+    """Discover skills from sandbox filesystem, downloading only new ones.
+
+    For skills already present in ``known_skills`` (keyed by directory name),
+    the cached metadata is returned without downloading. Only skills found in
+    the filesystem but absent from ``known_skills`` trigger a download.
+
+    Args:
+        backend: DaytonaBackend for sandbox I/O (must support ``als_info``
+            and ``adownload_files``).
+        source_path: Sandbox path to scan (e.g. ``/home/daytona/skills/``).
+        known_skills: Pre-parsed skill metadata from the upload manifest.
+            Skills present here are returned as-is without re-downloading.
+
+    Returns:
+        List of all discovered SkillMetadata (known + newly found).
+    """
+    items = await backend.als_info(source_path)  # 1 API call
+    skill_dirs = [item["path"] for item in items if item.get("is_dir")]
+
+    if not skill_dirs:
+        return []
+
+    results: list[SkillMetadata] = []
+    to_download: list[tuple[str, str]] = []  # (dir_path, skill_md_path)
+
+    for dir_path in skill_dirs:
+        dir_name = PurePosixPath(dir_path).name
+        if dir_name in known_skills:
+            results.append(known_skills[dir_name])  # Cache hit — no download
+        else:
+            skill_md_path = str(PurePosixPath(dir_path) / "SKILL.md")
+            to_download.append((dir_path, skill_md_path))
+
+    # Download only SKILL.md files for unknown skills
+    if to_download:
+        paths = [p for _, p in to_download]
+        responses = await backend.adownload_files(paths)  # parallel downloads
+
+        for (dir_path, skill_md_path), response in zip(
+            to_download, responses, strict=True
+        ):
+            directory_name = PurePosixPath(dir_path).name
+            if response.error or response.content is None:
+                # SKILL.md missing or unreadable — still discover as unconfirmed
+                results.append(
+                    _make_unconfirmed_metadata(skill_md_path, directory_name)
+                )
+                continue
+            try:
+                content = response.content.decode("utf-8")
+            except UnicodeDecodeError:
+                results.append(
+                    _make_unconfirmed_metadata(skill_md_path, directory_name)
+                )
+                continue
+            meta = parse_skill_metadata(content, skill_md_path, directory_name)
+            results.append(meta)
+
+    return results

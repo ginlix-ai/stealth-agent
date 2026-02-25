@@ -60,9 +60,9 @@ from ptc_agent.agent.middleware.summarization import (
     count_tokens_tiktoken,
 )
 
-# Dynamic skill loader middleware
-from ptc_agent.agent.middleware.dynamic_skill_loader import (
-    DynamicSkillLoaderMiddleware,
+# Skills middleware (registry + dynamic loader)
+from ptc_agent.agent.middleware.skills import (
+    SkillsMiddleware,
 )
 
 # Large result eviction middleware
@@ -122,8 +122,8 @@ __all__ = [
     "SummarizationMiddleware",
     "DEFAULT_SUMMARY_PROMPT",
     "count_tokens_tiktoken",
-    # Dynamic skill loader
-    "DynamicSkillLoaderMiddleware",
+    # Skills
+    "SkillsMiddleware",
     # Large result eviction
     "LargeResultEvictionMiddleware",
     # Message queue

@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
-from ptc_agent.agent.skills import list_skills, SkillMode
+from ptc_agent.agent.middleware.skills import list_skills, SkillMode
 
 router = APIRouter(prefix="/api/v1/skills", tags=["Skills"])
 

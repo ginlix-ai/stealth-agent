@@ -17,7 +17,7 @@ from ptc_agent.agent.middleware import (
     ToolErrorHandlingMiddleware,
     ToolResultNormalizationMiddleware,
     SummarizationMiddleware,
-    DynamicSkillLoaderMiddleware,
+    SkillsMiddleware,
     AskUserMiddleware,
 )
 from ptc_agent.agent.prompts import format_current_time, get_loader
@@ -192,7 +192,7 @@ class FlashAgent:
         ]
 
         # Add dynamic skill loader middleware (Flash mode: inline SKILL.md)
-        skill_loader_middleware = DynamicSkillLoaderMiddleware(
+        skill_loader_middleware = SkillsMiddleware(
             mode="flash",
         )
         shared_middleware.append(skill_loader_middleware)

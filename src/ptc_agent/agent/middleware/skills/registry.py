@@ -144,7 +144,7 @@ def get_skill_registry(mode: SkillMode | None = None) -> dict[str, SkillDefiniti
         Dict of skill name to SkillDefinition for matching skills
     """
     if mode is None:
-        return SKILL_REGISTRY
+        return dict(SKILL_REGISTRY)
     return {
         name: skill
         for name, skill in SKILL_REGISTRY.items()
