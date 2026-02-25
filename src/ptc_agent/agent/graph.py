@@ -171,6 +171,7 @@ async def build_ptc_graph_with_session(
     background_registry: Any | None = None,
     user_id: str | None = None,
     plan_mode: bool = False,
+    thread_id: str | None = None,
 ) -> Any:
     """
     Build a compiled LangGraph using a provided session.
@@ -231,6 +232,9 @@ async def build_ptc_graph_with_session(
         background_registry=background_registry,
         user_profile=user_profile,
         plan_mode=plan_mode,
+        session=session,
+        thread_id=thread_id,
+        on_agent_md_write=session.invalidate_agent_md,
     )
 
     logger.info(

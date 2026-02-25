@@ -3,43 +3,24 @@
 Images saved to `results/` are automatically uploaded to cloud storage. The URL is returned in the response.
 
 **CRITICAL**: Use RELATIVE paths, NOT absolute paths:
-- CORRECT: `plt.savefig('results/chart.png')` -> auto-uploaded, URL returned
-- WRONG: `plt.savefig('/results/chart.png')` -> NOT uploaded!
-{% if detailed | default(false) %}
+- CORRECT: `plt.savefig('results/chart.png')` → auto-uploaded, URL returned
+- WRONG: `plt.savefig('/results/chart.png')` → NOT uploaded!
 
-## Creating Visualizations
-
-```python
-import matplotlib.pyplot as plt
-
-# Option 1: plt.show() - chart captured and uploaded automatically
-plt.figure(figsize=(10, 6))
-plt.plot(data)
-plt.title("My Chart")
-plt.show()  # Automatically uploaded, URL returned in response
-
-# Option 2: Save to results/ - image uploaded automatically (use RELATIVE path!)
-plt.savefig('results/chart.png')  # CORRECT: relative path
-# plt.savefig('/results/chart.png')  # WRONG: absolute path won't be uploaded!
-print("Saved chart")  # URL returned in response
-```
-
-Supported image formats: PNG, JPG, JPEG, SVG, GIF, WEBP, BMP, TIFF
-
-Response includes markdown image URLs: `![chart_title](https://storage-url/chart.png)`
-{% else %}
-
-Example:
+During work, save charts to your task directory. When finalized, move to `results/` for auto-upload:
 ```python
 import matplotlib.pyplot as plt
 plt.figure(figsize=(10, 6))
 plt.plot(data)
-plt.savefig('results/chart.png')  # Use relative path!
-print("Chart saved")
+# During work — save to task dir
+plt.savefig('work/<task_name>/chart.png')
+# When finalized — move to results/ for auto-upload
+import shutil
+shutil.move('work/<task_name>/chart.png', 'results/chart.png')
 ```
 
-The response includes: `![chart](https://storage-url/chart.png)` - reference this URL in your report.
-{% endif %}
+Embed chart references in your report: `![Title](results/chart.png)`
+
+The response includes `![chart](https://storage-url/chart.png)` — reference this URL in deliverables.
 {% else %}
 Save visualizations to `results/` and reference them with markdown image syntax.
 The frontend renders sandbox images inline automatically.
@@ -48,10 +29,13 @@ The frontend renders sandbox images inline automatically.
 - CORRECT: `plt.savefig('results/chart.png')`
 - WRONG: `plt.savefig('/results/chart.png')`
 
-Example:
+During work, save charts to your task directory. When finalized, move to `results/`:
 ```python
-plt.savefig('results/chart.png', dpi=150, bbox_inches='tight')
+plt.savefig('work/<task_name>/chart.png', dpi=150, bbox_inches='tight')
+# When ready for user:
+import shutil
+shutil.move('work/<task_name>/chart.png', 'results/chart.png')
 ```
 
-Reference in your response: `![Chart Title](results/chart.png)`
+Embed chart references in your report: `![Chart Title](results/chart.png)`
 {% endif %}

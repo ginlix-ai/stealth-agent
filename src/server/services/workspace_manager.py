@@ -222,6 +222,56 @@ class WorkspaceManager:
             if user_id:
                 self._user_data_synced.add(workspace_id)
 
+    @staticmethod
+    async def _seed_agent_md(
+        sandbox: Any,
+        name: str,
+        description: Optional[str] = None,
+    ) -> None:
+        """Write a default agent.md with workspace metadata and update instructions.
+
+        Uses YAML front matter so the agent (and future tooling) can parse
+        workspace identity from the file. Includes inline instructions so
+        the agent knows how to maintain this file without detection logic.
+        """
+        if not sandbox:
+            return
+
+        desc = description or "Brief 1-2 sentence description — update based on the first conversation."
+        lines = [
+            "---",
+            f"workspace_name: {name}",
+            f"description: {desc}",
+            "---",
+            "",
+            f"# {name}",
+            "",
+        ]
+        lines += [
+            "<!--",
+            "This is a starter template. Replace these comments with real content",
+            "as you work. The system prompt has full guidelines on what to maintain.",
+            "-->",
+            "",
+            "## Thread Index",
+            "",
+            "## Key Findings",
+            "",
+            "## File Index",
+            "",
+        ]
+
+        content = "\n".join(lines)
+        try:
+            # Pass relative path — awrite_file_text calls normalize_path internally
+            written = await sandbox.awrite_file_text("agent.md", content)
+            if written:
+                logger.info(f"Seeded agent.md for workspace '{name}'")
+            else:
+                logger.warning(f"Failed to seed agent.md for workspace '{name}'")
+        except Exception as e:
+            logger.warning(f"Failed to seed agent.md: {e}")
+
     async def _recover_sandbox(
         self,
         workspace_id: str,
@@ -333,6 +383,9 @@ class WorkspaceManager:
                 await self._sync_sandbox_assets(
                     workspace_id, user_id, session.sandbox, reusing_sandbox=False
                 )
+
+                # Seed default agent.md with workspace metadata
+                await self._seed_agent_md(session.sandbox, name, description)
 
                 # Store session in cache
                 self._sessions[workspace_id] = session

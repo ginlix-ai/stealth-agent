@@ -99,7 +99,7 @@ class LargeResultEvictionMiddleware(AgentMiddleware):
     This middleware intercepts tool call results and evicts them to the filesystem
     when they exceed a token threshold, preventing context window overflow.
 
-    The evicted content is written to /large_tool_results/{tool_call_id} and the
+    The evicted content is written to {eviction_dir}/{tool_call_id} and the
     original message is replaced with a truncated preview plus file reference.
 
     Args:
@@ -113,15 +113,18 @@ class LargeResultEvictionMiddleware(AgentMiddleware):
         *,
         backend: BackendProtocol,
         tool_token_limit_before_evict: int = 40000,
+        eviction_dir: str = ".agent/large_tool_results",
     ) -> None:
         """Initialize the large result eviction middleware.
 
         Args:
             backend: Backend for file storage.
             tool_token_limit_before_evict: Token limit before evicting results.
+            eviction_dir: Directory path for evicted tool results.
         """
         self.backend = backend
         self._tool_token_limit_before_evict = tool_token_limit_before_evict
+        self._eviction_dir = eviction_dir
 
     def _process_large_message(
         self,
@@ -166,7 +169,7 @@ class LargeResultEvictionMiddleware(AgentMiddleware):
 
         # Write content to filesystem
         sanitized_id = sanitize_tool_call_id(message.tool_call_id)
-        file_path = f"/large_tool_results/{sanitized_id}{_detect_extension(content_str)}"
+        file_path = f"{self._eviction_dir}/{sanitized_id}{_detect_extension(content_str)}"
         result = self.backend.write(file_path, content_str)
         if result.error:
             return message, None
@@ -225,7 +228,7 @@ class LargeResultEvictionMiddleware(AgentMiddleware):
 
         # Write content to filesystem using async method
         sanitized_id = sanitize_tool_call_id(message.tool_call_id)
-        file_path = f"/large_tool_results/{sanitized_id}{_detect_extension(content_str)}"
+        file_path = f"{self._eviction_dir}/{sanitized_id}{_detect_extension(content_str)}"
         result = await self.backend.awrite(file_path, content_str)
         if result.error:
             return message, None

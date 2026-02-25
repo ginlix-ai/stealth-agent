@@ -49,12 +49,6 @@ print(result)
 2. **Read docs**: `Read("tools/docs/{server_name}/{tool_name}.md")` — get signature, parameters, examples
 3. **Fallback**: `Read("tools/{server_name}.py", offset=N, limit=30)` — only if docs are missing
 
-| Goal | Command |
-|------|---------|
-| List server's tools | `Glob("tools/docs/{server_name}/*.md")` |
-| Read tool docs | `Read("tools/docs/{server_name}/{tool_name}.md")` |
-| Search all docs | `Grep("{keyword}", path="tools/docs/")` |
-
 **When to use MCP tools**: When you need raw time-series data for calculations, multi-ticker batch analysis, financial modeling, charting with matplotlib/plotly, or any task requiring programmatic data manipulation.
 
 ## Tool Selection Principles

@@ -1,7 +1,7 @@
 """
 File Operation Middleware for Real-Time SSE Event Emission.
 
-This middleware intercepts write_file and edit_file tool calls to emit
+This middleware intercepts Write and Edit tool calls to emit
 file_operation events using LangGraph's custom event streaming API.
 
 Architecture:
@@ -11,16 +11,16 @@ Architecture:
 - Works around limitation that tool Command updates don't reach stream_mode="updates"
 
 Event Structure (ordered fields):
-1. agent - Agent name (added by StreamingHandler)
-2. operation - "write_file" or "edit_file"
+1. agent - Agent name
+2. operation - "Write" or "Edit"
 3. file_path - Full path to the file
 4. tool_call_id - Tool call identifier
 5. timestamp - ISO format timestamp
 6. status - "completed" or "failed"
 7. line_count - Number of lines in content
-8. content - Full file content (write_file only)
-9. old_string - Original content (edit_file only)
-10. new_string - Replacement content (edit_file only)
+8. content - Full file content (Write only)
+9. old_string - Original content (Edit only)
+10. new_string - Replacement content (Edit only)
 """
 
 import logging
@@ -59,7 +59,18 @@ class FileOperationMiddleware(AgentMiddleware):
     state_schema = FileOperationState
 
     # Tools to monitor for file operations
-    MONITORED_TOOLS = {"write_file", "edit_file"}
+    # Tool names match @tool("Write") and @tool("Edit") decorators in file_ops.py
+    MONITORED_TOOLS = {"Write", "Edit"}
+
+    def __init__(self, on_agent_md_write: Callable[[], None] | None = None) -> None:
+        """Initialize middleware.
+
+        Args:
+            on_agent_md_write: Optional callback invoked when agent.md is written/edited.
+                Used to invalidate Session's agent.md cache.
+        """
+        super().__init__()
+        self._on_agent_md_write = on_agent_md_write
 
     @staticmethod
     def _count_lines(text: str) -> int:
@@ -67,42 +78,6 @@ class FileOperationMiddleware(AgentMiddleware):
         if not text:
             return 0
         return text.count('\n') + (1 if text and not text.endswith('\n') else 0)
-
-    def _extract_agent_name_from_state(self, request: Any) -> str:
-        """
-        Extract agent name from graph state.
-
-        The graph state contains a current_agent field that's set by routing
-        functions (e.g., continue_to_running_research_team) before dispatching
-        to each agent. This allows middleware to know which agent is currently running.
-
-        Args:
-            request: Tool call request which should have access to state
-
-        Returns:
-            Agent name from state, or "unknown" if not available
-        """
-        try:
-            # Access state from request
-            if hasattr(request, 'state') and isinstance(request.state, dict):
-                current_agent = request.state.get('current_agent', '')
-
-                if current_agent:
-                    # Normalize to short name for SSE consistency
-                    # "deep_research/coder" → "coder"
-                    short_name = current_agent.split("/")[-1] if "/" in current_agent else current_agent
-                    logger.debug(f"[AGENT_EXTRACT] from state.current_agent: {current_agent} → {short_name}")
-                    return short_name
-                else:
-                    logger.debug("[AGENT_EXTRACT] current_agent field empty in state")
-            else:
-                logger.debug(f"[AGENT_EXTRACT] request.state not available or not dict. Has state: {hasattr(request, 'state')}")
-
-        except Exception as e:
-            logger.debug(f"[AGENT_EXTRACT] Failed to extract from state: {e}")
-
-        logger.warning("[AGENT_EXTRACT] Could not extract agent from state - returning 'unknown'")
-        return "unknown"
 
     async def awrap_tool_call(
         self,
@@ -151,6 +126,16 @@ class FileOperationMiddleware(AgentMiddleware):
         try:
             result = await handler(request)
 
+            # Invalidate agent.md cache when agent.md is written or edited
+            if self._on_agent_md_write and file_path:
+                # Normalize: strip workspace prefix and ./ to get relative filename
+                normalized = file_path.replace("/home/daytona/", "").lstrip("./")
+                if normalized == "agent.md":
+                    try:
+                        self._on_agent_md_write()
+                    except Exception:
+                        logger.debug("[FILE_OP_MIDDLEWARE] Failed to invalidate agent.md cache")
+
             # Build completed event with structure expected by streaming_handler
             # Must include artifact_type for handler to recognize and emit as SSE artifact event
             timestamp = datetime.now(timezone.utc).isoformat()
@@ -161,12 +146,12 @@ class FileOperationMiddleware(AgentMiddleware):
                 "file_path": file_path,
             }
 
-            if tool_name == "write_file":
+            if tool_name == "Write":
                 content = tool_args.get("content", "")
                 payload["line_count"] = self._count_lines(content)
                 payload["content"] = content
 
-            elif tool_name == "edit_file":
+            elif tool_name == "Edit":
                 old_string = tool_args.get("old_string", "")
                 new_string = tool_args.get("new_string", "")
                 payload["line_count"] = self._count_lines(new_string)

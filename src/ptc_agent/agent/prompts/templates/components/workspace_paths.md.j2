@@ -2,37 +2,43 @@
 
 Working directory: `/home/daytona`
 
-## Standard Directories
+## Directory Layout
 
-| Directory | Purpose |
-|-----------|---------|
-| `results/` | Final deliverables (reports, visualizations) |
-| `data/` | Intermediate storage (tool results, API responses) |
-| `tools/` | MCP tool modules (auto-generated) |
-| `code/` | Execution history (exec_0001.py, etc.) |
-| `.agent/user/` | User profile data (preferences, watchlist, portfolio) - READ ONLY |
+| Path | Purpose | Scope |
+|------|---------|-------|
+| `agent.md` | Workspace purpose, long-term goals, reusable artifact index | Workspace-wide, read/write |
+| `work/` | Your working area — create a subdirectory per task | Read/write |
+| `results/` | Finalized deliverables only (moved from task dirs when done) | Workspace-wide, write via mv |
+| `data/` | Shared reusable datasets across threads | Workspace-wide, read/write |
+| `tools/` | MCP tool modules (auto-generated) | Read only |
+| `.agent/user/` | User profile (preferences, watchlist, portfolio) | Read only |
+
+Never put files directly in `work/` — always use `work/<task_name>/`.
 
 ## Path Rules by Tool
 
-**ExecuteCode (Python)** - Use RELATIVE paths:
+**ExecuteCode (Python)** — Use RELATIVE paths:
 ```python
-with open('results/output.json', 'w') as f:  # Correct
-with open('data/temp.json', 'w') as f:       # Correct
+# Working files go in task dir
+with open('work/sector_analysis/data.json', 'w') as f:
+    json.dump(data, f)
+# Finalized output moved to results/
+import shutil
+shutil.move('work/sector_analysis/report.md', 'results/report.md')
 ```
 
-**File tools (Read/Write/Edit)** - Use RELATIVE paths:
+**File tools (Read/Write/Edit)** — Use RELATIVE paths:
 ```
-file_path = "results/report.md"    # Correct
-file_path = "config.yaml"          # Correct
+file_path = "work/sector_analysis/data.json"
+file_path = "results/final_report.md"
 ```
 
-**Bash tool** - Use ABSOLUTE paths (working_dir is `/home/daytona`):
+**Bash tool** — Absolute or relative paths:
 ```bash
-ls /home/daytona/results/          # Correct
-cat /home/daytona/data/output.json # Correct
-ls results/                        # Also works (relative to working_dir)
+ls work/
+mv work/sector_analysis/chart.png results/
 ```
 
 **NEVER use these path patterns**:
-- `/workspace/...` - Wrong prefix, becomes `/home/daytona/workspace/...`
-- Absolute paths starting with `/results/` or `/data/` in Bash - these don't exist at root level
+- `/workspace/...` — Wrong prefix, becomes `/home/daytona/workspace/...`
+- Absolute paths starting with `/results/` or `/data/` in Bash — these don't exist at root level

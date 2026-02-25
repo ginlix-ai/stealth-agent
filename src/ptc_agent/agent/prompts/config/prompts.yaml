@@ -17,9 +17,6 @@ defaults:
   # Component defaults
   include_examples: true
   include_anti_patterns: true
-  include_file_guidelines: false
-  detailed: false
-  for_task_workflow: false
 
 # System prompt template metadata (for documentation)
 system:
@@ -58,13 +55,10 @@ components:
   visualizations:
     description: Visualization instructions (cloud upload or inline sandbox rendering)
     optional_vars:
-      - detailed
       - storage_enabled
 
   output_guidelines:
     description: Output formatting guidelines
-    optional_vars:
-      - for_task_workflow
 
   citation_rules:
     description: Citation formatting rules

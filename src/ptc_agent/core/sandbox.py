@@ -124,6 +124,9 @@ class PTCSandbox:
         self._tool_refresh_lock = asyncio.Lock()
         self._reconnect_inflight: asyncio.Future[None] | None = None
 
+        # Track per-thread code dirs that have been created (avoids repeated mkdir)
+        self._thread_dirs_created: set[str] = set()
+
         # Lazy initialization support
         self._ready_event: asyncio.Event | None = None
         self._init_task: asyncio.Task[None] | None = None
@@ -804,6 +807,8 @@ class PTCSandbox:
             f"{work_dir}/results",
             f"{work_dir}/data",
             f"{work_dir}/code",
+            f"{work_dir}/work",
+            f"{work_dir}/.agent/threads",
             f"{work_dir}/_internal/src",
         ]
 
@@ -1815,6 +1820,7 @@ class PTCSandbox:
         *,
         auto_install: bool = True,
         max_retries: int = 2,
+        thread_id: str | None = None,
     ) -> ExecutionResult:
         """Execute Python code in the sandbox with optional auto-install for missing dependencies.
 
@@ -1823,6 +1829,7 @@ class PTCSandbox:
             timeout: Optional timeout in seconds
             auto_install: Whether to automatically install missing packages on ImportError (default: True)
             max_retries: Maximum number of retries after auto-installing packages (default: 2)
+            thread_id: Optional thread ID (first 8 chars) for thread-scoped code storage
 
         Returns:
             ExecutionResult with execution details
@@ -1839,13 +1846,25 @@ class PTCSandbox:
             code_hash=code_hash,
             code_length=len(code),
             auto_install=auto_install,
+            thread_id=thread_id,
         )
 
         start_time = time.time()
 
         try:
-            # Write code to file
-            code_path = f"code/{execution_id}.py"
+            # Write code to thread dir or fallback to code/
+            if thread_id:
+                code_path = f".agent/threads/{thread_id}/code/{execution_id}.py"
+                # Ensure per-thread code dir exists (lazy, once per thread)
+                if thread_id not in self._thread_dirs_created:
+                    await self._daytona_call(
+                        self.sandbox.process.exec,
+                        f"mkdir -p {self.normalize_path(f'.agent/threads/{thread_id}/code')}",
+                        retry_policy=_DaytonaRetryPolicy.SAFE,
+                    )
+                    self._thread_dirs_created.add(thread_id)
+            else:
+                code_path = f"code/{execution_id}.py"
             await self._daytona_call(
                 self.sandbox.fs.upload_file,
                 code.encode("utf-8"),
@@ -1988,6 +2007,7 @@ class PTCSandbox:
                         timeout=timeout,
                         auto_install=auto_install,
                         max_retries=max_retries - 1,
+                        thread_id=thread_id,
                     )
 
             logger.info(
@@ -2030,6 +2050,7 @@ class PTCSandbox:
         timeout: int = 60,
         *,
         background: bool = False,
+        thread_id: str | None = None,
     ) -> dict[str, Any]:
         """Execute a bash command in the sandbox.
 
@@ -2038,6 +2059,7 @@ class PTCSandbox:
             working_dir: Working directory for command execution (default: /home/daytona)
             timeout: Maximum execution time in seconds (default: 60)
             background: Run command in background (not fully implemented yet)
+            thread_id: Optional thread ID (first 8 chars) for thread-scoped script storage
 
         Returns:
             Dictionary with success, stdout, stderr, exit_code, bash_id, command_hash
@@ -2078,9 +2100,20 @@ class PTCSandbox:
                 {full_command}
             """)
 
-            # Write script to code/ directory for persistent logging
+            # Write script to thread dir or code/ for persistent logging
             # Normalize path to ensure it's in the correct format for Daytona SDK
-            script_relative_path = f"code/{bash_id}.sh"
+            if thread_id:
+                script_relative_path = f".agent/threads/{thread_id}/code/{bash_id}.sh"
+                # Ensure per-thread code dir exists (lazy, once per thread)
+                if thread_id not in self._thread_dirs_created:
+                    await self._daytona_call(
+                        self.sandbox.process.exec,
+                        f"mkdir -p {self.normalize_path(f'.agent/threads/{thread_id}/code')}",
+                        retry_policy=_DaytonaRetryPolicy.SAFE,
+                    )
+                    self._thread_dirs_created.add(thread_id)
+            else:
+                script_relative_path = f"code/{bash_id}.sh"
             script_normalized_path = self.normalize_path(script_relative_path)
             assert self.sandbox is not None
             await self._daytona_call(

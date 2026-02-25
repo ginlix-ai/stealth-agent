@@ -504,7 +504,17 @@ async def write_workspace_file(
     if not ok:
         raise HTTPException(status_code=500, detail="Write failed")
 
+    # Invalidate agent.md cache when user edits agent.md via UI
     client_path = _to_client_path(sandbox, normalized)
+    if client_path == "agent.md":
+        try:
+            manager = WorkspaceManager.get_instance()
+            session = manager._sessions.get(workspace_id)
+            if session:
+                session.invalidate_agent_md()
+        except Exception:
+            pass
+
     return {
         "workspace_id": workspace_id,
         "path": client_path,

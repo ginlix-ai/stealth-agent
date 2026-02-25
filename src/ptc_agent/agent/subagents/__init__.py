@@ -22,7 +22,7 @@ SUBAGENT_PARAMS = {
         "accepted": ["max_researcher_iterations", "mcp_tools", "current_time"],
     },
     "general-purpose": {
-        "accepted": ["max_iterations", "additional_tools", "include_mcp_docs", "tool_exposure_mode", "filesystem_tools", "current_time"],
+        "accepted": ["max_iterations", "additional_tools", "include_mcp_docs", "tool_exposure_mode", "filesystem_tools", "current_time", "thread_id"],
     },
 }
 

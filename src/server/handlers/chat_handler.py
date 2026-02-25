@@ -1051,6 +1051,8 @@ async def astream_ptc_workflow(
             effective_plan_mode = False
 
         # Build graph with the workspace's session
+        # Note: agent.md is injected dynamically by WorkspaceContextMiddleware
+        # on every model call, ensuring it's always the latest content.
         ptc_graph = await build_ptc_graph_with_session(
             session=session,
             config=config,
@@ -1060,6 +1062,7 @@ async def astream_ptc_workflow(
             background_registry=background_registry,
             user_id=user_id,
             plan_mode=effective_plan_mode,
+            thread_id=thread_id,
         )
 
         if session.sandbox:
@@ -1166,6 +1169,19 @@ async def astream_ptc_workflow(
                             {"type": "text", "text": plan_mode_reminder}
                         )
             logger.info(f"[PTC_CHAT] Plan mode enabled for thread_id={thread_id}")
+
+        # =====================================================================
+        # Save user request to system thread directory (non-critical)
+        # =====================================================================
+        if not request.hitl_response and session.sandbox:
+            short_id = thread_id[:8]
+            try:
+                request_path = session.sandbox.normalize_path(
+                    f".agent/threads/{short_id}/request.md"
+                )
+                await session.sandbox.awrite_file_text(request_path, user_input)
+            except Exception:
+                pass  # Non-critical, don't fail the request
 
         # =====================================================================
         # LangSmith Tracing Configuration

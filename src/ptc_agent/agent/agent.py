@@ -45,6 +45,8 @@ from ptc_agent.agent.middleware import (
     MessageQueueMiddleware,
     # Subagent message queue middleware
     SubagentMessageQueueMiddleware,
+    # Workspace context middleware
+    WorkspaceContextMiddleware,
 )
 from ptc_agent.agent.middleware.background_subagent.registry import BackgroundTaskRegistry
 from ptc_agent.agent.prompts import (
@@ -151,6 +153,7 @@ class PTCAgent:
         user_profile: dict | None = None,
         plan_mode: bool = False,
         current_time: str | None = None,
+        thread_id: str | None = None,
     ) -> str:
         """Build the system prompt for the agent.
 
@@ -160,6 +163,7 @@ class PTCAgent:
             user_profile: Optional user profile dict with name, timezone, locale
             plan_mode: If True, includes plan mode workflow instructions
             current_time: Pre-formatted current time string for time awareness
+            thread_id: Optional thread ID (first 8 chars) for thread-scoped directories
 
         Returns:
             Complete system prompt
@@ -178,8 +182,8 @@ class PTCAgent:
             plan_mode=plan_mode,
             include_examples=True,
             include_anti_patterns=True,
-            for_task_workflow=True,
             current_time=current_time,
+            thread_id=thread_id or "",
         )
 
     def _build_model_resilience_middleware(self) -> list[Any]:
@@ -251,12 +255,14 @@ class PTCAgent:
         additional_subagents: list[dict[str, Any]] | None = None,
         background_timeout: float = 300.0,
         checkpointer: Any | None = None,
-        system_prompt_suffix: str | None = None,
+        session: Any | None = None,
         llm: Any | None = None,
         operation_callback: Any | None = None,
         background_registry: BackgroundTaskRegistry | None = None,
         user_profile: dict | None = None,
         plan_mode: bool = False,
+        thread_id: str | None = None,
+        on_agent_md_write: Any | None = None,
     ) -> Any:
         """Create a deepagent with PTC pattern capabilities.
 
@@ -269,8 +275,8 @@ class PTCAgent:
             background_timeout: Timeout for waiting on background tasks (seconds)
             checkpointer: Optional LangGraph checkpointer for state persistence.
                 Required for submit_plan interrupt/resume workflow.
-            system_prompt_suffix: Optional string to append to the system prompt.
-                Useful for adding user/project-specific instructions (e.g., agent.md content).
+            session: Optional Session object. When provided, WorkspaceContextMiddleware
+                dynamically injects agent.md into the system prompt on every model call.
             llm: Optional LLM override. If provided, uses this instead of self.llm.
                 Useful for model switching without recreating PTCAgent instance.
             operation_callback: Optional callback for file operation logging.
@@ -280,6 +286,10 @@ class PTCAgent:
                 injection into the system prompt.
             plan_mode: If True, adds submit_plan tool for plan review workflow.
                 HITL middleware is always added for future interrupt features.
+            thread_id: Optional thread ID for thread-scoped workspace directories.
+                First 8 chars used as thread directory name in .agent/threads/{id}/.
+            on_agent_md_write: Optional callback invoked when agent.md is written/edited.
+                Used to invalidate Session's agent.md cache.
 
         Returns:
             Configured BackgroundSubagentOrchestrator wrapping the deepagent
@@ -292,11 +302,14 @@ class PTCAgent:
         timezone_str = (user_profile or {}).get("timezone")
         current_time = format_current_time(request_time, timezone_str)
 
+        # Compute short thread ID for thread-scoped storage
+        short_thread_id = thread_id[:8] if thread_id else ""
+
         # Create the execute_code tool for MCP invocation
-        execute_code_tool = create_execute_code_tool(sandbox, mcp_registry)
+        execute_code_tool = create_execute_code_tool(sandbox, mcp_registry, thread_id=short_thread_id)
 
         # Create the Bash tool for shell command execution
-        bash_tool = create_execute_bash_tool(sandbox)
+        bash_tool = create_execute_bash_tool(sandbox, thread_id=short_thread_id)
 
         # Start with base tools
         tools: list[Any] = [execute_code_tool, bash_tool, TodoWrite]
@@ -356,7 +369,7 @@ class PTCAgent:
         )
 
         # File operation SSE middleware - emits events for write_file/edit_file
-        shared_middleware.append(FileOperationMiddleware())
+        shared_middleware.append(FileOperationMiddleware(on_agent_md_write=on_agent_md_write))
 
         # Todo operation SSE middleware - emits events for TodoWrite
         shared_middleware.append(TodoWriteMiddleware())
@@ -427,6 +440,7 @@ class PTCAgent:
             filesystem_tools=filesystem_tools,  # Pass custom tools to subagents
             additional_tools=finance_tools,  # Pass finance tools to general-purpose subagent
             current_time=current_time,
+            thread_id=short_thread_id,  # Thread-scoped code storage for subagents
         )
 
         if additional_subagents:
@@ -438,16 +452,18 @@ class PTCAgent:
         # Build subagent summary for system prompt
         subagent_summary = format_subagent_summary(subagents)
 
-        # Build system prompt
+        # Build system prompt and eviction dir (short_thread_id computed earlier)
+        eviction_dir = (
+            f".agent/threads/{short_thread_id}/large_tool_results"
+            if short_thread_id
+            else ".agent/large_tool_results"
+        )
         system_prompt = self._build_system_prompt(
             tool_summary, subagent_summary, user_profile,
             plan_mode=plan_mode,
             current_time=current_time,
+            thread_id=short_thread_id,
         )
-
-        # Append suffix if provided (e.g., agent.md content)
-        if system_prompt_suffix:
-            system_prompt = f"{system_prompt}\n\n{system_prompt_suffix}"
 
         # Store subagent info for introspection (used by print_agent_config)
         self.subagents = {}
@@ -500,7 +516,7 @@ class PTCAgent:
             for m in [
                 SubagentMessageQueueMiddleware(registry=background_middleware.registry),
                 *skills_middleware,
-                LargeResultEvictionMiddleware(backend=backend),
+                LargeResultEvictionMiddleware(backend=backend, eviction_dir=eviction_dir),
                 *shared_middleware,
                 summarization,
                 *model_resilience,
@@ -510,12 +526,19 @@ class PTCAgent:
             if m is not None
         ]
 
+        # Workspace context middleware (agent.md injection — main agent only)
+        workspace_context_middleware: list[Any] = []
+        if session is not None:
+            workspace_context_middleware = [
+                WorkspaceContextMiddleware(session=session)
+            ]
+
         # Main agent middleware (includes SubAgentMiddleware + main_only)
         deepagent_middleware = [
             m
             for m in [
                 *skills_middleware,
-                LargeResultEvictionMiddleware(backend=backend),
+                LargeResultEvictionMiddleware(backend=backend, eviction_dir=eviction_dir),
                 SubAgentMiddleware(
                     default_model=model,
                     default_tools=tools,
@@ -530,6 +553,7 @@ class PTCAgent:
                 *model_resilience,
                 AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
                 PatchToolCallsMiddleware(),
+                *workspace_context_middleware,
             ]
             if m is not None
         ]

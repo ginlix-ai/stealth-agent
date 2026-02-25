@@ -21,6 +21,7 @@ def get_general_subagent_config(
     tool_exposure_mode: str = "full",
     filesystem_tools: list[Any] | None = None,
     current_time: str | None = None,
+    thread_id: str = "",
 ) -> dict[str, Any]:
     """Get configuration for the general-purpose sub-agent.
 
@@ -69,10 +70,11 @@ def get_general_subagent_config(
         tool_summary=mcp_tool_summary,
         storage_enabled=is_storage_enabled(),
         current_time=current_time,
+        thread_id=thread_id,
     )
 
-    # Create execute_code tool with sandbox and MCP registry
-    execute_code_tool = create_execute_code_tool(sandbox, mcp_registry)
+    # Create execute_code tool with sandbox, MCP registry, and thread_id for scoped storage
+    execute_code_tool = create_execute_code_tool(sandbox, mcp_registry, thread_id=thread_id)
 
     # Base tools for general agent
     tools = [execute_code_tool]
@@ -110,6 +112,7 @@ def create_general_subagent(
     tool_exposure_mode: str = "full",
     filesystem_tools: list[Any] | None = None,
     current_time: str | None = None,
+    thread_id: str = "",
 ) -> dict[str, Any]:
     """Create a general-purpose sub-agent for deepagent.
 
@@ -138,4 +141,5 @@ def create_general_subagent(
         tool_exposure_mode=tool_exposure_mode,
         filesystem_tools=filesystem_tools,
         current_time=current_time,
+        thread_id=thread_id,
     )

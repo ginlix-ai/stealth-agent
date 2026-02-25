@@ -99,13 +99,16 @@ class FilePersistenceService:
     MAX_WORKSPACE_SIZE = 1024 * 1024 * 1024  # 1GB total per workspace
 
     # Directories to exclude from sync (relative to /home/daytona/)
+    # Note: .agent/user is excluded (DB-managed, read-only), but .agent/threads
+    # is persisted so thread working directories survive sandbox restarts.
     EXCLUDE_DIRS = {
         "node_modules",
         ".venv",
         "__pycache__",
         ".git",
         "_internal",
-        ".agent",
+        ".agent/user",
+        ".agent/large_tool_results",
         "code",
         "tools",
         "mcp_servers",

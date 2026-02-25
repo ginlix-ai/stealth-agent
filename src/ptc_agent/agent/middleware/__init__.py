@@ -75,6 +75,11 @@ from ptc_agent.agent.middleware.message_queue import (
     MessageQueueMiddleware,
 )
 
+# Workspace context middleware (agent.md injection)
+from ptc_agent.agent.middleware.workspace_context import (
+    WorkspaceContextMiddleware,
+)
+
 # Subagent message queue middleware
 from ptc_agent.agent.middleware.background_subagent.queue import (
     SubagentMessageQueueMiddleware,
@@ -125,6 +130,8 @@ __all__ = [
     "MessageQueueMiddleware",
     # Subagent message queue
     "SubagentMessageQueueMiddleware",
+    # Workspace context
+    "WorkspaceContextMiddleware",
     # Subagent middleware
     "CompiledSubAgent",
     "SubAgent",

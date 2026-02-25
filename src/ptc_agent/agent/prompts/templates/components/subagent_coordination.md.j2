@@ -53,7 +53,7 @@ For each framework, investigate:
 3. Learning curve and documentation quality
 
 Output a comparison table followed by a recommendation for building a high-throughput API server.
-Save any benchmark data to results/async_frameworks.md""",
+Save your findings to work/async_frameworks/comparison.md""",
     subagent_type="general-purpose",
 )
 ```
@@ -63,6 +63,7 @@ Save any benchmark data to results/async_frameworks.md""",
 - Include ALL context the subagent needs (don't assume it knows what we discussed)
 - Specify the desired output format (table, bullet points, code, file path)
 - Mention any constraints (time limits, specific sources, output location)
+- **Always include the task directory path** (`work/<task_name>/`) — subagents won't know where to work otherwise
 - For file-related tasks, provide exact paths
 
 ## Parallel Execution
@@ -102,35 +103,21 @@ Split work along natural boundaries:
 - Specific task: `Wait(task_id="k7Xm2p")` — blocks until that task completes
 - All tasks: `Wait()` — blocks until all pending tasks complete
 
-### Update and Resume Patterns
+### Update and Resume
 
-**Steering a running task** (action="update"):
 ```
-# Task-k7Xm2p is still researching...
-Task(
-    description="Add regulatory analysis",
-    prompt="Also include SEC regulatory filing requirements for each company. Focus on 10-K and 10-Q filings from the last 2 years.",
-    action="update",
-    task_id="k7Xm2p",
-)
-```
+# Steer a running task (action="update")
+Task(description="Add regulatory analysis", prompt="Also include SEC filings...", action="update", task_id="k7Xm2p")
 
-**Iterating on completed work** (action="resume"):
-```
-# Task-k7Xm2p finished its analysis. Now refine it.
-Task(
-    description="Add visualization to analysis",
-    prompt="Take your previous analysis and create a matplotlib bar chart comparing the revenue figures. Save to results/revenue_chart.png",
-    action="resume",
-    task_id="k7Xm2p",
-)
+# Iterate on completed work (action="resume")
+Task(description="Add chart to analysis", prompt="Create a matplotlib bar chart...", action="resume", task_id="k7Xm2p")
 ```
 
 ## Processing Results
 
 When a sub-agent returns results:
-1. **Include images/charts**: If the sub-agent mentions visualizations, include the markdown references (e.g., `![Chart](results/chart.png)`)
-2. **Read referenced files if needed**: Sub-agents may save intermediate data to `data/`, `results/`, or `code/`
+1. **Include images/charts**: If the sub-agent created visualizations, embed them: `![Chart](results/chart.png)`
+2. **Read referenced files if needed**: Sub-agents save data to `work/<task_name>/`, `data/`, or `results/`
 3. **Synthesize**: Combine findings from multiple sub-agents into a cohesive response
 
 ## Guidelines

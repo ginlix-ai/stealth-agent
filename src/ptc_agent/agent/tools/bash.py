@@ -8,11 +8,12 @@ from langchain_core.tools import BaseTool, tool
 logger = structlog.get_logger(__name__)
 
 
-def create_execute_bash_tool(sandbox: Any) -> BaseTool:
+def create_execute_bash_tool(sandbox: Any, thread_id: str = "") -> BaseTool:
     """Factory function to create Bash tool with injected dependencies.
 
     Args:
         sandbox: PTCSandbox instance for bash command execution
+        thread_id: Short thread ID (first 8 chars) for thread-scoped script storage
 
     Returns:
         Configured Bash tool function
@@ -50,6 +51,7 @@ def create_execute_bash_tool(sandbox: Any) -> BaseTool:
                 working_dir=working_dir,
                 timeout=timeout,
                 background=run_in_background,
+                thread_id=thread_id or None,
             )
 
             # Convert timeout from milliseconds to seconds for sandbox (int required)
@@ -61,6 +63,7 @@ def create_execute_bash_tool(sandbox: Any) -> BaseTool:
                 working_dir=working_dir,
                 timeout=timeout_seconds,
                 background=run_in_background,
+                thread_id=thread_id or None,
             )
 
             if result["success"]:

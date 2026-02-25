@@ -29,7 +29,33 @@ class Session:
         self.mcp_registry: MCPRegistry | None = None
         self._initialized = False
 
+        # agent.md cache with dirty flag (force first read)
+        self._agent_md_cache: str | None = None
+        self._agent_md_dirty: bool = True
+
         logger.info("Created session", conversation_id=conversation_id)
+
+    async def get_agent_md(self) -> str | None:
+        """Read agent.md from sandbox, with session-level caching.
+
+        Returns cached content unless invalidated by invalidate_agent_md().
+        """
+        if self._agent_md_dirty:
+            if self.sandbox:
+                try:
+                    self._agent_md_cache = await self.sandbox.aread_file_text(
+                        self.sandbox.normalize_path("agent.md")
+                    )
+                except Exception:
+                    self._agent_md_cache = None
+            else:
+                self._agent_md_cache = None
+            self._agent_md_dirty = False
+        return self._agent_md_cache
+
+    def invalidate_agent_md(self) -> None:
+        """Mark agent.md cache as stale so the next get_agent_md() re-reads."""
+        self._agent_md_dirty = True
 
     async def initialize(self, sandbox_id: str | None = None) -> None:
         """Initialize the session (connect MCP servers and setup sandbox).
@@ -169,6 +195,7 @@ class Session:
             self.mcp_registry = None
 
         self._initialized = False
+        self._agent_md_dirty = True
 
         logger.info("Session cleaned up", conversation_id=self.conversation_id)
 
@@ -197,6 +224,7 @@ class Session:
         # This preserves the fast early-return path in initialize() when the
         # session is genuinely already initialized.
         self._initialized = False
+        self._agent_md_dirty = True
         self.sandbox = None
         self.mcp_registry = None
 
