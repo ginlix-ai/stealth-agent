@@ -28,6 +28,7 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
   // Form state
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [descMode, setDescMode] = useState('agent'); // 'agent' | 'manual'
   const [queuedFiles, setQueuedFiles] = useState([]);
   const [error, setError] = useState(null);
 
@@ -114,7 +115,10 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
 
     let workspace;
     try {
-      workspace = await onCreate({ name: name.trim(), description: description.trim() });
+      workspace = await onCreate({
+        name: name.trim(),
+        description: descMode === 'manual' ? description.trim() : '',
+      });
       setCreatedWorkspace(workspace);
     } catch (err) {
       setCreationStep('error');
@@ -191,6 +195,7 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
   const resetAndClose = () => {
     setName('');
     setDescription('');
+    setDescMode('agent');
     setQueuedFiles([]);
     setError(null);
     setPhase('form');
@@ -365,18 +370,39 @@ function CreateWorkspaceModal({ isOpen, onClose, onCreate, onComplete }) {
             />
           </div>
 
-          {/* Description */}
+          {/* Description mode toggle */}
           <div className="cwm-field">
             <label className="cwm-label">
               {t('common.description')} <span className="cwm-label-optional">{t('common.optional')}</span>
             </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={t('workspace.enterWorkspaceDesc')}
-              rows={3}
-              className="cwm-textarea"
-            />
+            <div className="cwm-toggle-group">
+              <button
+                type="button"
+                className={`cwm-toggle-btn ${descMode === 'agent' ? 'cwm-toggle-btn--active' : ''}`}
+                onClick={() => { setDescMode('agent'); setDescription(''); }}
+              >
+                {t('workspace.descModeAgent')}
+              </button>
+              <button
+                type="button"
+                className={`cwm-toggle-btn ${descMode === 'manual' ? 'cwm-toggle-btn--active' : ''}`}
+                onClick={() => setDescMode('manual')}
+              >
+                {t('workspace.descModeManual')}
+              </button>
+            </div>
+            {descMode === 'manual' ? (
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder={t('workspace.enterWorkspaceDesc')}
+                rows={3}
+                className="cwm-textarea"
+                style={{ marginTop: 8 }}
+              />
+            ) : (
+              <div className="cwm-toggle-hint">{t('workspace.descModeAgentHint')}</div>
+            )}
           </div>
 
           {/* File dropzone */}

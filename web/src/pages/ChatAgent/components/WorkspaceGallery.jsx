@@ -157,7 +157,6 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
       const newWorkspace = await createWorkspace(
         workspaceData.name,
         workspaceData.description,
-        {}
       );
       // Add new workspace to the list
       setWorkspaces((prev) => [newWorkspace, ...prev]);

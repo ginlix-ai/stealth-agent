@@ -166,7 +166,10 @@
     "ready": "Ready",
     "filesUploaded": "{{count}} file(s) uploaded",
     "filesFailed": "· {{count}} failed",
-    "openWorkspace": "Open Workspace"
+    "openWorkspace": "Open Workspace",
+    "descModeAgent": "Agent fills",
+    "descModeManual": "Manual",
+    "descModeAgentHint": "The agent will set up the workspace description from your first conversation"
   },
   "thread": {
     "workspace": "Workspace",

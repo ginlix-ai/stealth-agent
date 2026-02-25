@@ -166,7 +166,10 @@
     "ready": "就绪",
     "filesUploaded": "已上传 {{count}} 个文件",
     "filesFailed": "· {{count}} 个失败",
-    "openWorkspace": "打开工作区"
+    "openWorkspace": "打开工作区",
+    "descModeAgent": "Agent 填写",
+    "descModeManual": "手动输入",
+    "descModeAgentHint": "Agent 将根据首次对话自动填写工作区描述"
   },
   "thread": {
     "workspace": "工作区",

@@ -93,6 +93,46 @@
   border-color: var(--color-accent-primary);
 }
 
+/* ---- Description mode toggle ---- */
+.cwm-toggle-group {
+  display: flex;
+  gap: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--color-border-muted);
+  width: fit-content;
+}
+
+.cwm-toggle-btn {
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.cwm-toggle-btn:hover:not(.cwm-toggle-btn--active) {
+  background-color: var(--color-border-muted);
+}
+
+.cwm-toggle-btn:not(:last-child) {
+  border-right: 1px solid var(--color-border-muted);
+}
+
+.cwm-toggle-btn--active {
+  background-color: var(--color-accent-primary);
+  color: var(--color-text-on-accent);
+}
+
+.cwm-toggle-hint {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 6px;
+}
+
 /* ---- Dropzone ---- */
 .cwm-dropzone-wrapper {
   margin-bottom: 16px;

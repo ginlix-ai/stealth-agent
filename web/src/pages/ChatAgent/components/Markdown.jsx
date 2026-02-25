@@ -439,6 +439,20 @@ function fixMarkdownTables(content) {
 }
 
 /**
+ * Strip YAML front matter (--- delimited block at start of content).
+ * Without this, `---` renders as <hr> and YAML fields as plain text.
+ */
+function stripFrontMatter(content) {
+  if (!content || typeof content !== 'string') return content;
+  if (!content.startsWith('---\n') && !content.startsWith('---\r\n')) return content;
+  const end = content.indexOf('\n---', 3);
+  if (end === -1) return content;
+  // Skip past closing "---" and optional newline
+  const rest = content.slice(end + 4);
+  return rest.startsWith('\n') ? rest.slice(1) : rest.startsWith('\r\n') ? rest.slice(2) : rest;
+}
+
+/**
  * Normalize LaTeX delimiters for remark-math compatibility.
  *
  * LLMs often emit \[...\] (display) and \(...\) (inline) notation,
@@ -459,7 +473,7 @@ function normalizeLatexDelimiters(content) {
 
 function Markdown({ content, variant = 'panel', className = '', style }) {
   const config = VARIANTS[variant];
-  const processed = useMemo(() => normalizeLatexDelimiters(fixMarkdownTables(content)), [content]);
+  const processed = useMemo(() => normalizeLatexDelimiters(fixMarkdownTables(stripFrontMatter(content))), [content]);
   return (
     <div
       className={`${config.className} ${className}`.trim()}
