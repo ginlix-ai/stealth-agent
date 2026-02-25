@@ -17,9 +17,9 @@ async function getAuthHeaders() {
 
 // --- Workspaces ---
 
-export async function getWorkspaces(limit = 20, offset = 0) {
+export async function getWorkspaces(limit = 20, offset = 0, sortBy = 'custom') {
   const { data } = await api.get('/api/v1/workspaces', {
-    params: { limit, offset },
+    params: { limit, offset, sort_by: sortBy },
   });
   return data;
 }
@@ -50,6 +50,17 @@ export async function getWorkspace(workspaceId) {
 export async function getFlashWorkspace() {
   const { data } = await api.post('/api/v1/workspaces/flash');
   return data;
+}
+
+export async function updateWorkspace(workspaceId, updates) {
+  if (!workspaceId) throw new Error('Workspace ID is required');
+  const { data } = await api.put(`/api/v1/workspaces/${workspaceId}`, updates);
+  return data;
+}
+
+export async function reorderWorkspaces(items) {
+  if (!items?.length) throw new Error('Reorder items are required');
+  await api.post('/api/v1/workspaces/reorder', { items });
 }
 
 // --- Threads ---
