@@ -5,6 +5,7 @@ Workspaces provide isolated environments for PTC agents, with each workspace
 having a dedicated Daytona sandbox (1:1 mapping).
 """
 
+import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -61,6 +62,10 @@ class WorkspaceUpdate(BaseModel):
         None,
         description="New configuration settings (replaces existing)",
     )
+    is_pinned: Optional[bool] = Field(
+        None,
+        description="Pin workspace to top of gallery",
+    )
 
 
 class WorkspaceResponse(BaseModel):
@@ -91,9 +96,29 @@ class WorkspaceResponse(BaseModel):
         None,
         description="Configuration settings",
     )
+    is_pinned: bool = Field(False, description="Whether workspace is pinned to top")
+    sort_order: int = Field(0, description="Manual sort order within pin group")
 
     class Config:
         from_attributes = True
+
+
+class WorkspaceReorderItem(BaseModel):
+    """Single item in a reorder request."""
+
+    workspace_id: uuid.UUID = Field(description="Workspace identifier")
+    sort_order: int = Field(ge=0, description="New sort order value")
+
+
+class WorkspaceReorderRequest(BaseModel):
+    """Request model for batch reordering workspaces."""
+
+    items: List[WorkspaceReorderItem] = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="List of workspace ID + sort_order pairs",
+    )
 
 
 class WorkspaceListResponse(BaseModel):

@@ -15,7 +15,7 @@ Endpoints:
 """
 
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -26,11 +26,13 @@ from src.server.database.workspace import (
     get_workspaces_for_user,
     update_workspace as db_update_workspace,
     get_or_create_flash_workspace,
+    batch_update_sort_order,
 )
 from src.server.models.workspace import (
     WorkspaceActionResponse,
     WorkspaceCreate,
     WorkspaceListResponse,
+    WorkspaceReorderRequest,
     WorkspaceResponse,
     WorkspaceUpdate,
 )
@@ -63,6 +65,8 @@ def _workspace_to_response(workspace: dict) -> WorkspaceResponse:
         last_activity_at=workspace.get("last_activity_at"),
         stopped_at=workspace.get("stopped_at"),
         config=workspace.get("config"),
+        is_pinned=workspace.get("is_pinned", False),
+        sort_order=workspace.get("sort_order", 0),
     )
 
 
@@ -124,11 +128,34 @@ async def get_flash_workspace(
         raise HTTPException(status_code=500, detail="Failed to ensure flash workspace")
 
 
+@router.post("/reorder", status_code=204)
+async def reorder_workspaces(
+    request: WorkspaceReorderRequest,
+    x_user_id: CurrentUserId,
+):
+    """
+    Batch-update workspace sort order.
+
+    Accepts a list of workspace_id + sort_order pairs and updates them
+    in a single query. Only workspaces owned by the requesting user
+    are affected.
+    """
+    try:
+        items = [(str(item.workspace_id), item.sort_order) for item in request.items]
+        await batch_update_sort_order(user_id=x_user_id, items=items)
+    except Exception as e:
+        logger.exception(f"Error reordering workspaces: {e}")
+        raise HTTPException(status_code=500, detail="Failed to reorder workspaces")
+
+
 @router.get("", response_model=WorkspaceListResponse)
 async def list_workspaces(
     x_user_id: CurrentUserId,
     limit: int = Query(20, ge=1, le=100, description="Maximum results"),
     offset: int = Query(0, ge=0, description="Number to skip"),
+    sort_by: Literal["activity", "name", "custom"] = Query(
+        "custom", description="Sort mode: activity, name, or custom"
+    ),
 ):
     """
     List workspaces for a user.
@@ -137,6 +164,7 @@ async def list_workspaces(
         x_user_id: User ID from header
         limit: Maximum number of results (1-100)
         offset: Number of results to skip
+        sort_by: Sort mode — 'activity' (updated_at), 'name' (alphabetical), 'custom' (sort_order)
 
     Returns:
         Paginated list of workspaces
@@ -146,6 +174,7 @@ async def list_workspaces(
             user_id=x_user_id,
             limit=limit,
             offset=offset,
+            sort_by=sort_by,
         )
 
         return WorkspaceListResponse(
@@ -212,6 +241,7 @@ async def update_workspace(
             name=request.name,
             description=request.description,
             config=request.config,
+            is_pinned=request.is_pinned,
         )
 
         if not updated:

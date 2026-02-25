@@ -42,11 +42,12 @@ async def get_or_create_flash_workspace(
     async def _execute(cur):
         await cur.execute(
             """
-            INSERT INTO workspaces (workspace_id, user_id, name, description, config, status)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (workspace_id) DO UPDATE SET updated_at = NOW()
+            INSERT INTO workspaces (workspace_id, user_id, name, description, config, status, is_pinned)
+            VALUES (%s, %s, %s, %s, %s, %s, TRUE)
+            ON CONFLICT (workspace_id) DO UPDATE SET updated_at = NOW(), is_pinned = TRUE
             RETURNING workspace_id, user_id, name, description, sandbox_id,
-                      status, created_at, updated_at, last_activity_at, stopped_at, config
+                      status, created_at, updated_at, last_activity_at, stopped_at, config,
+                      is_pinned, sort_order
             """,
             (workspace_id, user_id, "Flash", "Flash mode conversations", config_json, "flash"),
         )
@@ -111,7 +112,8 @@ async def create_workspace(
                     INSERT INTO workspaces (workspace_id, user_id, name, description, config, status)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING workspace_id, user_id, name, description, sandbox_id,
-                              status, created_at, updated_at, last_activity_at, stopped_at, config
+                              status, created_at, updated_at, last_activity_at, stopped_at, config,
+                              is_pinned, sort_order
                     """,
                     (workspace_id, user_id, name, description, config_json, status),
                 )
@@ -122,7 +124,8 @@ async def create_workspace(
                     INSERT INTO workspaces (user_id, name, description, config, status)
                     VALUES (%s, %s, %s, %s, %s)
                     RETURNING workspace_id, user_id, name, description, sandbox_id,
-                              status, created_at, updated_at, last_activity_at, stopped_at, config
+                              status, created_at, updated_at, last_activity_at, stopped_at, config,
+                              is_pinned, sort_order
                     """,
                     (user_id, name, description, config_json, status),
                 )
@@ -163,7 +166,8 @@ async def get_workspace(
             await cur.execute(
                 """
                 SELECT workspace_id, user_id, name, description, sandbox_id,
-                       status, created_at, updated_at, last_activity_at, stopped_at, config
+                       status, created_at, updated_at, last_activity_at, stopped_at, config,
+                       is_pinned, sort_order
                 FROM workspaces
                 WHERE workspace_id = %s AND status != 'deleted'
                 """,
@@ -193,6 +197,7 @@ async def get_workspaces_for_user(
     limit: int = 20,
     offset: int = 0,
     include_deleted: bool = False,
+    sort_by: str = "custom",
     conn=None,
 ) -> Tuple[List[Dict[str, Any]], int]:
     """
@@ -210,6 +215,8 @@ async def get_workspaces_for_user(
     """
     try:
         status_filter = "" if include_deleted else "AND status != 'deleted'"
+        # Exclude flash workspaces from gallery listings
+        flash_filter = "AND status != 'flash'"
 
         async def _execute(cur):
             # Get total count
@@ -217,21 +224,31 @@ async def get_workspaces_for_user(
                 f"""
                 SELECT COUNT(*) as total
                 FROM workspaces
-                WHERE user_id = %s {status_filter}
+                WHERE user_id = %s {status_filter} {flash_filter}
                 """,
                 (user_id,),
             )
             count_result = await cur.fetchone()
             total = count_result["total"] if count_result else 0
 
+            # Build ORDER BY based on sort mode
+            if sort_by == "activity":
+                order_clause = "is_pinned DESC, COALESCE(last_activity_at, updated_at) DESC"
+            elif sort_by == "name":
+                order_clause = "is_pinned DESC, name ASC"
+            else:
+                # 'custom' — manual sort order, then recency
+                order_clause = "is_pinned DESC, sort_order ASC, updated_at DESC"
+
             # Get paginated results
             await cur.execute(
                 f"""
                 SELECT workspace_id, user_id, name, description, sandbox_id,
-                       status, created_at, updated_at, last_activity_at, stopped_at, config
+                       status, created_at, updated_at, last_activity_at, stopped_at, config,
+                       is_pinned, sort_order
                 FROM workspaces
-                WHERE user_id = %s {status_filter}
-                ORDER BY updated_at DESC
+                WHERE user_id = %s {status_filter} {flash_filter}
+                ORDER BY {order_clause}
                 LIMIT %s OFFSET %s
                 """,
                 (user_id, limit, offset),
@@ -257,6 +274,7 @@ async def update_workspace(
     name: Optional[str] = None,
     description: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
+    is_pinned: Optional[bool] = None,
     conn=None,
 ) -> Optional[Dict[str, Any]]:
     """
@@ -291,6 +309,10 @@ async def update_workspace(
             updates.append("config = %s")
             params.append(Json(config))
 
+        if is_pinned is not None:
+            updates.append("is_pinned = %s")
+            params.append(is_pinned)
+
         if not updates:
             # Nothing to update, just return current state
             return await get_workspace(workspace_id, conn=conn)
@@ -308,7 +330,8 @@ async def update_workspace(
                 SET {update_clause}
                 WHERE workspace_id = %s AND status != 'deleted'
                 RETURNING workspace_id, user_id, name, description, sandbox_id,
-                          status, created_at, updated_at, last_activity_at, stopped_at, config
+                          status, created_at, updated_at, last_activity_at, stopped_at, config,
+                          is_pinned, sort_order
                 """,
                 params,
             )
@@ -361,7 +384,8 @@ async def update_workspace_status(
                     SET status = %s, sandbox_id = %s, updated_at = %s, stopped_at = %s
                     WHERE workspace_id = %s
                     RETURNING workspace_id, user_id, name, description, sandbox_id,
-                              status, created_at, updated_at, last_activity_at, stopped_at, config
+                              status, created_at, updated_at, last_activity_at, stopped_at, config,
+                              is_pinned, sort_order
                 """
                 params = (status, sandbox_id, now, now, workspace_id)
             else:
@@ -370,7 +394,8 @@ async def update_workspace_status(
                     SET status = %s, sandbox_id = %s, updated_at = %s
                     WHERE workspace_id = %s
                     RETURNING workspace_id, user_id, name, description, sandbox_id,
-                              status, created_at, updated_at, last_activity_at, stopped_at, config
+                              status, created_at, updated_at, last_activity_at, stopped_at, config,
+                              is_pinned, sort_order
                 """
                 params = (status, sandbox_id, now, workspace_id)
         else:
@@ -380,7 +405,8 @@ async def update_workspace_status(
                     SET status = %s, updated_at = %s, stopped_at = %s
                     WHERE workspace_id = %s
                     RETURNING workspace_id, user_id, name, description, sandbox_id,
-                              status, created_at, updated_at, last_activity_at, stopped_at, config
+                              status, created_at, updated_at, last_activity_at, stopped_at, config,
+                              is_pinned, sort_order
                 """
                 params = (status, now, now, workspace_id)
             else:
@@ -389,7 +415,8 @@ async def update_workspace_status(
                     SET status = %s, updated_at = %s
                     WHERE workspace_id = %s
                     RETURNING workspace_id, user_id, name, description, sandbox_id,
-                              status, created_at, updated_at, last_activity_at, stopped_at, config
+                              status, created_at, updated_at, last_activity_at, stopped_at, config,
+                              is_pinned, sort_order
                 """
                 params = (status, now, workspace_id)
 
@@ -439,7 +466,8 @@ async def update_workspace_activity(
                 SET last_activity_at = %s, updated_at = %s
                 WHERE workspace_id = %s AND status != 'deleted'
                 RETURNING workspace_id, user_id, name, description, sandbox_id,
-                          status, created_at, updated_at, last_activity_at, stopped_at, config
+                          status, created_at, updated_at, last_activity_at, stopped_at, config,
+                          is_pinned, sort_order
                 """,
                 (now, now, workspace_id),
             )
@@ -521,6 +549,62 @@ async def delete_workspace(
         raise
 
 
+async def batch_update_sort_order(
+    user_id: str,
+    items: List[Tuple[str, int]],
+    conn=None,
+) -> None:
+    """
+    Batch-update sort_order for multiple workspaces in a single query.
+
+    Args:
+        user_id: User ID (for ownership check)
+        items: List of (workspace_id, sort_order) tuples
+        conn: Optional database connection to reuse
+    """
+    if not items:
+        return
+
+    try:
+        async def _execute(cur):
+            # Build VALUES list for the update
+            values_parts = []
+            params: list = []
+            for ws_id, order in items:
+                values_parts.append("(%s, %s)")
+                params.extend([ws_id, order])
+            values_sql = ", ".join(values_parts)
+            params.append(user_id)
+
+            await cur.execute(
+                f"""
+                UPDATE workspaces w
+                SET sort_order = v.new_order, updated_at = NOW()
+                FROM (VALUES {values_sql}) AS v(wid, new_order)
+                WHERE w.workspace_id = v.wid::uuid AND w.user_id = %s
+                """,
+                params,
+            )
+            return cur.rowcount
+
+        if conn:
+            async with conn.cursor(row_factory=dict_row) as cur:
+                updated = await _execute(cur)
+        else:
+            async with get_db_connection() as conn:
+                async with conn.cursor(row_factory=dict_row) as cur:
+                    updated = await _execute(cur)
+
+        if updated == 0:
+            logger.warning(f"batch_update_sort_order: 0/{len(items)} rows updated for user {user_id}")
+        else:
+            logger.info(f"Batch-updated sort_order for {updated}/{len(items)} workspaces (user {user_id})")
+
+    except Exception as e:
+        logger.error(f"Error batch-updating sort_order for user {user_id}: {e}")
+        raise
+
+
 async def get_workspaces_by_status(
     status: str,
     limit: int = 100,
@@ -542,7 +626,8 @@ async def get_workspaces_by_status(
             await cur.execute(
                 """
                 SELECT workspace_id, user_id, name, description, sandbox_id,
-                       status, created_at, updated_at, last_activity_at, stopped_at, config
+                       status, created_at, updated_at, last_activity_at, stopped_at, config,
+                       is_pinned, sort_order
                 FROM workspaces
                 WHERE status = %s
                 ORDER BY last_activity_at ASC NULLS FIRST
