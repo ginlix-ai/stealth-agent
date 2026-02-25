@@ -35,11 +35,19 @@ class MultimodalContext(AdditionalContextBase):
     description: Optional[str] = Field(None, description="Optional caption for the attachment")
 
 
+class DirectiveContext(AdditionalContextBase):
+    """Context injecting a directive inline with the user message via XML tags."""
+
+    type: Literal["directive"] = "directive"
+    content: str = Field(..., description="Directive text to inject inline with user message")
+
+
 # Union type for all context types - discriminated by "type" field
 AdditionalContext = Annotated[
     Union[
         Annotated[SkillContext, Tag("skills")],
         Annotated[MultimodalContext, Tag("image")],
+        Annotated[DirectiveContext, Tag("directive")],
     ],
     Discriminator(lambda v: v.get("type") if isinstance(v, dict) else getattr(v, "type", None)),
 ]

@@ -96,6 +96,41 @@ SKILL_REGISTRY: dict[str, SkillDefinition] = {
         skill_md_path="skills/automation/SKILL.md",
         exposure="both",
     ),
+    "pdf": SkillDefinition(
+        name="pdf",
+        description="PDF manipulation: extract text/tables, create, merge/split documents, and fill forms",
+        tools=[],
+        skill_md_path="skills/pdf/SKILL.md",
+        exposure="ptc",
+    ),
+    "docx": SkillDefinition(
+        name="docx",
+        description="Word document creation, editing, tracked changes, comments, and text extraction",
+        tools=[],
+        skill_md_path="skills/docx/SKILL.md",
+        exposure="ptc",
+    ),
+    "pptx": SkillDefinition(
+        name="pptx",
+        description="Presentation creation, editing, layouts, speaker notes, and slide manipulation",
+        tools=[],
+        skill_md_path="skills/pptx/SKILL.md",
+        exposure="ptc",
+    ),
+    "xlsx": SkillDefinition(
+        name="xlsx",
+        description="Spreadsheet creation, editing, formulas, data analysis, and visualization",
+        tools=[],
+        skill_md_path="skills/xlsx/SKILL.md",
+        exposure="ptc",
+    ),
+    "creating-financial-models": SkillDefinition(
+        name="creating-financial-models",
+        description="Financial modeling: DCF analysis, sensitivity testing, Monte Carlo simulations",
+        tools=[],
+        skill_md_path="skills/creating-financial-models/SKILL.md",
+        exposure="ptc",
+    ),
 }
 
 

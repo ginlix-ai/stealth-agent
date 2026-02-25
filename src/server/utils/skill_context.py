@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SkillPrefixResult:
-    """Result of building a skill prefix message."""
+    """Result of building skill content for inline injection."""
 
-    message: Dict[str, Any]  # The user message dict to inject
+    content: str  # Formatted skill text wrapped in <loaded-skill> tags
     loaded_skill_names: list[str] = field(default_factory=list)  # Skills that successfully loaded
 
 
@@ -163,17 +163,17 @@ def load_skill_content(
     return content
 
 
-def build_skill_prefix_message(
+def build_skill_content(
     skills: List[SkillContext],
     skill_dirs: Optional[List[str]] = None,
     mode: SkillMode | None = None,
 ) -> Optional[SkillPrefixResult]:
-    """Build a HumanMessage dict with loaded skill content and tool descriptions.
+    """Build skill content for inline injection into user messages.
 
-    Creates a message containing skill instructions that should be prepended
-    to the conversation before the user's actual query. Also returns the list
-    of successfully loaded skill names so callers can set loaded_skills in
-    the graph state for immediate tool availability.
+    Creates formatted skill content wrapped in <loaded-skill> XML tags,
+    suitable for appending inline to the last user message. Also returns
+    the list of successfully loaded skill names so callers can set
+    loaded_skills in the graph state for immediate tool availability.
 
     Args:
         skills: List of SkillContext objects to load
@@ -182,13 +182,13 @@ def build_skill_prefix_message(
               the mode will be skipped.
 
     Returns:
-        SkillPrefixResult with message and loaded skill names, or None if no skills loaded
+        SkillPrefixResult with content string and loaded skill names, or None if no skills loaded
 
     Example:
         >>> skills = [SkillContext(type="skills", name="user-profile", instruction="Help onboard")]
-        >>> result = build_skill_prefix_message(skills)
-        >>> result.message["role"]
-        'user'
+        >>> result = build_skill_content(skills)
+        >>> '<loaded-skill' in result.content
+        True
         >>> result.loaded_skill_names
         ['user-profile']
     """
@@ -196,9 +196,8 @@ def build_skill_prefix_message(
         return None
 
     loaded_skills = []
-    skill_contents = []
+    skill_blocks = []
     instructions = []
-    all_tool_descriptions = []
 
     for skill_ctx in skills:
         content = load_skill_content(skill_ctx.name, skill_dirs, mode=mode)
@@ -206,20 +205,17 @@ def build_skill_prefix_message(
         if content:
             loaded_skills.append(skill_ctx.name)
 
-            if len(skills) > 1:
-                # Multiple skills: add section header
-                skill_contents.append(f"## Skill: {skill_ctx.name}\n{content}")
-            else:
-                # Single skill: no header needed
-                skill_contents.append(content)
-
-            # Collect tool descriptions for this skill
+            # Build per-skill block with tool descriptions
+            block_parts = [content]
             tool_desc = build_tool_descriptions(skill_ctx.name, mode=mode)
             if tool_desc:
-                if len(skills) > 1:
-                    all_tool_descriptions.append(f"### {skill_ctx.name} tools\n{tool_desc}")
-                else:
-                    all_tool_descriptions.append(tool_desc)
+                block_parts.append(f"\n**Available tools:**\n{tool_desc}")
+                block_parts.append("You can call these tools directly without needing to call LoadSkill.")
+
+            block_content = "\n".join(block_parts)
+            skill_blocks.append(
+                f'<loaded-skill name="{skill_ctx.name}">\n{block_content}\n</loaded-skill>'
+            )
 
             if skill_ctx.instruction:
                 instructions.append(f"- {skill_ctx.name}: {skill_ctx.instruction}")
@@ -231,36 +227,25 @@ def build_skill_prefix_message(
     if not loaded_skills:
         return None
 
-    # Build the message content
-    parts = [f"[Loaded skills: {', '.join(loaded_skills)}]", ""]
-
-    # Add skill contents
-    parts.append("\n\n".join(skill_contents))
-
-    # Add tool descriptions
-    if all_tool_descriptions:
-        parts.append("\n\n**Available tools:**")
-        parts.append("\n".join(all_tool_descriptions))
-        parts.append("\nYou can call these tools directly without needing to call LoadSkill.")
+    # Combine all skill blocks
+    parts = skill_blocks
 
     # Add instructions if any
     if instructions:
         if len(instructions) == 1 and len(skills) == 1:
-            # Single skill with instruction: simpler format
-            parts.append(f"\n\n[Instruction: {skills[0].instruction}]")
+            parts.append(f"\n[Instruction: {skills[0].instruction}]")
         else:
-            # Multiple skills or instructions: bulleted list
-            parts.append("\n\n[Instructions]")
+            parts.append("\n[Instructions]")
             parts.extend(instructions)
 
-    message_content = "\n".join(parts)
+    combined_content = "\n\n".join(parts)
 
     logger.info(
-        f"Built skill prefix message with {len(loaded_skills)} skills: "
+        f"Built skill content with {len(loaded_skills)} skills: "
         f"{loaded_skills}"
     )
 
     return SkillPrefixResult(
-        message={"role": "user", "content": message_content},
+        content=combined_content,
         loaded_skill_names=loaded_skills,
     )

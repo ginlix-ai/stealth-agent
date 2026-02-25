@@ -46,9 +46,10 @@ from src.tools.decorators import ToolUsageTracker
 
 from src.server.utils.skill_context import (
     parse_skill_contexts,
-    build_skill_prefix_message,
+    build_skill_content,
 )
 from src.server.utils.multimodal_context import parse_multimodal_contexts, inject_multimodal_context
+from src.server.utils.directive_context import parse_directive_contexts, build_directive_reminder
 from src.server.dependencies.usage_limits import release_burst_slot
 
 # Locale/timezone configuration
@@ -72,6 +73,20 @@ _MODE_MODEL_MAP = {
     "ptc":   ("name",  "preferred_model"),
     "flash": ("flash", "preferred_flash_model"),
 }
+
+
+def _append_to_last_user_message(messages: list[dict], text: str) -> None:
+    """Append text to the last user message in a message list (mutates in-place)."""
+    if not messages:
+        return
+    last_msg = messages[-1]
+    if not isinstance(last_msg, dict) or last_msg.get("role") != "user":
+        return
+    content = last_msg.get("content")
+    if isinstance(content, str):
+        last_msg["content"] = content + text
+    elif isinstance(content, list):
+        last_msg["content"].append({"type": "text", "text": text})
 
 
 async def queue_message_for_thread(
@@ -475,7 +490,7 @@ async def astream_flash_workflow(
             messages = inject_multimodal_context(messages, multimodal_contexts)
             logger.info(f"[FLASH_CHAT] Multimodal context injected: {len(multimodal_contexts)} attachment(s)")
 
-        # Skill Context Injection (Flash mode)
+        # Skill Context Injection (Flash mode) — inline with last user message
         loaded_skill_names: list[str] = []
         skill_contexts = parse_skill_contexts(request.additional_context)
         if skill_contexts:
@@ -483,15 +498,22 @@ async def astream_flash_workflow(
                 local_dir
                 for local_dir, _ in config.skills.local_skill_dirs_with_sandbox()
             ]
-            skill_result = build_skill_prefix_message(
+            skill_result = build_skill_content(
                 skill_contexts, skill_dirs=skill_dirs, mode="flash"
             )
             if skill_result:
-                messages.insert(0, skill_result.message)
+                _append_to_last_user_message(messages, "\n\n" + skill_result.content)
                 loaded_skill_names = skill_result.loaded_skill_names
                 logger.info(
-                    f"[FLASH_CHAT] Skill context injected: {[s.name for s in skill_contexts]}"
+                    f"[FLASH_CHAT] Skill context injected inline: {[s.name for s in skill_contexts]}"
                 )
+
+        # Directive Context Injection (inline with user message)
+        directives = parse_directive_contexts(request.additional_context)
+        directive_reminder = build_directive_reminder(directives)
+        if directive_reminder:
+            _append_to_last_user_message(messages, directive_reminder)
+            logger.info(f"[FLASH_CHAT] Directive context injected inline ({len(directives)} directives)")
 
         # Build input state or resume command
         if request.hitl_response:
@@ -1092,10 +1114,10 @@ async def astream_ptc_workflow(
                 )
 
         # =====================================================================
-        # Skill Context Injection
+        # Skill Context Injection (inline with last user message)
         # =====================================================================
         # When skills are requested via additional_context, load SKILL.md content
-        # and prepend as a separate message before user messages.
+        # and append inline to the last user message using <loaded-skill> tags.
         # The original user_input is preserved for database persistence.
         loaded_skill_names: list[str] = []
         skill_contexts = parse_skill_contexts(request.additional_context)
@@ -1105,15 +1127,14 @@ async def astream_ptc_workflow(
                 local_dir
                 for local_dir, _ in config.skills.local_skill_dirs_with_sandbox()
             ]
-            skill_result = build_skill_prefix_message(
+            skill_result = build_skill_content(
                 skill_contexts, skill_dirs=skill_dirs, mode="ptc"
             )
             if skill_result:
-                # Insert skill message before user messages
-                messages.insert(0, skill_result.message)
+                _append_to_last_user_message(messages, "\n\n" + skill_result.content)
                 loaded_skill_names = skill_result.loaded_skill_names
                 logger.info(
-                    f"[PTC_CHAT] Skill context injected: {[s.name for s in skill_contexts]}"
+                    f"[PTC_CHAT] Skill context injected inline: {[s.name for s in skill_contexts]}"
                 )
 
         # Multimodal Context Injection (images and PDFs)
@@ -1149,26 +1170,30 @@ async def astream_ptc_workflow(
         # a plan and submit it for approval before executing any changes.
         if effective_plan_mode and not request.hitl_response:
             plan_mode_reminder = (
-                "\n\n[PLAN MODE ENABLED]\n"
+                "\n\n<system-reminder>\n"
+                "[PLAN MODE ENABLED]\n"
                 "Before making any changes, you MUST:\n"
                 "1. Explore the codebase to understand the current state\n"
                 "2. Create a detailed plan describing what you intend to do\n"
                 "3. Call the `SubmitPlan` tool with your plan description\n"
                 "4. Wait for user approval before proceeding with execution\n"
-                "Do NOT execute any write operations until the plan is approved."
+                "Do NOT execute any write operations until the plan is approved.\n"
+                "</system-reminder>"
             )
             # Append reminder to the last user message
             if isinstance(input_state, dict) and input_state.get("messages"):
-                last_msg = input_state["messages"][-1]
-                if isinstance(last_msg, dict) and last_msg.get("role") == "user":
-                    if isinstance(last_msg.get("content"), str):
-                        last_msg["content"] = last_msg["content"] + plan_mode_reminder
-                    elif isinstance(last_msg.get("content"), list):
-                        # Multi-part content - add as text item
-                        last_msg["content"].append(
-                            {"type": "text", "text": plan_mode_reminder}
-                        )
+                _append_to_last_user_message(input_state["messages"], plan_mode_reminder)
             logger.info(f"[PTC_CHAT] Plan mode enabled for thread_id={thread_id}")
+
+        # =====================================================================
+        # Directive Context Injection (inline with user message)
+        # =====================================================================
+        directives = parse_directive_contexts(request.additional_context)
+        directive_reminder = build_directive_reminder(directives)
+        if directive_reminder and not request.hitl_response:
+            if isinstance(input_state, dict) and input_state.get("messages"):
+                _append_to_last_user_message(input_state["messages"], directive_reminder)
+                logger.info(f"[PTC_CHAT] Directive context injected inline ({len(directives)} directives)")
 
         # =====================================================================
         # Save user request to system thread directory (non-critical)
