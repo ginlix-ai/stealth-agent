@@ -282,9 +282,11 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
           const toolCallProcesses = { ...(msg.toolCallProcesses || {}) };
           const contentSegments = [...(msg.contentSegments || [])];
 
+          let currentOrder;
+
           if (!toolCallProcesses[toolCallId]) {
             contentOrderCounterRef.current++;
-            const currentOrder = contentOrderCounterRef.current;
+            currentOrder = contentOrderCounterRef.current;
 
             contentSegments.push({
               type: 'tool_call',
@@ -302,6 +304,7 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
               order: currentOrder,
             };
           } else {
+            currentOrder = toolCallProcesses[toolCallId].order;
             toolCallProcesses[toolCallId] = {
               ...toolCallProcesses[toolCallId],
               toolName: toolCall.name,
