@@ -236,6 +236,21 @@ async def get_workflow_status(thread_id: str) -> dict:
                 if bg_status.get("status") != "not_found":
                     active_tasks = bg_status.get("active_tasks", [])
                     soft_interrupted = bg_status.get("soft_interrupted", False)
+                elif can_reconnect:
+                    # Redis says active/disconnected but BackgroundTaskManager has no
+                    # record — likely a stale Redis key surviving a server restart.
+                    # Downgrade can_reconnect to avoid a guaranteed 404 on /messages/stream.
+                    logger.info(
+                        f"Stale workflow status for {thread_id}: Redis says {status} "
+                        f"but BackgroundTaskManager has no task info. Clearing stale status."
+                    )
+                    can_reconnect = False
+                    status = WorkflowStatus.COMPLETED
+                    # Clean up the stale Redis key so future requests don't hit this path
+                    try:
+                        await tracker.mark_completed(thread_id)
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.debug(f"Could not get background task status for {thread_id}: {e}")
 
