@@ -61,24 +61,25 @@ Issue body structure:
 - Thread: <thread_id if available>
 - Tool/Skill: <which tool or skill was involved>
 - Error type: <tool_error | skill_instruction | mcp_data | prompt | sandbox>
+
+@claude Please triage this issue — verify the root cause, assess severity, and suggest a fix if straightforward.
 ```
 
-## Workflow 2: Propose a Fix (when the fix is obvious and self-contained)
+## Workflow 2: Propose a Fix (rare — only when user explicitly asks)
 
-Use when: the root cause is clear AND the fix is small (1-3 files).
-Skip and file an issue instead if: architectural decision needed, root cause
-unclear, or fix touches core agent logic.
+**Default to Workflow 1 (filing an issue).** Only create a PR when the user
+explicitly asks you to fix it yourself. Do NOT propose PRs on your own initiative.
 
 Steps:
-1. Clone: `gh repo clone "ginlix-ai/LangAlpha" .self-improve/langalpha -- --depth 1`
-2. Branch from `feat/latest`: `cd .self-improve/langalpha && git checkout feat/latest && git checkout -b bot/fix/<short-desc>`
+1. Clone or update: if `.self-improve/langalpha` exists, `cd .self-improve/langalpha && git checkout main && git pull origin main` to get latest. Otherwise `gh repo clone "ginlix-ai/LangAlpha" .self-improve/langalpha -- --depth 1`
+2. Branch: `cd .self-improve/langalpha && git checkout main && git checkout -b bot/fix/<short-desc>`
 3. Make the fix (keep it minimal and focused)
 4. Test: `ruff check . && pytest` (or relevant subset)
 5. Commit: conventional format — `fix(scope): description`
 6. PR:
 ```bash
 gh pr create --repo "ginlix-ai/LangAlpha" \
-  --base feat/latest \
+  --base main \
   --title "fix(agent): <what's fixed>" \
   --label "agent-reported" \
   --body "<structured body>"
@@ -103,14 +104,27 @@ PR body structure:
 - Thread: <thread_id>
 ```
 
+## Codebase Guide — Where to Look
+
+Use this to identify the right module when filing issues or proposing fixes.
+
+| Directory | What lives here | Example issues |
+|-----------|----------------|----------------|
+| `skills/` | Skill SKILL.md instructions and assets | Wrong examples in `skills/dcf-model/SKILL.md`, bug in a provided script snippet, outdated API usage, missing steps in a workflow, new best practice to add |
+| `mcp_servers/` | MCP server implementations (yfinance, fundamentals, macro, price_data) | `yfinance_mcp_server.py` returns malformed data, a fundamentals endpoint is missing a field, macro data has wrong units |
+| `src/tools/` | External tool implementations (web fetch, crawl, search, SEC, market data) | `fetch.py` times out on certain URLs, SEC filing parser fails on 10-K amendments, search returns stale results |
+| `src/ptc_agent/agent/tools/` | Core sandbox tools (ExecuteCode, Bash, file ops, grep, glob, think, todo) | `code_execution.py` mishandles large stdout, `bash.py` doesn't escape special chars, `file_ops.py` fails on binary files |
+| `src/ptc_agent/agent/middleware/` | Middleware stack (skills, subagents, plan mode, summarization, memory, caching) | Skill loading fails silently, subagent doesn't inherit context, summarization truncates important content |
+| `src/ptc_agent/agent/prompts/` | System prompt templates (Jinja2) and config | Redundant or wrongful instructions in `system.md.j2`, useful tips and experience worth persisting into prompts |
+
 ## Label Convention
 - Always use `agent-reported` label
 - Add `bug` for broken behavior, `enhancement` for capability gaps
 - Add scope labels: `skills`, `tools`, `mcp`, `prompt`, `sandbox`
 
 ## Safety Rules
-- NEVER push to `main` or `feat/latest` — always `bot/fix/` or `bot/feat/` branches
-- Always branch from `feat/latest` (the current development branch), target PRs to `feat/latest`
+- NEVER push directly to `main` — always `bot/fix/` or `bot/feat/` branches
+- `main` branch contains the latest code. Always branch from `main`, target PRs to `main`
 - ALWAYS run linting and tests before creating a PR
 - Keep PRs small — one fix per PR, max 1-3 files
 - Clone to `.self-improve/langalpha` (inside workspace, persists across restarts)
@@ -128,5 +142,5 @@ Go through EVERY item before running `gh issue create` or `gh pr create`:
 - [ ] **No raw API responses** — sanitize or omit any data returned from MCP tools or external APIs
 - [ ] **Technical description only** — the issue/PR describes the bug or fix, not what the user was working on
 - [ ] **Correct repo** — targeting `ginlix-ai/LangAlpha`
-- [ ] **Correct branch** (PRs only) — branched from `feat/latest`, PR base is `feat/latest`
+- [ ] **Correct branch** (PRs only) — branched from `main`, PR base is `main`
 - [ ] **Minimal diff** (PRs only) — only the files needed for the fix, no unrelated changes
