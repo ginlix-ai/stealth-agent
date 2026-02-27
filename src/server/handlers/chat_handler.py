@@ -369,6 +369,7 @@ async def astream_flash_workflow(
     user_input: str,
     user_id: str,
     byok_active: bool = False,
+    config=None,
 ):
     """
     Async generator that streams Flash agent workflow events.
@@ -474,10 +475,11 @@ async def astream_flash_workflow(
         # Build Flash Agent Graph
         # =====================================================================
 
-        # Resolve LLM config for this request (model override + preferred + BYOK)
-        config = await resolve_llm_config(
-            setup.agent_config, user_id, request.llm_model, byok_active, mode="flash"
-        )
+        # Resolve LLM config (pre-resolved by route handler, fallback for standalone use)
+        if config is None:
+            config = await resolve_llm_config(
+                setup.agent_config, user_id, request.llm_model, byok_active, mode="flash"
+            )
 
         # Fetch user profile for prompt injection
         flash_user_profile = None
@@ -898,6 +900,7 @@ async def astream_ptc_workflow(
     user_id: str,
     workspace_id: str,
     byok_active: bool = False,
+    config=None,
 ):
     """
     Async generator that streams PTC agent workflow events.
@@ -1058,10 +1061,11 @@ async def astream_ptc_workflow(
         # Session and Graph Setup
         # =====================================================================
 
-        # Resolve LLM config for this request (model override + preferred + BYOK)
-        config = await resolve_llm_config(
-            setup.agent_config, user_id, request.llm_model, byok_active, mode="ptc"
-        )
+        # Resolve LLM config (pre-resolved by route handler, fallback for standalone use)
+        if config is None:
+            config = await resolve_llm_config(
+                setup.agent_config, user_id, request.llm_model, byok_active, mode="ptc"
+            )
 
         subagents = request.subagents_enabled or config.subagents_enabled
         sandbox_id = None

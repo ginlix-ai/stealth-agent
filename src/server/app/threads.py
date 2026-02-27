@@ -283,6 +283,22 @@ async def _handle_send_message(request: ChatRequest, auth: ChatRateLimited, thre
         f"mode={agent_mode}"
     )
 
+    # Resolve LLM config eagerly — credit check must happen before SSE stream starts
+    from src.server.handlers.chat_handler import resolve_llm_config
+    from src.server.dependencies.usage_limits import enforce_credit_limit, release_burst_slot
+
+    config = await resolve_llm_config(
+        setup.agent_config, user_id, request.llm_model, byok_active, mode=agent_mode,
+    )
+
+    # Credit check: only when using platform key (no user-provided key resolved)
+    if config.llm_client is None:
+        try:
+            await enforce_credit_limit(user_id)
+        except HTTPException:
+            await release_burst_slot(user_id)
+            raise
+
     # Route to appropriate streaming function based on agent mode
     if agent_mode == "flash":
         return StreamingResponse(
@@ -292,6 +308,7 @@ async def _handle_send_message(request: ChatRequest, auth: ChatRateLimited, thre
                 user_input=user_input,
                 user_id=user_id,
                 byok_active=byok_active,
+                config=config,
             ),
             media_type="text/event-stream",
             headers=SSE_HEADERS,
@@ -305,6 +322,7 @@ async def _handle_send_message(request: ChatRequest, auth: ChatRateLimited, thre
             user_id=user_id,
             workspace_id=workspace_id,
             byok_active=byok_active,
+            config=config,
         ),
         media_type="text/event-stream",
         headers=SSE_HEADERS,

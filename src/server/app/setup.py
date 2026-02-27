@@ -294,6 +294,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Error closing Redis cache: {e}")
 
+    # 9. Close usage-limits HTTP client
+    try:
+        from src.server.dependencies.usage_limits import close_http_client
+
+        await close_http_client()
+        logger.info("Usage limits HTTP client closed")
+    except Exception as e:
+        logger.warning(f"Error closing usage limits HTTP client: {e}")
+
     logger.info("Application shutdown complete")
 
 

@@ -2,13 +2,14 @@
 FastAPI dependencies for usage limit enforcement.
 
 Provides two dependencies that compose with get_current_user_id:
-- ChatRateLimited: Enforces daily credit limit + burst guard
+- ChatRateLimited: Enforces burst guard (concurrent request limit)
 - WorkspaceLimitCheck: Enforces active workspace limits
 
 Open-source mode (AUTH_SERVICE_URL unset): all operations allowed, no limits.
 Commercial mode (AUTH_SERVICE_URL set): calls ginlix-auth for quota checks.
 """
 
+import asyncio
 import logging
 import os
 from dataclasses import dataclass
@@ -26,15 +27,26 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MAX_CONCURRENT = 10
 _BURST_COUNTER_TTL = 300  # seconds
 
-# Shared httpx client (created lazily)
+# Shared httpx client (created lazily, async-safe)
 _http_client: Optional[httpx.AsyncClient] = None
+_http_client_lock = asyncio.Lock()
 
 
-def _get_http_client() -> httpx.AsyncClient:
+async def _get_http_client() -> httpx.AsyncClient:
     global _http_client
-    if _http_client is None:
-        _http_client = httpx.AsyncClient(timeout=5.0)
-    return _http_client
+    async with _http_client_lock:
+        if _http_client is None:
+            _http_client = httpx.AsyncClient(timeout=5.0)
+        return _http_client
+
+
+async def close_http_client() -> None:
+    """Close the shared httpx client. Call during application shutdown."""
+    global _http_client
+    async with _http_client_lock:
+        if _http_client is not None:
+            await _http_client.aclose()
+            _http_client = None
 
 
 @dataclass
@@ -68,7 +80,7 @@ async def _call_validate(
     if not AUTH_SERVICE_URL:
         return None
 
-    client = _get_http_client()
+    client = await _get_http_client()
     headers = {"Authorization": f"Bearer {token}"}
     body = {}
     if check_quota:
@@ -152,53 +164,27 @@ async def enforce_chat_limit(
     user_id: str = Depends(get_current_user_id),
 ) -> ChatAuthResult:
     """
-    FastAPI dependency: enforce daily credit limit + burst guard.
+    FastAPI dependency: enforce burst guard only.
+
+    Credit check is deferred to after LLM config resolution (provider-based):
+    - Own-key users (BYOK / OAuth) skip credit check for their provider's models
+    - Platform-key users get credit-checked via enforce_credit_limit()
 
     Open-source mode (no AUTH_SERVICE_URL): always allowed.
-    Commercial mode: calls ginlix-auth for credit check, local Redis burst guard.
-    BYOK users bypass credit check but still face burst guard.
 
-    Returns ChatAuthResult on success, raises HTTPException(429) if over limit.
+    Returns ChatAuthResult on success, raises HTTPException(429) if burst limit hit.
     """
     # Open-source mode or auth disabled: no limits
     if not AUTH_SERVICE_URL or not AUTH_ENABLED:
         return ChatAuthResult(user_id=user_id)
 
-    # Check BYOK status locally (it's an LLM key concern, stays in langalpha)
+    # Check BYOK status locally (passed to resolve_llm_config for key lookup)
     from src.server.database.api_keys import is_byok_active
 
     byok = await is_byok_active(user_id)
 
-    if byok:
-        # BYOK: no credit check, but still enforce burst guard
-        # Get max_concurrent from ginlix-auth (cached via scopes call) or use default
-        max_concurrent = _DEFAULT_MAX_CONCURRENT
-        burst_result = await _check_burst_guard(user_id, max_concurrent)
-        if not burst_result["allowed"]:
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "message": "Too many concurrent requests",
-                    "type": "burst_limit",
-                    "retry_after": 5,
-                },
-                headers={"Retry-After": "5"},
-            )
-        return ChatAuthResult(user_id=user_id, byok_active=True)
-
-    # Non-BYOK: call ginlix-auth for full credit check
-    result = await _call_validate_for_user(user_id, check_quota="chat")
-
-    if result is None:
-        # Fail-open: ginlix-auth unreachable
-        return ChatAuthResult(user_id=user_id)
-
-    quota = result.get("quota")
-    if not quota:
-        return ChatAuthResult(user_id=user_id)
-
-    # Burst guard (local, using max_concurrent from response)
-    max_concurrent = quota.get("max_concurrent_requests") or _DEFAULT_MAX_CONCURRENT
+    # Burst guard for all users (BYOK, OAuth, and platform)
+    max_concurrent = _DEFAULT_MAX_CONCURRENT
     burst_result = await _check_burst_guard(user_id, max_concurrent)
     if not burst_result["allowed"]:
         raise HTTPException(
@@ -210,6 +196,29 @@ async def enforce_chat_limit(
             },
             headers={"Retry-After": "5"},
         )
+
+    return ChatAuthResult(user_id=user_id, byok_active=byok)
+
+
+async def enforce_credit_limit(user_id: str) -> None:
+    """
+    Check credit quota via ginlix-auth. Raises HTTPException(429) if exceeded.
+
+    Called after LLM config resolution — only when using platform key (no own-key
+    injected via BYOK or OAuth for the resolved model's provider).
+    """
+    if not AUTH_SERVICE_URL or not AUTH_ENABLED:
+        return
+
+    result = await _call_validate_for_user(user_id, check_quota="chat")
+
+    if result is None:
+        # Fail-open: ginlix-auth unreachable
+        return
+
+    quota = result.get("quota")
+    if not quota:
+        return
 
     if not quota.get("allowed", True):
         limit_type = quota.get("limit_type", "credit_limit")
@@ -235,8 +244,6 @@ async def enforce_chat_limit(
             },
         )
 
-    return ChatAuthResult(user_id=user_id)
-
 
 async def _call_validate_for_user(
     user_id: str,
@@ -247,7 +254,7 @@ async def _call_validate_for_user(
     if not AUTH_SERVICE_URL:
         return None
 
-    client = _get_http_client()
+    client = await _get_http_client()
     headers = {"X-User-Id": user_id}
 
     # Use internal service token if available
