@@ -13,12 +13,9 @@ export const TOOL_DISPLAY_CONFIG = {
   screen_stocks:            { displayName: 'Stock Screener',       icon: Search },
   // SEC
   get_sec_filing:           { displayName: 'SEC Filing',           icon: FileBarChart },
-  // News (MCP tickertick)
-  get_ticker_news:          { displayName: 'Ticker News',          icon: Newspaper },
-  get_broad_ticker_news:    { displayName: 'Market News',          icon: Newspaper },
-  get_curated_news:         { displayName: 'Curated News',         icon: Newspaper },
-  get_news_from_source:     { displayName: 'News',                 icon: Newspaper },
-  get_news_for_multiple_tickers: { displayName: 'Multi-Ticker News', icon: Newspaper },
+  // Web search / news
+  WebSearch:                { displayName: 'Web Search',           icon: Search },
+  WebFetch:                 { displayName: 'Web Fetch',            icon: Newspaper },
   get_entity_news:          { displayName: 'Entity News',          icon: Newspaper },
   search_tickers:           { displayName: 'Ticker Search',        icon: Search },
   // Fundamentals (MCP)

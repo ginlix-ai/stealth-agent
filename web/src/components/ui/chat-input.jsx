@@ -355,7 +355,7 @@ const ChatInput = forwardRef(function ChatInput({
     if (!showSlashMenu) return [];
     const query = slashQuery.toLowerCase();
     const items = [
-      ...skills.map((s) => ({ type: 'skill', name: s.name, description: s.description })),
+      ...skills.filter((s) => s.command).map((s) => ({ type: 'skill', name: s.command, skillName: s.name, description: s.description })),
       ...BUILTIN_SLASH_COMMANDS.map((c) => ({ ...c, description: t(`chat.slashCommand.${c.name}Desc`) })),
     ];
     return items
@@ -378,6 +378,13 @@ const ChatInput = forwardRef(function ChatInput({
   const handleChange = useCallback((e) => {
     const val = e.target.value;
     setMessage(val);
+
+    // Remove pills whose /{command} or @mention text was deleted from the textarea
+    setSlashCommands((prev) => prev.filter((cmd) => {
+      const pattern = new RegExp(`(^|\\s)/${cmd.name}(\\s|$)`);
+      return pattern.test(val);
+    }));
+    setMentionedFiles((prev) => prev.filter((f) => val.includes(`@${f.path}`)));
 
     const cursorPos = e.target.selectionStart;
 
@@ -467,41 +474,55 @@ const ChatInput = forwardRef(function ChatInput({
       if (label) return !(f.path === path && f.label === label);
       return !(f.path === path && !f.label);
     }));
+    // Also remove @path text from textarea
+    setMessage((prev) => prev.replace(new RegExp(`(^|\\s)@${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`), '$1$2').trim());
   }, []);
 
   const selectSlashCommand = useCallback((cmd) => {
     if (slashStart < 0) return;
-    // Remove /query text from textarea
     const cursorPos = textareaRef.current?.selectionStart ?? message.length;
     const before = message.slice(0, slashStart);
     const after = message.slice(cursorPos);
-    setMessage(before + after);
-
-    setShowSlashMenu(false);
-    setSlashStart(-1);
-    setSlashQuery('');
 
     // Action commands fire immediately — no pill, no send required
     if (cmd.type === 'action') {
+      setMessage(before + after);
+      setShowSlashMenu(false);
+      setSlashStart(-1);
+      setSlashQuery('');
       onAction?.(cmd);
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(before.length, before.length);
+        }
+      }, 0);
     } else {
-      // Add command as pill (deduplicate by name)
+      // Retain /{command} in textarea and add pill
+      const inserted = `/${cmd.name} `;
+      const newMsg = before + inserted + after;
+      setMessage(newMsg);
+      setShowSlashMenu(false);
+      setSlashStart(-1);
+      setSlashQuery('');
       setSlashCommands((prev) => {
         if (prev.some((c) => c.name === cmd.name)) return prev;
         return [...prev, cmd];
       });
+      const newCursor = before.length + inserted.length;
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(newCursor, newCursor);
+        }
+      }, 0);
     }
-
-    setTimeout(() => {
-      if (textareaRef.current) {
-        textareaRef.current.focus();
-        textareaRef.current.setSelectionRange(before.length, before.length);
-      }
-    }, 0);
   }, [slashStart, message, onAction]);
 
   const removeSlashCommand = useCallback((name) => {
     setSlashCommands((prev) => prev.filter((c) => c.name !== name));
+    // Also remove /{command} text from textarea
+    setMessage((prev) => prev.replace(new RegExp(`(^|\\s)/${name}(\\s|$)`), '$1$2').trim());
   }, []);
 
   // Scroll active autocomplete item into view
