@@ -27,6 +27,7 @@ from ptc_agent.agent.middleware import (
     MultimodalMiddleware,
     create_plan_mode_interrupt_config,
     # Tool middleware
+    EmptyToolCallRetryMiddleware,
     ToolArgumentParsingMiddleware,
     ToolErrorHandlingMiddleware,
     ToolResultNormalizationMiddleware,
@@ -543,6 +544,7 @@ class PTCAgent:
                 summarization,
                 *model_resilience,
                 AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+                EmptyToolCallRetryMiddleware(),
                 PatchToolCallsMiddleware(),
             ]
             if m is not None
@@ -573,6 +575,7 @@ class PTCAgent:
                 summarization,
                 *model_resilience,
                 AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+                EmptyToolCallRetryMiddleware(),
                 PatchToolCallsMiddleware(),
                 *workspace_context_middleware,
             ]

@@ -13,6 +13,7 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 
 from ptc_agent.agent.middleware import (
+    EmptyToolCallRetryMiddleware,
     ToolArgumentParsingMiddleware,
     ToolErrorHandlingMiddleware,
     ToolResultNormalizationMiddleware,
@@ -257,10 +258,11 @@ class FlashAgent:
             )
             logger.info("Flash model retry enabled", max_retries=3)
 
-        # Prompt caching and tool call patching
+        # Prompt caching, empty tool call retry, and tool call patching
         main_middleware.extend(
             [
                 AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+                EmptyToolCallRetryMiddleware(),
                 PatchToolCallsMiddleware(),
             ]
         )

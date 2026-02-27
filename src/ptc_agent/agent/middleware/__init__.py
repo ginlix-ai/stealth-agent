@@ -26,8 +26,9 @@ from ptc_agent.agent.middleware.plan_mode import (
 # Ask user middleware
 from ptc_agent.agent.middleware.ask_user import AskUserMiddleware
 
-# Tool middleware (argument parsing, error handling, result normalization)
+# Tool middleware (argument parsing, error handling, result normalization, empty call retry)
 from ptc_agent.agent.middleware.tool import (
+    EmptyToolCallRetryMiddleware,
     ToolArgumentParsingMiddleware,
     ToolErrorHandlingMiddleware,
     ToolResultNormalizationMiddleware,
@@ -104,6 +105,7 @@ __all__ = [
     # Multimodal middleware (for read_file image/PDF support)
     "MultimodalMiddleware",
     # Tool middleware
+    "EmptyToolCallRetryMiddleware",
     "ToolArgumentParsingMiddleware",
     "ToolErrorHandlingMiddleware",
     "ToolResultNormalizationMiddleware",
