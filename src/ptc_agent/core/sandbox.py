@@ -154,6 +154,9 @@ class PTCSandbox:
         # Cached skills manifest (populated after sync_skills)
         self._skills_manifest: dict[str, Any] | None = None
 
+        # Track whether disabled tool modules have been pruned (only needed once)
+        self._disabled_modules_pruned = False
+
         logger.info("Initialized PTCSandbox")
 
     async def _wait_ready(self) -> None:
@@ -1106,7 +1109,7 @@ class PTCSandbox:
         return True
 
     async def _prune_disabled_tool_modules(self) -> None:
-        if not self.sandbox:
+        if not self.sandbox or self._disabled_modules_pruned:
             return
 
         sandbox = self.sandbox
@@ -1114,6 +1117,7 @@ class PTCSandbox:
             server.name for server in self.config.mcp.servers if not server.enabled
         ]
         if not disabled:
+            self._disabled_modules_pruned = True
             return
 
         work_dir = getattr(self, "_work_dir", "/home/daytona")
@@ -1130,7 +1134,8 @@ class PTCSandbox:
             )
 
         await asyncio.gather(*[remove_one(path) for path in paths])
-        logger.info("Pruned disabled tool modules", removed=len(paths))
+        self._disabled_modules_pruned = True
+        logger.debug("Pruned disabled tool modules", removed=len(paths))
 
     SKILLS_MANIFEST_FILENAME = ".skills_manifest.json"
 
