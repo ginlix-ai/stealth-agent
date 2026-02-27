@@ -17,6 +17,7 @@ class SkillInfo(BaseModel):
     description: str
     tool_count: int
     tools: list[str] = Field(default_factory=list)
+    command: str | None = None
 
 
 class SkillsResponse(BaseModel):

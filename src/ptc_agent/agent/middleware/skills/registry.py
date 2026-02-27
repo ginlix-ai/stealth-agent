@@ -34,6 +34,7 @@ class SkillDefinition:
     tools: list[Any]
     skill_md_path: str | None = None
     exposure: Literal["ptc", "flash", "both", "hidden"] = "ptc"
+    command: str | None = None
 
     def get_tool_names(self) -> list[str]:
         """Get list of tool names in this skill."""
@@ -124,12 +125,125 @@ SKILL_REGISTRY: dict[str, SkillDefinition] = {
         skill_md_path="skills/xlsx/SKILL.md",
         exposure="ptc",
     ),
-    "creating-financial-models": SkillDefinition(
-        name="creating-financial-models",
-        description="Financial modeling: DCF analysis, sensitivity testing, Monte Carlo simulations",
+    "comps-analysis": SkillDefinition(
+        name="comps-analysis",
+        description="Comparable company analysis: operating metrics, valuation multiples, peer benchmarking",
         tools=[],
-        skill_md_path="skills/creating-financial-models/SKILL.md",
+        skill_md_path="skills/comps-analysis/SKILL.md",
         exposure="ptc",
+        command="comps-analysis",
+    ),
+    "dcf-model": SkillDefinition(
+        name="dcf-model",
+        description="DCF valuation: free cash flow projections, WACC, terminal value, sensitivity analysis",
+        tools=[],
+        skill_md_path="skills/dcf-model/SKILL.md",
+        exposure="ptc",
+        command="dcf-model",
+    ),
+    "earnings-preview": SkillDefinition(
+        name="earnings-preview",
+        description="Pre-earnings analysis: consensus estimates, key metrics to watch, bull/base/bear scenarios",
+        tools=[],
+        skill_md_path="skills/earnings-preview/SKILL.md",
+        exposure="ptc",
+        command="earnings-preview",
+    ),
+    "idea-generation": SkillDefinition(
+        name="idea-generation",
+        description="Stock screening and idea generation: quantitative screens, thematic analysis, shortlist",
+        tools=[],
+        skill_md_path="skills/idea-generation/SKILL.md",
+        exposure="ptc",
+        command="idea-generation",
+    ),
+    "check-model": SkillDefinition(
+        name="check-model",
+        description="Financial model audit: structural checks, formula validation, integrity testing",
+        tools=[],
+        skill_md_path="skills/check-model/SKILL.md",
+        exposure="ptc",
+        command="check-model",
+    ),
+    "morning-note": SkillDefinition(
+        name="morning-note",
+        description="Daily research briefing: overnight news, pre-market movers, earnings, macro events",
+        tools=[],
+        skill_md_path="skills/morning-note/SKILL.md",
+        exposure="ptc",
+        command="morning-note",
+    ),
+    "catalyst-calendar": SkillDefinition(
+        name="catalyst-calendar",
+        description="Event tracker: earnings dates, economic releases, conferences, regulatory events",
+        tools=[],
+        skill_md_path="skills/catalyst-calendar/SKILL.md",
+        exposure="ptc",
+        command="catalyst-calendar",
+    ),
+    "check-deck": SkillDefinition(
+        name="check-deck",
+        description="Investment deck QC: number consistency, data-narrative alignment, IB language, formatting audit",
+        tools=[],
+        skill_md_path="skills/check-deck/SKILL.md",
+        exposure="ptc",
+        command="check-deck",
+    ),
+    "thesis-tracker": SkillDefinition(
+        name="thesis-tracker",
+        description="Investment thesis scorecard: track pillars, risks, catalysts, and conviction over time",
+        tools=[],
+        skill_md_path="skills/thesis-tracker/SKILL.md",
+        exposure="ptc",
+        command="thesis-tracker",
+    ),
+    "model-update": SkillDefinition(
+        name="model-update",
+        description="Update financial model with new quarterly actuals, revised estimates, and updated price target",
+        tools=[],
+        skill_md_path="skills/model-update/SKILL.md",
+        exposure="ptc",
+        command="model-update",
+    ),
+    "3-statements": SkillDefinition(
+        name="3-statements",
+        description="Integrated 3-statement financial model: linked income statement, balance sheet, and cash flow",
+        tools=[],
+        skill_md_path="skills/3-statements/SKILL.md",
+        exposure="ptc",
+        command="3-statement-model",
+    ),
+    "earnings-analysis": SkillDefinition(
+        name="earnings-analysis",
+        description="Post-earnings analysis report: beat/miss breakdown, estimate revisions, thesis impact, charts",
+        tools=[],
+        skill_md_path="skills/earnings-analysis/SKILL.md",
+        exposure="ptc",
+        command="earnings-analysis",
+    ),
+    "sector-overview": SkillDefinition(
+        name="sector-overview",
+        description="Industry landscape report: market size, competitive dynamics, company profiles, valuation context",
+        tools=[],
+        skill_md_path="skills/sector-overview/SKILL.md",
+        exposure="ptc",
+        command="sector-overview",
+    ),
+    "competitive-analysis": SkillDefinition(
+        name="competitive-analysis",
+        description="Competitive landscape analysis: positioning, scorecards, moat assessment, market share trends",
+        tools=[],
+        skill_md_path="skills/competitive-analysis/SKILL.md",
+        exposure="ptc",
+        command="competitive-analysis",
+    ),
+    "initiating-coverage": SkillDefinition(
+        name="initiating-coverage",
+        description="Full equity research initiation: company research, financial model, valuation, charts, 30-50 page report",
+        tools=[],
+        skill_md_path="skills/initiating-coverage/SKILL.md",
+        exposure="ptc",
+        command="initiating-coverage",
     ),
 }
 
@@ -241,6 +355,7 @@ def list_skills(mode: SkillMode | None = None) -> list[dict[str, Any]]:
             "description": skill.description,
             "tool_count": len(skill.tools),
             "tools": skill.get_tool_names(),
+            "command": skill.command,
         }
         for skill in SKILL_REGISTRY.values()
         if _matches_mode(skill, mode) and skill.exposure != "hidden"

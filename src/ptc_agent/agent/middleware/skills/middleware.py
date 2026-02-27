@@ -227,7 +227,7 @@ class SkillsMiddleware(AgentMiddleware):
         if self._mode == "ptc":
             lines.append(
                 "Skills provide specialized capabilities. "
-                "Read a skill's SKILL.md to activate its tools and instructions."
+                "To activate, read `skills/{name}/SKILL.md`."
             )
         else:
             lines.append("Call `LoadSkill` with the skill name to activate its tools.")
@@ -244,8 +244,6 @@ class SkillsMiddleware(AgentMiddleware):
             tool_names = skill_def.get_tool_names()
             if tool_names:
                 entry += f" (tools: {', '.join(tool_names)})"
-            if self._mode == "ptc" and skill_def.skill_md_path:
-                entry += f"\n  -> Read `{skill_def.skill_md_path}` to activate"
             lines.append(entry)
 
         # 2. Discovered (unregistered) skills from filesystem
@@ -256,10 +254,8 @@ class SkillsMiddleware(AgentMiddleware):
                 entry = f"- **{skill['name']}**: {skill['description']}"
                 if skill.get("allowed_tools"):
                     entry += f" (tools: {', '.join(skill['allowed_tools'])})"
-                entry += f"\n  -> Read `{skill['path']}` for full instructions"
             else:
                 entry = f"- **{skill['name']}** *(unconfirmed)*"
-                entry += f"\n  -> Read `{skill['path']}` for instructions"
             lines.append(entry)
 
         return "\n".join(lines) if has_skills else None
