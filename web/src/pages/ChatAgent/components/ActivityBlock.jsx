@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Brain, ChevronDown, Wrench } from 'lucide-react';
-import { getDisplayName, getToolIcon, getInProgressText, getPreparingText } from './toolDisplayConfig';
+import { getDisplayName, getToolIcon, getInProgressText, getPreparingText, getCompletedSummary } from './toolDisplayConfig';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { DotLoader } from '@/components/ui/dot-loader';
 import { useAnimatedText } from '@/components/ui/animated-text';
@@ -410,7 +410,12 @@ function ToolCallLiveRow({ tc, liveState }) {
       ) : (
         <>
           <span className="font-medium">{displayName}</span>
-          <span style={{ opacity: 0.55 }}>done</span>
+          {(() => {
+            const summary = getCompletedSummary(toolName, tc.toolCall);
+            return summary
+              ? <span className="truncate" style={{ opacity: 0.55 }}>— {summary}</span>
+              : <span style={{ opacity: 0.55 }}>done</span>;
+          })()}
         </>
       )}
     </motion.div>
@@ -503,14 +508,7 @@ function ToolCallRow({ item, onClick }) {
   const displayName = getDisplayName(toolName);
   const IconComponent = getToolIcon(toolName);
 
-  let summary = '';
-  const args = item.toolCall?.args;
-  if (args?.symbol) summary = args.symbol;
-  else if (args?.query) summary = args.query;
-  else if (args?.file_path || args?.filePath) {
-    const fp = args.file_path || args.filePath;
-    summary = fp.split('/').pop() || '';
-  }
+  const summary = getCompletedSummary(toolName, item.toolCall) || '';
 
   return (
     <button

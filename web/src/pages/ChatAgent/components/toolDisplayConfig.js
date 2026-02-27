@@ -1,7 +1,7 @@
 import {
   TrendingUp, Building2, BarChart3, PieChart, Search, Globe,
   FilePlus, FileText, FilePen, FolderSearch, SquareChevronRight, Wrench,
-  Newspaper, Brain, User, FileBarChart, Clock, ClipboardList, Zap, Settings,
+  Newspaper, Brain, User, FileBarChart, Clock, ClipboardList, Zap, Settings, Terminal,
 } from 'lucide-react';
 
 export const TOOL_DISPLAY_CONFIG = {
@@ -34,6 +34,7 @@ export const TOOL_DISPLAY_CONFIG = {
   update_user_data:         { displayName: 'Update Data',          icon: User },
   remove_user_data:         { displayName: 'Remove Data',          icon: User },
   // Core tools
+  Bash:                     { displayName: 'Bash',                 icon: Terminal },
   Glob:                     { displayName: 'Glob',                 icon: FolderSearch },
   Grep:                     { displayName: 'Grep',                 icon: Search },
   WebSearch:                { displayName: 'Web Search',           icon: Globe },
@@ -106,8 +107,10 @@ export function getInProgressText(rawToolName, toolCall) {
       const name = fp.split('/').pop();
       return name ? `editing ${name}...` : 'editing...';
     }
+    case 'Bash':
+      return args?.description ? `${args.description}...` : 'running command...';
     case 'ExecuteCode':
-      return 'executing...';
+      return args?.description ? `${args.description}...` : 'executing...';
     case 'Wait':
       return 'waiting for subagent...';
     case 'TaskOutput':
@@ -121,6 +124,23 @@ export function getInProgressText(rawToolName, toolCall) {
     default:
       return 'processing...';
   }
+}
+
+/**
+ * Extracts a short completed-state summary from tool call args.
+ * Used in both live zone (completed but not yet in accordion) and accordion rows.
+ */
+export function getCompletedSummary(toolName, toolCall) {
+  const args = toolCall?.args;
+  if (!args) return null;
+  if (args.description) return args.description;
+  if (args.symbol) return args.symbol;
+  if (args.query) return args.query;
+  if (args.file_path || args.filePath) {
+    const fp = args.file_path || args.filePath;
+    return fp.split('/').pop() || null;
+  }
+  return null;
 }
 
 function formatByteSize(bytes) {
@@ -138,6 +158,8 @@ export function getPreparingText(toolName, argsLength) {
       return `writing code${sizeLabel}...`;
     case 'Edit':
       return `composing edits${sizeLabel}...`;
+    case 'Bash':
+      return `preparing command${sizeLabel}...`;
     case 'ExecuteCode':
       return `composing code${sizeLabel}...`;
     case 'WebSearch':
