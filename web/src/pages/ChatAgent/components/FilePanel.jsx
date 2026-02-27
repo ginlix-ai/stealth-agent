@@ -133,27 +133,225 @@ function dirSortKey(dir) {
 }
 
 /**
- * Groups file paths by their top-level directory.
- * Files without a directory go into a special '/' (root) group.
- * Returns array of { dir: string, files: string[] } sorted: root → results → data → other.
+ * Builds a recursive file tree from flat file paths.
+ * Returns array of top-level TreeNodes sorted by directory priority.
+ *
+ * TreeNode = { name, fullPath, children: TreeNode[], files: string[] }
+ * - name: directory segment name (e.g. "nvidia_dcf_excel")
+ * - fullPath: full directory path (e.g. "work/nvidia_dcf_excel")
+ * - children: sorted subdirectory nodes
+ * - files: leaf file paths (full paths, e.g. "work/nvidia_dcf_excel/create.py")
  */
-function groupFilesByDirectory(filePaths) {
-  const groups = new Map(); // dir -> file paths
+function buildFileTree(filePaths) {
+  // Intermediate map: fullDirPath -> { files, subdirs }
+  const dirMap = new Map(); // fullPath -> { files: string[], subdirs: Map<name, fullPath> }
+
+  const getOrCreateDir = (fullPath) => {
+    if (!dirMap.has(fullPath)) {
+      dirMap.set(fullPath, { files: [], subdirs: new Map() });
+    }
+    return dirMap.get(fullPath);
+  };
+
+  // Root is a special case with fullPath = '/'
+  getOrCreateDir('/');
+
   for (const fp of filePaths) {
-    const slashIdx = fp.indexOf('/');
-    const dir = slashIdx >= 0 ? fp.slice(0, slashIdx) : '/';
-    if (!groups.has(dir)) groups.set(dir, []);
-    groups.get(dir).push(fp);
+    const slashIdx = fp.lastIndexOf('/');
+    if (slashIdx < 0) {
+      // Root-level file
+      getOrCreateDir('/').files.push(fp);
+    } else {
+      const dirPath = fp.slice(0, slashIdx);
+      getOrCreateDir(dirPath).files.push(fp);
+
+      // Ensure all ancestor directories exist and link parent → child
+      const segments = dirPath.split('/');
+      for (let i = 0; i < segments.length; i++) {
+        const parentPath = i === 0 ? '/' : segments.slice(0, i).join('/');
+        const childPath = segments.slice(0, i + 1).join('/');
+        const childName = segments[i];
+        const parent = getOrCreateDir(parentPath);
+        if (!parent.subdirs.has(childName)) {
+          parent.subdirs.set(childName, childPath);
+        }
+        getOrCreateDir(childPath);
+      }
+    }
   }
-  const entries = Array.from(groups.entries())
-    .sort(([a], [b]) => {
-      const pa = dirSortKey(a);
-      const pb = dirSortKey(b);
-      if (pa !== pb) return pa - pb;
-      return a.localeCompare(b);
-    })
-    .map(([dir, files]) => ({ dir, files }));
-  return entries;
+
+  // Convert dirMap into recursive TreeNode[] starting from a given path
+  const buildNodes = (fullPath) => {
+    const entry = dirMap.get(fullPath);
+    if (!entry) return { children: [], files: [] };
+
+    const children = Array.from(entry.subdirs.entries())
+      .sort(([a], [b]) => {
+        const pa = dirSortKey(a);
+        const pb = dirSortKey(b);
+        if (pa !== pb) return pa - pb;
+        return a.localeCompare(b);
+      })
+      .map(([name, childFullPath]) => {
+        const sub = buildNodes(childFullPath);
+        return {
+          name,
+          fullPath: childFullPath,
+          children: sub.children,
+          files: sub.files,
+        };
+      });
+
+    return { children, files: entry.files };
+  };
+
+  const root = buildNodes('/');
+
+  // Return top-level: root files become a { name: '/', ... } node, plus top-level dirs
+  const result = [];
+  if (root.files.length > 0) {
+    result.push({ name: '/', fullPath: '/', children: [], files: root.files });
+  }
+  result.push(...root.children);
+  return result;
+}
+
+/** Count all files recursively under a tree node */
+function countTreeFiles(node) {
+  let count = node.files.length;
+  for (const child of node.children) {
+    count += countTreeFiles(child);
+  }
+  return count;
+}
+
+/** Collect all file paths recursively under a tree node */
+function collectTreeFiles(node) {
+  const result = [...node.files];
+  for (const child of node.children) {
+    result.push(...collectTreeFiles(child));
+  }
+  return result;
+}
+
+/** Renders vertical indent guide lines for a given depth */
+function IndentGuides({ depth }) {
+  if (depth <= 0) return null;
+  const guides = [];
+  for (let i = 0; i < depth; i++) {
+    guides.push(
+      <span
+        key={i}
+        className="file-tree-indent-guide"
+        style={{ left: i * 16 + 20 }}
+      />
+    );
+  }
+  return guides;
+}
+
+/** Recursive directory node renderer for the file tree */
+function DirectoryNode({
+  node, depth, showHeader,
+  collapsedDirs, toggleDir,
+  selectMode, selectedPaths, toggleSelect, toggleDirSelect,
+  handleFileClick, readOnly, backedUpSet, modifiedSet,
+  onAddContext, setContextMenu,
+}) {
+  const isRoot = node.name === '/';
+  const isCollapsed = collapsedDirs.has(node.fullPath);
+  const allFiles = collectTreeFiles(node);
+  const totalCount = allFiles.length;
+  const indent = (depth + 1) * 16 + 8; // base 8px + 16px per depth level
+
+  return (
+    <div key={node.fullPath}>
+      {showHeader && (
+        <div
+          className="file-panel-dir-header file-tree-row"
+          style={depth > 0 ? { paddingLeft: depth * 16 + 8 } : undefined}
+          onClick={() => selectMode ? toggleDirSelect(allFiles) : toggleDir(node.fullPath)}
+        >
+          <IndentGuides depth={depth} />
+          {selectMode ? (
+            allFiles.every((f) => selectedPaths.has(f))
+              ? <CheckSquare className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
+              : <Square className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
+          ) : isCollapsed
+            ? <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
+            : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
+          }
+          <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
+          <span className="text-xs font-medium truncate" style={{ color: 'var(--color-text-tertiary)' }}>
+            {isRoot ? '/' : `${node.name}/`}
+          </span>
+          <span className="text-xs" style={{ color: 'var(--color-icon-muted)' }}>
+            {totalCount}
+          </span>
+        </div>
+      )}
+      {(!isCollapsed || selectMode) && (
+        <>
+          {/* Subdirectories */}
+          {node.children.map((child) => (
+            <DirectoryNode
+              key={child.fullPath}
+              node={child}
+              depth={showHeader ? depth + 1 : depth}
+              showHeader={true}
+              collapsedDirs={collapsedDirs}
+              toggleDir={toggleDir}
+              selectMode={selectMode}
+              selectedPaths={selectedPaths}
+              toggleSelect={toggleSelect}
+              toggleDirSelect={toggleDirSelect}
+              handleFileClick={handleFileClick}
+              readOnly={readOnly}
+              backedUpSet={backedUpSet}
+              modifiedSet={modifiedSet}
+              onAddContext={onAddContext}
+              setContextMenu={setContextMenu}
+            />
+          ))}
+          {/* Files in this directory */}
+          {node.files.map((filePath) => {
+            const name = filePath.split('/').pop();
+            const Icon = getFileIcon(name);
+            const isSelected = selectedPaths.has(filePath);
+            const fileDepth = showHeader ? depth + 1 : depth;
+            return (
+              <div
+                key={filePath}
+                className={`file-panel-item file-tree-row ${selectMode && isSelected ? 'file-panel-item-selected' : ''}`}
+                style={{ paddingLeft: showHeader ? indent : undefined }}
+                onClick={() => selectMode ? toggleSelect(filePath) : handleFileClick(filePath)}
+                onContextMenu={!selectMode && onAddContext ? (e) => {
+                  e.preventDefault();
+                  setContextMenu({ x: e.clientX, y: e.clientY, filePath });
+                } : undefined}
+              >
+                <IndentGuides depth={fileDepth} />
+                {selectMode ? (
+                  isSelected
+                    ? <CheckSquare className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
+                    : <Square className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
+                ) : (
+                  <Icon className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
+                )}
+                <span className="text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>{name}</span>
+                {!readOnly && !selectMode && (backedUpSet.has(filePath) || modifiedSet.has(filePath)) && (
+                  <span
+                    className={`file-panel-backup-dot ${backedUpSet.has(filePath) ? 'backed-up' : 'modified'}`}
+                    title={backedUpSet.has(filePath) ? 'Backed up' : 'Modified since last backup'}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
 }
 
 function DocumentLoadingFallback() {
@@ -542,7 +740,7 @@ function FilePanel({
 
   // Directory collapse state
   const [collapsedDirs, setCollapsedDirs] = useState(new Set());
-  const groupedFiles = useMemo(() => groupFilesByDirectory(filteredSortedFiles), [filteredSortedFiles]);
+  const fileTree = useMemo(() => buildFileTree(filteredSortedFiles), [filteredSortedFiles]);
 
   const toggleDir = useCallback((dir) => {
     setCollapsedDirs((prev) => {
@@ -1457,7 +1655,7 @@ function FilePanel({
             )
           ) : (
             // File List View
-            <div className="py-1">
+            <div className="py-1 file-tree-root">
               {filesLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <div key={i} className="file-panel-item animate-pulse">
@@ -1478,91 +1676,26 @@ function FilePanel({
                   <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>No {filterType.toLowerCase()} files</p>
                 </div>
               ) : (
-                groupedFiles.map(({ dir, files: groupFiles }) => {
-                  const isRoot = dir === '/';
-                  const isCollapsed = collapsedDirs.has(dir);
-                  return (
-                    <div key={dir}>
-                      {/* Directory header (skip for root if it's the only group) */}
-                      {!isRoot && (
-                        <div
-                          className="file-panel-dir-header"
-                          onClick={() => selectMode ? toggleDirSelect(groupFiles) : toggleDir(dir)}
-                        >
-                          {selectMode ? (
-                            groupFiles.every((f) => selectedPaths.has(f))
-                              ? <CheckSquare className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
-                              : <Square className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
-                          ) : isCollapsed
-                            ? <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
-                            : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
-                          }
-                          <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
-                          <span className="text-xs font-medium truncate" style={{ color: 'var(--color-text-tertiary)' }}>
-                            {dir}/
-                          </span>
-                          <span className="text-xs" style={{ color: 'var(--color-icon-muted)' }}>
-                            {groupFiles.length}
-                          </span>
-                        </div>
-                      )}
-                      {isRoot && groupedFiles.length > 1 && (
-                        <div
-                          className="file-panel-dir-header"
-                          onClick={() => selectMode ? toggleDirSelect(groupFiles) : toggleDir(dir)}
-                        >
-                          {selectMode ? (
-                            groupFiles.every((f) => selectedPaths.has(f))
-                              ? <CheckSquare className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
-                              : <Square className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
-                          ) : isCollapsed
-                            ? <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
-                            : <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
-                          }
-                          <Folder className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
-                          <span className="text-xs font-medium truncate" style={{ color: 'var(--color-text-tertiary)' }}>
-                            /
-                          </span>
-                          <span className="text-xs" style={{ color: 'var(--color-icon-muted)' }}>
-                            {groupFiles.length}
-                          </span>
-                        </div>
-                      )}
-                      {/* File items */}
-                      {(!isCollapsed || selectMode) && groupFiles.map((filePath) => {
-                        const name = filePath.split('/').pop();
-                        const Icon = getFileIcon(name);
-                        const isSelected = selectedPaths.has(filePath);
-                        return (
-                          <div
-                            key={filePath}
-                            className={`file-panel-item ${!isRoot || groupedFiles.length > 1 ? 'file-panel-item-nested' : ''} ${selectMode && isSelected ? 'file-panel-item-selected' : ''}`}
-                            onClick={() => selectMode ? toggleSelect(filePath) : handleFileClick(filePath)}
-                            onContextMenu={!selectMode && onAddContext ? (e) => {
-                              e.preventDefault();
-                              setContextMenu({ x: e.clientX, y: e.clientY, filePath });
-                            } : undefined}
-                          >
-                            {selectMode ? (
-                              isSelected
-                                ? <CheckSquare className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
-                                : <Square className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
-                            ) : (
-                              <Icon className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-text-tertiary)' }} />
-                            )}
-                            <span className="text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>{name}</span>
-                            {!readOnly && !selectMode && (backedUpSet.has(filePath) || modifiedSet.has(filePath)) && (
-                              <span
-                                className={`file-panel-backup-dot ${backedUpSet.has(filePath) ? 'backed-up' : 'modified'}`}
-                                title={backedUpSet.has(filePath) ? 'Backed up' : 'Modified since last backup'}
-                              />
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })
+                fileTree.map((node) => (
+                  <DirectoryNode
+                    key={node.fullPath}
+                    node={node}
+                    depth={0}
+                    showHeader={node.name !== '/' || fileTree.length > 1}
+                    collapsedDirs={collapsedDirs}
+                    toggleDir={toggleDir}
+                    selectMode={selectMode}
+                    selectedPaths={selectedPaths}
+                    toggleSelect={toggleSelect}
+                    toggleDirSelect={toggleDirSelect}
+                    handleFileClick={handleFileClick}
+                    readOnly={readOnly}
+                    backedUpSet={backedUpSet}
+                    modifiedSet={modifiedSet}
+                    onAddContext={onAddContext}
+                    setContextMenu={setContextMenu}
+                  />
+                ))
               )}
             </div>
           )}

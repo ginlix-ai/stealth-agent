@@ -64,6 +64,24 @@
     padding-left: 32px;
   }
 
+  /* ====== Indent Guide Lines (VS Code-style) ====== */
+  .file-tree-row {
+    position: relative;
+  }
+  .file-tree-indent-guide {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background-color: var(--color-border-muted);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+  }
+  .file-tree-root:hover .file-tree-indent-guide {
+    opacity: 1;
+  }
+
   /* ====== Filter & Sort Toolbar ====== */
   .file-panel-toolbar {
     display: flex;
