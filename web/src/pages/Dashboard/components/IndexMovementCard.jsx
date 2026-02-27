@@ -7,8 +7,8 @@ function IndexMovementCard({ indices = [], loading = false }) {
       className="w-full fin-card flex-shrink-0"
       style={{ backgroundColor: 'transparent', border: 'none', boxShadow: 'none' }}
     >
-      <div className="flex items-center gap-2.5 p-0">
-        <div className="flex flex-col gap-3 flex-shrink-0" style={{ width: '200px' }}>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 p-0">
+        <div className="flex flex-col gap-3 flex-shrink-0 w-full sm:w-[200px]">
           <CardTitle
             className="dashboard-title-font text-base font-semibold"
             style={{ color: 'var(--color-text-primary)', letterSpacing: '0.15px', lineHeight: '24px' }}
@@ -22,7 +22,7 @@ function IndexMovementCard({ indices = [], loading = false }) {
             Some summary words
           </p>
         </div>
-        <div className="flex gap-2.5 flex-1 min-w-0">
+        <div className="grid grid-cols-2 sm:flex gap-2.5 flex-1 min-w-0">
           {loading
             ? Array.from({ length: 4 }).map((_, i) => (
                 <div
@@ -54,7 +54,7 @@ function IndexMovementCard({ indices = [], loading = false }) {
                   >
                     {idx > 0 && (
                       <div
-                        className="absolute left-0 top-1/2 transform -translate-y-1/2 -translate-x-1.25"
+                        className="hidden sm:block absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[5px]"
                         style={{ width: '1px', height: '60px', backgroundColor: 'var(--color-border-muted)' }}
                       />
                     )}

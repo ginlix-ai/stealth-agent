@@ -133,10 +133,9 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
         {hasCompleted && (
           <motion.div
             key="accordion-zone"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
+            initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+            animate={{ opacity: 1, height: 'auto', overflow: 'visible' }}
             transition={SPRING_SNAPPY}
-            style={{ overflow: 'hidden' }}
           >
             <button
               onClick={() => setIsExpanded(!isExpanded)}
@@ -161,12 +160,11 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
               {isExpanded && (
                 <motion.div
                   key="accordion-body"
-                  initial={{ height: 0, opacity: 0, '--mask-stop': '0%' }}
-                  animate={{ height: 'auto', opacity: 1, '--mask-stop': '100%' }}
-                  exit={{ height: 0, opacity: 0, '--mask-stop': '0%' }}
+                  initial={{ height: 0, opacity: 0, '--mask-stop': '0%', overflow: 'hidden' }}
+                  animate={{ height: 'auto', opacity: 1, '--mask-stop': '100%', overflow: 'visible' }}
+                  exit={{ height: 0, opacity: 0, '--mask-stop': '0%', overflow: 'hidden' }}
                   transition={SPRING}
                   style={{
-                    overflow: 'hidden',
                     maskImage: 'linear-gradient(black var(--mask-stop), transparent var(--mask-stop))',
                     WebkitMaskImage: 'linear-gradient(black var(--mask-stop), transparent var(--mask-stop))',
                   }}
@@ -190,10 +188,9 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
                         return (
                           <motion.div
                             key={itemKey}
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
+                            initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+                            animate={{ opacity: 1, height: 'auto', overflow: 'visible' }}
                             transition={SPRING_SNAPPY}
-                            style={{ overflow: 'hidden' }}
                           >
                             {content}
                           </motion.div>
@@ -477,12 +474,11 @@ function ReasoningRow({ item }) {
         {expanded && item.content && (
           <motion.div
             key="reasoning-content"
-            initial={{ height: 0, opacity: 0, '--mask-stop': '0%' }}
-            animate={{ height: 'auto', opacity: 1, '--mask-stop': '100%' }}
-            exit={{ height: 0, opacity: 0, '--mask-stop': '0%' }}
+            initial={{ height: 0, opacity: 0, '--mask-stop': '0%', overflow: 'hidden' }}
+            animate={{ height: 'auto', opacity: 1, '--mask-stop': '100%', overflow: 'visible' }}
+            exit={{ height: 0, opacity: 0, '--mask-stop': '0%', overflow: 'hidden' }}
             transition={SPRING}
             style={{
-              overflow: 'hidden',
               maskImage: 'linear-gradient(black var(--mask-stop), transparent var(--mask-stop))',
               WebkitMaskImage: 'linear-gradient(black var(--mask-stop), transparent var(--mask-stop))',
             }}
@@ -577,12 +573,11 @@ function EditToolRow({ item, onOpenFile }) {
         {expanded && hasDiff && (
           <motion.div
             key="diff-content"
-            initial={{ height: 0, opacity: 0, '--mask-stop': '0%' }}
-            animate={{ height: 'auto', opacity: 1, '--mask-stop': '100%' }}
-            exit={{ height: 0, opacity: 0, '--mask-stop': '0%' }}
+            initial={{ height: 0, opacity: 0, '--mask-stop': '0%', overflow: 'hidden' }}
+            animate={{ height: 'auto', opacity: 1, '--mask-stop': '100%', overflow: 'visible' }}
+            exit={{ height: 0, opacity: 0, '--mask-stop': '0%', overflow: 'hidden' }}
             transition={SPRING}
             style={{
-              overflow: 'hidden',
               maskImage: 'linear-gradient(black var(--mask-stop), transparent var(--mask-stop))',
               WebkitMaskImage: 'linear-gradient(black var(--mask-stop), transparent var(--mask-stop))',
             }}

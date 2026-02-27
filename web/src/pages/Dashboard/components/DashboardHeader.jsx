@@ -136,9 +136,9 @@ const DashboardHeader = ({ title = 'LangAlpha', onStockSearch, onModifyPreferenc
 
   return (
     <>
-      <div className="flex items-center justify-between px-5 py-1.5" style={{ backgroundColor: 'var(--color-bg-card-gradient, var(--color-bg-elevated))', borderBottom: '1px solid var(--color-bg-card-border, var(--color-border-muted))', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}>
+      <div className="flex items-center justify-between px-3 sm:px-5 py-1.5" style={{ backgroundColor: 'var(--color-bg-card-gradient, var(--color-bg-elevated))', borderBottom: '1px solid var(--color-bg-card-border, var(--color-border-muted))', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}>
         <h1 className="dashboard-title-font text-base font-medium" style={{ color: 'var(--color-text-primary)', letterSpacing: '0.15px' }}>{title}</h1>
-        <div className="flex items-center gap-4 flex-1 max-w-md mx-8">
+        <div className="flex items-center gap-4 flex-1 max-w-md mx-2 sm:mx-8">
           <div className="dashboard-search-wrapper" ref={dropdownRef}>
             <form 
               onSubmit={handleSubmit} 
@@ -214,34 +214,23 @@ const DashboardHeader = ({ title = 'LangAlpha', onStockSearch, onModifyPreferenc
                 >
                   {t('dashboard.contactMessage')}
                 </p>
-                <div
-                  className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors hover:opacity-80 mb-2"
-                  style={{ backgroundColor: 'var(--color-bg-input)' }}
-                  onClick={() => {
-                    window.location.href = 'mailto:zzxxi.chen@gmail.com';
-                    setShowHelpPopover(false);
-                  }}
-                >
-                  <Mail className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
-                  <div className="min-w-0">
-                    <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>Email</p>
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>zzxxi.chen@gmail.com</p>
+                {(import.meta.env.VITE_CONTACT_EMAILS || '').split(',').filter(Boolean).map((email, idx, arr) => (
+                  <div
+                    key={email}
+                    className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors hover:opacity-80"
+                    style={{ backgroundColor: 'var(--color-bg-input)', marginBottom: idx < arr.length - 1 ? '8px' : undefined }}
+                    onClick={() => {
+                      window.location.href = `mailto:${email.trim()}`;
+                      setShowHelpPopover(false);
+                    }}
+                  >
+                    <Mail className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
+                    <div className="min-w-0">
+                      <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>Email</p>
+                      <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{email.trim()}</p>
+                    </div>
                   </div>
-                </div>
-                <div
-                  className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors hover:opacity-80"
-                  style={{ backgroundColor: 'var(--color-bg-input)' }}
-                  onClick={() => {
-                    window.location.href = 'mailto:zhizhu0730@gmail.com';
-                    setShowHelpPopover(false);
-                  }}
-                >
-                  <Mail className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
-                  <div className="min-w-0">
-                    <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>Email</p>
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>zhizhu0730@gmail.com</p>
-                  </div>
-                </div>
+                ))}
               </div>
             )}
           </div>

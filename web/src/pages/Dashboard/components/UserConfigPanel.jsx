@@ -407,11 +407,11 @@ function UserConfigPanel({ isOpen, onClose, onModifyPreferences, onStartOnboardi
         onClick={handleClose}
       >
         <div
-          className="relative w-full max-w-2xl rounded-lg p-6"
+          className="relative w-full max-w-2xl rounded-lg p-4 sm:p-6"
           style={{
             backgroundColor: 'var(--color-bg-elevated)',
             border: '1px solid var(--color-border-muted)',
-            height: '80vh',
+            height: 'min(80vh, 800px)',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',

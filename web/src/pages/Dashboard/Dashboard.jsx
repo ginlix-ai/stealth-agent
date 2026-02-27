@@ -386,14 +386,14 @@ function Dashboard() {
 
       <DashboardHeader onModifyPreferences={navigateToModifyPreferences} onStartOnboarding={navigateToOnboarding} />
 
-      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+      <div className="flex-1 min-h-0 overflow-auto lg:overflow-hidden flex flex-col">
         <div className="w-full flex-1 min-h-0 flex justify-center">
-          <div className="w-full h-full min-h-0 max-w-[1400px] px-6 py-4 flex flex-col">
-            <div className="grid grid-cols-[1fr_360px] gap-4 flex-1 min-h-0 h-full">
-              <div className="w-full flex flex-col gap-4 h-full min-h-0 overflow-hidden">
+          <div className="w-full lg:h-full min-h-0 max-w-[1400px] px-3 sm:px-6 py-4 flex flex-col">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 flex-1 min-h-0 lg:h-full">
+              <div className="w-full flex flex-col gap-4 lg:h-full min-h-0 overflow-auto lg:overflow-hidden">
                 <IndexMovementCard indices={indices} loading={indicesLoading} />
                 <PopularCard items={popularItems} loading={popularLoading} hasMore={popularHasMore} onLoadMore={loadMorePopular} />
-                <div className="w-full grid grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
+                <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
                   <TopNewsCard items={newsItems} loading={newsLoading} />
                   <TopResearchCard items={researchItems} loading={researchLoading} />
                 </div>

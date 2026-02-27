@@ -135,12 +135,14 @@ export default function SandboxSettingsPanel({ onClose, workspaceId }) {
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl rounded-lg p-6"
+        className="relative w-full max-w-2xl rounded-lg p-4 sm:p-6"
         style={{
           backgroundColor: 'var(--color-bg-elevated)',
           border: '1px solid var(--color-border-muted)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
+          height: 'min(80vh, 650px)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -177,6 +179,7 @@ export default function SandboxSettingsPanel({ onClose, workspaceId }) {
         </div>
 
         {/* Content */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {loading ? (
           <LoadingSkeleton />
         ) : error ? (
@@ -233,6 +236,7 @@ export default function SandboxSettingsPanel({ onClose, workspaceId }) {
             )}
           </>
         )}
+        </div>
       </div>
     </div>
   );
@@ -250,7 +254,7 @@ function LoadingSkeleton() {
         <div
           key={i}
           className="h-16 rounded-lg animate-pulse"
-          style={{ backgroundColor: 'var(--color-border-muted)' }}
+          style={{ backgroundColor: 'var(--color-bg-card)' }}
         />
       ))}
     </div>
@@ -305,7 +309,7 @@ function OverviewTab({ stats, isRunning, actionLoading, onStartStop }) {
           <div
             key={label}
             className="flex items-center gap-3 p-3 rounded-lg"
-            style={{ backgroundColor: 'var(--color-border-muted)', border: '1px solid var(--color-border-muted)' }}
+            style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-muted)' }}
           >
             <Icon className="h-5 w-5 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
             <div>
@@ -319,7 +323,7 @@ function OverviewTab({ stats, isRunning, actionLoading, onStartStop }) {
       {/* Status + metadata */}
       <div
         className="flex items-center justify-between p-3 rounded-lg"
-        style={{ backgroundColor: 'var(--color-border-muted)', border: '1px solid var(--color-border-muted)' }}
+        style={{ backgroundColor: 'var(--color-bg-card)', border: '1px solid var(--color-border-muted)' }}
       >
         <div className="flex items-center gap-3">
           {isTransitioning ? (
@@ -345,7 +349,7 @@ function OverviewTab({ stats, isRunning, actionLoading, onStartStop }) {
         </div>
         <div className="flex items-center gap-2">
           {stats.auto_stop_interval != null && (
-            <span className="text-xs px-2 py-1 rounded" style={{ color: 'var(--color-text-tertiary)', backgroundColor: 'var(--color-border-muted)' }}>
+            <span className="text-xs px-2 py-1 rounded" style={{ color: 'var(--color-text-tertiary)', backgroundColor: 'var(--color-bg-card)' }}>
               Auto-stop: {stats.auto_stop_interval}m
             </span>
           )}
@@ -421,7 +425,7 @@ function StorageTab({ stats, showDirBreakdown, onToggleBreakdown }) {
           <span>{disk.used} used</span>
           <span>{disk.available} available</span>
         </div>
-        <div className="h-3 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-border-muted)' }}>
+        <div className="h-3 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--color-bg-card)' }}>
           <div
             className="h-full rounded-full transition-all"
             style={{
@@ -454,7 +458,7 @@ function StorageTab({ stats, showDirBreakdown, onToggleBreakdown }) {
                 <div
                   key={d.path}
                   className="flex justify-between py-1.5 px-3 rounded text-sm"
-                  style={{ backgroundColor: 'var(--color-border-muted)' }}
+                  style={{ backgroundColor: 'var(--color-bg-card)' }}
                 >
                   <span className="font-mono truncate" style={{ color: 'var(--color-text-primary)' }}>{d.path}/</span>
                   <span className="flex-shrink-0 ml-4" style={{ color: 'var(--color-text-tertiary)' }}>{d.size}</span>
@@ -511,7 +515,7 @@ function PackagesTab({
               <div
                 key={p.name}
                 className="flex justify-between items-center py-1.5 px-3 rounded text-sm"
-                style={{ backgroundColor: 'var(--color-border-muted)' }}
+                style={{ backgroundColor: 'var(--color-bg-card)' }}
               >
                 <div className="flex items-center gap-2">
                   <span style={{ color: isDefault ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)' }}>
@@ -520,7 +524,7 @@ function PackagesTab({
                   {isDefault && (
                     <span
                       className="text-[10px] px-1.5 py-0.5 rounded"
-                      style={{ color: 'var(--color-text-tertiary)', backgroundColor: 'var(--color-border-muted)' }}
+                      style={{ color: 'var(--color-text-tertiary)', backgroundColor: 'var(--color-bg-card)' }}
                     >
                       default
                     </span>
@@ -572,7 +576,7 @@ function PackagesTab({
           <div
             className="text-xs p-2 rounded font-mono whitespace-pre-wrap max-h-32 overflow-y-auto"
             style={{
-              backgroundColor: 'var(--color-border-muted)',
+              backgroundColor: 'var(--color-bg-card)',
               color: installResult.success ? 'var(--color-text-secondary)' : 'var(--color-loss)',
             }}
           >
@@ -603,7 +607,7 @@ function ToolsTab({ stats, refreshing, refreshResult, onRefresh }) {
               <div
                 key={name}
                 className="flex items-center gap-2.5 py-2 px-3 rounded text-sm"
-                style={{ backgroundColor: 'var(--color-border-muted)' }}
+                style={{ backgroundColor: 'var(--color-bg-card)' }}
               >
                 <Server className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-primary)' }} />
                 <span style={{ color: 'var(--color-text-primary)' }}>{name}</span>
@@ -628,7 +632,7 @@ function ToolsTab({ stats, refreshing, refreshResult, onRefresh }) {
               <div
                 key={skill.name}
                 className="flex items-start gap-2.5 py-2 px-3 rounded text-sm"
-                style={{ backgroundColor: 'var(--color-border-muted)' }}
+                style={{ backgroundColor: 'var(--color-bg-card)' }}
               >
                 <BookOpen className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: 'var(--color-accent-primary)' }} />
                 <div className="min-w-0">
@@ -661,7 +665,7 @@ function ToolsTab({ stats, refreshing, refreshResult, onRefresh }) {
           style={{
             color: 'var(--color-text-primary)',
             border: '1px solid var(--color-border-muted)',
-            backgroundColor: 'var(--color-border-muted)',
+            backgroundColor: 'var(--color-bg-card)',
           }}
         >
           {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -672,7 +676,7 @@ function ToolsTab({ stats, refreshing, refreshResult, onRefresh }) {
           <div
             className="text-xs p-3 rounded"
             style={{
-              backgroundColor: 'var(--color-border-muted)',
+              backgroundColor: 'var(--color-bg-card)',
               color: refreshResult.status === 'error' ? 'var(--color-loss)' : 'var(--color-text-secondary)',
             }}
           >

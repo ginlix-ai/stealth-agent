@@ -261,8 +261,8 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, 
         {/* Message bubble */}
         <div
           className={`rounded-lg ${
-            isUser ? 'px-4 py-3 rounded-tr-none' : 'pl-0 pr-0 pb-3 rounded-tl-none'
-          } overflow-hidden`}
+            isUser ? 'px-4 py-3 rounded-tr-none overflow-hidden' : 'pl-0 pr-0 pb-3 rounded-tl-none'
+          }`}
           style={{
             backgroundColor: isUser
               ? 'var(--color-gray-292929)'
@@ -275,7 +275,7 @@ function MessageBubble({ message, hideAvatar, compactToolCalls, isSubagentView, 
           {isPendingDelivery ? (
             <TextShimmer
               as="span"
-              className="text-sm [--base-color:var(--color-text-primary)] [--base-gradient-color:var(--color-text-secondary)]"
+              className="text-sm [--base-color:var(--color-text-secondary)] [--base-gradient-color:var(--color-text-primary)]"
               duration={1.5}
             >
               {message.content || ''}
