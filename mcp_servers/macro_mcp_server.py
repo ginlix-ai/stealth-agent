@@ -18,15 +18,10 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from data_client.fmp import get_fmp_client, fmp_lifespan
 
-mcp = FastMCP("MacroMCP")
 
-
-def _load_fmp_client():
-    """Lazily load FMP client so server can start without FMP_API_KEY."""
-    from src.data_client.fmp import FMPClient
-
-    return FMPClient()
+mcp = FastMCP("MacroMCP", lifespan=fmp_lifespan)
 
 
 @mcp.tool()
@@ -51,13 +46,12 @@ async def get_economic_indicator(
         Raw JSON with date and value for each observation
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}", "indicator": name}
 
     try:
-        async with client:
-            data = await client.get_economic_indicators(name, limit=limit)
+        data = await client.get_economic_indicators(name, limit=limit)
 
         return {
             "data_type": "economic_indicator",
@@ -91,15 +85,14 @@ async def get_economic_calendar(
         Raw JSON with event name, country, date, prior/estimate/actual values
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}"}
 
     try:
-        async with client:
-            data = await client.get_economic_calendar(
-                from_date=from_date, to_date=to_date
-            )
+        data = await client.get_economic_calendar(
+            from_date=from_date, to_date=to_date
+        )
 
         return {
             "data_type": "economic_calendar",
@@ -134,15 +127,14 @@ async def get_treasury_rates(
         Raw JSON with date and rates for 1M, 2M, 3M, 6M, 1Y, 2Y, 3Y, 5Y, 7Y, 10Y, 20Y, 30Y
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}"}
 
     try:
-        async with client:
-            data = await client.get_treasury_rates(
-                from_date=from_date, to_date=to_date
-            )
+        data = await client.get_treasury_rates(
+            from_date=from_date, to_date=to_date
+        )
 
         return {
             "data_type": "treasury_rates",
@@ -170,13 +162,12 @@ async def get_market_risk_premium() -> dict:
         Raw JSON with country, risk premium, and total equity risk premium
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}"}
 
     try:
-        async with client:
-            data = await client.get_market_risk_premium()
+        data = await client.get_market_risk_premium()
 
         return {
             "data_type": "market_risk_premium",
@@ -209,15 +200,14 @@ async def get_earnings_calendar(
         Raw JSON with symbol, date, EPS estimate, EPS actual, revenue estimate, revenue actual
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}"}
 
     try:
-        async with client:
-            data = await client.get_earnings_calendar_by_date(
-                from_date=from_date, to_date=to_date
-            )
+        data = await client.get_earnings_calendar_by_date(
+            from_date=from_date, to_date=to_date
+        )
 
         return {
             "data_type": "earnings_calendar",

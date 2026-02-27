@@ -4,10 +4,11 @@ FMP (Financial Modeling Prep) data source module.
 
 from typing import Optional
 import asyncio
+from contextlib import asynccontextmanager
 
 from .fmp_client import FMPClient
 
-__all__ = ["FMPClient", "get_fmp_client", "close_fmp_client"]
+__all__ = ["FMPClient", "get_fmp_client", "close_fmp_client", "fmp_lifespan"]
 
 # Async singleton for FMPClient
 _fmp_client: Optional[FMPClient] = None
@@ -43,3 +44,10 @@ async def close_fmp_client() -> None:
         if _fmp_client is not None:
             await _fmp_client.close()
             _fmp_client = None
+
+
+@asynccontextmanager
+async def fmp_lifespan(app):
+    """FastMCP lifespan that closes the shared FMPClient on shutdown."""
+    yield
+    await close_fmp_client()

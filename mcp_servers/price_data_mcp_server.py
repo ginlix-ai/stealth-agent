@@ -21,8 +21,10 @@ from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from data_client.fmp import get_fmp_client, fmp_lifespan
 
-mcp = FastMCP("PriceDataMCP")
+
+mcp = FastMCP("PriceDataMCP", lifespan=fmp_lifespan)
 
 
 _INTRADAY_INTERVALS_STOCK = {"1min", "5min", "15min", "30min", "1hour", "4hour"}
@@ -81,13 +83,6 @@ def _default_dates_for_intraday(from_date: str | None, to_date: str | None) -> t
     )
 
 
-def _load_fmp_client():
-    # Imported lazily so this server can start without FMP_API_KEY.
-    from src.data_client.fmp import FMPClient  # local sandbox upload or repo import
-
-    return FMPClient()
-
-
 @mcp.tool()
 async def get_stock_data(
     symbol: str,
@@ -117,28 +112,27 @@ async def get_stock_data(
     interval_lower = interval.lower()
 
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}"}
 
     try:
-        async with client:
-            if interval_lower in _DAILY_INTERVALS:
-                rows = await client.get_stock_price(symbol, from_date=start_date, to_date=end_date)
-            else:
-                if interval_lower not in _INTRADAY_INTERVALS_STOCK:
-                    return {
-                        "error": "Unsupported interval for stock",
-                        "supported": sorted(_DAILY_INTERVALS | _INTRADAY_INTERVALS_STOCK),
-                    }
+        if interval_lower in _DAILY_INTERVALS:
+            rows = await client.get_stock_price(symbol, from_date=start_date, to_date=end_date)
+        else:
+            if interval_lower not in _INTRADAY_INTERVALS_STOCK:
+                return {
+                    "error": "Unsupported interval for stock",
+                    "supported": sorted(_DAILY_INTERVALS | _INTRADAY_INTERVALS_STOCK),
+                }
 
-                intraday_start, intraday_end = _default_dates_for_intraday(start_date, end_date)
-                rows = await client.get_intraday_chart(
-                    symbol,
-                    interval_lower,
-                    from_date=intraday_start,
-                    to_date=intraday_end,
-                )
+            intraday_start, intraday_end = _default_dates_for_intraday(start_date, end_date)
+            rows = await client.get_intraday_chart(
+                symbol,
+                interval_lower,
+                from_date=intraday_start,
+                to_date=intraday_end,
+            )
     except Exception as e:  # noqa: BLE001
         return {"error": str(e)}
 
@@ -182,68 +176,67 @@ async def get_asset_data(
         return {"error": "Invalid asset_type", "supported": ["stock", "commodity", "crypto", "forex"]}
 
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}"}
 
     try:
-        async with client:
-            if at == "stock":
-                if interval_lower in _DAILY_INTERVALS:
-                    rows = await client.get_stock_price(symbol, from_date=from_date, to_date=to_date)
-                else:
-                    if interval_lower not in _INTRADAY_INTERVALS_STOCK:
-                        return {
-                            "error": "Unsupported interval for stock",
-                            "supported": sorted(_DAILY_INTERVALS | _INTRADAY_INTERVALS_STOCK),
-                        }
+        if at == "stock":
+            if interval_lower in _DAILY_INTERVALS:
+                rows = await client.get_stock_price(symbol, from_date=from_date, to_date=to_date)
+            else:
+                if interval_lower not in _INTRADAY_INTERVALS_STOCK:
+                    return {
+                        "error": "Unsupported interval for stock",
+                        "supported": sorted(_DAILY_INTERVALS | _INTRADAY_INTERVALS_STOCK),
+                    }
 
-                    intraday_start, intraday_end = _default_dates_for_intraday(from_date, to_date)
-                    rows = await client.get_intraday_chart(
+                intraday_start, intraday_end = _default_dates_for_intraday(from_date, to_date)
+                rows = await client.get_intraday_chart(
+                    symbol,
+                    interval_lower,
+                    from_date=intraday_start,
+                    to_date=intraday_end,
+                )
+
+        else:
+            if interval_lower in _DAILY_INTERVALS:
+                if at == "commodity":
+                    rows = await client.get_commodity_price(symbol, from_date=from_date, to_date=to_date)
+                elif at == "crypto":
+                    rows = await client.get_crypto_price(symbol, from_date=from_date, to_date=to_date)
+                else:
+                    rows = await client.get_forex_price(symbol, from_date=from_date, to_date=to_date)
+
+            else:
+                if interval_lower not in _INTRADAY_INTERVALS_ASSET:
+                    return {
+                        "error": "Unsupported interval for commodity/crypto/forex",
+                        "supported": sorted(_DAILY_INTERVALS | _INTRADAY_INTERVALS_ASSET),
+                    }
+
+                intraday_start, intraday_end = _default_dates_for_intraday(from_date, to_date)
+                if at == "commodity":
+                    rows = await client.get_commodity_intraday_chart(
                         symbol,
                         interval_lower,
                         from_date=intraday_start,
                         to_date=intraday_end,
                     )
-
-            else:
-                if interval_lower in _DAILY_INTERVALS:
-                    if at == "commodity":
-                        rows = await client.get_commodity_price(symbol, from_date=from_date, to_date=to_date)
-                    elif at == "crypto":
-                        rows = await client.get_crypto_price(symbol, from_date=from_date, to_date=to_date)
-                    else:
-                        rows = await client.get_forex_price(symbol, from_date=from_date, to_date=to_date)
-
+                elif at == "crypto":
+                    rows = await client.get_crypto_intraday_chart(
+                        symbol,
+                        interval_lower,
+                        from_date=intraday_start,
+                        to_date=intraday_end,
+                    )
                 else:
-                    if interval_lower not in _INTRADAY_INTERVALS_ASSET:
-                        return {
-                            "error": "Unsupported interval for commodity/crypto/forex",
-                            "supported": sorted(_DAILY_INTERVALS | _INTRADAY_INTERVALS_ASSET),
-                        }
-
-                    intraday_start, intraday_end = _default_dates_for_intraday(from_date, to_date)
-                    if at == "commodity":
-                        rows = await client.get_commodity_intraday_chart(
-                            symbol,
-                            interval_lower,
-                            from_date=intraday_start,
-                            to_date=intraday_end,
-                        )
-                    elif at == "crypto":
-                        rows = await client.get_crypto_intraday_chart(
-                            symbol,
-                            interval_lower,
-                            from_date=intraday_start,
-                            to_date=intraday_end,
-                        )
-                    else:
-                        rows = await client.get_forex_intraday_chart(
-                            symbol,
-                            interval_lower,
-                            from_date=intraday_start,
-                            to_date=intraday_end,
-                        )
+                    rows = await client.get_forex_intraday_chart(
+                        symbol,
+                        interval_lower,
+                        from_date=intraday_start,
+                        to_date=intraday_end,
+                    )
 
     except Exception as e:  # noqa: BLE001
         return {"error": str(e)}

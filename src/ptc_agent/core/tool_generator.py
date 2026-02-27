@@ -496,10 +496,12 @@ def _start_mcp_server(server_name: str) -> subprocess.Popen:
     proc_env = os.environ.copy()
 
     # Ensure sandbox-internal packages are importable by Python MCP servers.
-    # We upload them under /home/daytona/_internal and add that to PYTHONPATH.
+    # We upload them under /home/daytona/_internal/src and add paths to PYTHONPATH.
+    # - _internal/src: allows `from data_client.fmp import ...` (bare package name)
+    # - _internal:     allows `from src.data_client.fmp import ...` (qualified)
     internal_root = "/home/daytona/_internal"
     existing_pythonpath = proc_env.get("PYTHONPATH", "")
-    extra_paths = ["/home/daytona", internal_root]
+    extra_paths = ["/home/daytona", f"{{internal_root}}/src", internal_root]
     proc_env["PYTHONPATH"] = ":".join([p for p in [existing_pythonpath, *extra_paths] if p])
 
     server_env = config.get("env", {{}})

@@ -1997,7 +1997,7 @@ class PTCSandbox:
             )
 
             internal_dir = f"{work_dir}/_internal"
-            exec_env = {"PYTHONPATH": f"{work_dir}:{internal_dir}"}
+            exec_env = {"PYTHONPATH": f"{work_dir}:{internal_dir}/src:{internal_dir}"}
 
             # Add environment variables from MCP server configs (only enabled servers)
             import os

@@ -5,9 +5,12 @@ Central client for all FMP API calls with caching, rate limiting, and error hand
 
 import os
 import json
+from collections import OrderedDict
 from typing import Dict, List, Optional, Any, Union
 from datetime import datetime, timedelta
 import httpx
+
+_CACHE_MAX_SIZE = 512
 
 
 class FMPClient:
@@ -32,7 +35,7 @@ class FMPClient:
 
         self.cache_ttl = cache_ttl
         self._client: Optional[httpx.AsyncClient] = None
-        self._cache: Dict[str, Any] = {}
+        self._cache: OrderedDict[str, Any] = OrderedDict()
         self._cache_timestamps: Dict[str, datetime] = {}
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -99,8 +102,9 @@ class FMPClient:
         # Create cache key
         cache_key = f"{endpoint}:{json.dumps(params, sort_keys=True)}"
 
-        # Check cache
+        # Check cache (move to end on hit for LRU ordering)
         if use_cache and self._is_cache_valid(cache_key):
+            self._cache.move_to_end(cache_key)
             return self._cache[cache_key]
 
         # Build URL and make request
@@ -112,10 +116,13 @@ class FMPClient:
             response.raise_for_status()
             data = response.json()
 
-            # Cache successful response
+            # Cache successful response (bounded LRU — evict oldest when full)
             if use_cache and data:
                 self._cache[cache_key] = data
                 self._cache_timestamps[cache_key] = datetime.now()
+                while len(self._cache) > _CACHE_MAX_SIZE:
+                    oldest_key, _ = self._cache.popitem(last=False)
+                    self._cache_timestamps.pop(oldest_key, None)
 
             return data
 

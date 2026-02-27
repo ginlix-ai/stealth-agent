@@ -22,15 +22,10 @@ from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 
+from data_client.fmp import get_fmp_client, fmp_lifespan
 
-mcp = FastMCP("FundamentalsMCP")
 
-
-def _load_fmp_client():
-    """Lazily load FMP client so server can start without FMP_API_KEY."""
-    from src.data_client.fmp import FMPClient
-
-    return FMPClient()
+mcp = FastMCP("FundamentalsMCP", lifespan=fmp_lifespan)
 
 
 @mcp.tool()
@@ -57,7 +52,7 @@ async def get_financial_statements(
         Raw JSON with full statement data (all fields, not summarized)
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
 
@@ -70,47 +65,46 @@ async def get_financial_statements(
     }
 
     try:
-        async with client:
-            if statement_type == "income":
-                data = await client.get_income_statement(
-                    symbol, period=period, limit=limit
-                )
-                result["data"] = data
-                result["count"] = len(data) if data else 0
+        if statement_type == "income":
+            data = await client.get_income_statement(
+                symbol, period=period, limit=limit
+            )
+            result["data"] = data
+            result["count"] = len(data) if data else 0
 
-            elif statement_type == "balance":
-                data = await client.get_balance_sheet(
-                    symbol, period=period, limit=limit
-                )
-                result["data"] = data
-                result["count"] = len(data) if data else 0
+        elif statement_type == "balance":
+            data = await client.get_balance_sheet(
+                symbol, period=period, limit=limit
+            )
+            result["data"] = data
+            result["count"] = len(data) if data else 0
 
-            elif statement_type == "cash":
-                data = await client.get_cash_flow(symbol, period=period, limit=limit)
-                result["data"] = data
-                result["count"] = len(data) if data else 0
+        elif statement_type == "cash":
+            data = await client.get_cash_flow(symbol, period=period, limit=limit)
+            result["data"] = data
+            result["count"] = len(data) if data else 0
 
-            else:  # "all"
-                income = await client.get_income_statement(
-                    symbol, period=period, limit=limit
-                )
-                balance = await client.get_balance_sheet(
-                    symbol, period=period, limit=limit
-                )
-                cash_flow = await client.get_cash_flow(
-                    symbol, period=period, limit=limit
-                )
+        else:  # "all"
+            income = await client.get_income_statement(
+                symbol, period=period, limit=limit
+            )
+            balance = await client.get_balance_sheet(
+                symbol, period=period, limit=limit
+            )
+            cash_flow = await client.get_cash_flow(
+                symbol, period=period, limit=limit
+            )
 
-                result["data"] = {
-                    "income_statement": income or [],
-                    "balance_sheet": balance or [],
-                    "cash_flow": cash_flow or [],
-                }
-                result["count"] = {
-                    "income_statement": len(income) if income else 0,
-                    "balance_sheet": len(balance) if balance else 0,
-                    "cash_flow": len(cash_flow) if cash_flow else 0,
-                }
+            result["data"] = {
+                "income_statement": income or [],
+                "balance_sheet": balance or [],
+                "cash_flow": cash_flow or [],
+            }
+            result["count"] = {
+                "income_statement": len(income) if income else 0,
+                "balance_sheet": len(balance) if balance else 0,
+                "cash_flow": len(cash_flow) if cash_flow else 0,
+            }
 
         return result
 
@@ -140,18 +134,17 @@ async def get_financial_ratios(
         Raw JSON with key metrics and financial ratios per period
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
 
     try:
-        async with client:
-            key_metrics = await client.get_key_metrics(
-                symbol, period=period, limit=limit
-            )
-            ratios = await client.get_financial_ratios(
-                symbol, period=period, limit=limit
-            )
+        key_metrics = await client.get_key_metrics(
+            symbol, period=period, limit=limit
+        )
+        ratios = await client.get_financial_ratios(
+            symbol, period=period, limit=limit
+        )
 
         return {
             "symbol": symbol,
@@ -194,18 +187,17 @@ async def get_growth_metrics(
         Raw JSON with growth rates per period
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
 
     try:
-        async with client:
-            financial_growth = await client.get_financial_growth(
-                symbol, period=period, limit=limit
-            )
-            income_growth = await client.get_income_statement_growth(
-                symbol, period=period, limit=limit
-            )
+        financial_growth = await client.get_financial_growth(
+            symbol, period=period, limit=limit
+        )
+        income_growth = await client.get_income_statement_growth(
+            symbol, period=period, limit=limit
+        )
 
         return {
             "symbol": symbol,
@@ -248,19 +240,18 @@ async def get_historical_valuation(
         Raw JSON with current DCF, historical DCF, and enterprise value per period
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
 
     try:
-        async with client:
-            current_dcf = await client.get_dcf(symbol)
-            historical_dcf = await client.get_historical_dcf(
-                symbol, period=period, limit=limit
-            )
-            enterprise_value = await client.get_enterprise_value(
-                symbol, period=period, limit=limit
-            )
+        current_dcf = await client.get_dcf(symbol)
+        historical_dcf = await client.get_historical_dcf(
+            symbol, period=period, limit=limit
+        )
+        enterprise_value = await client.get_enterprise_value(
+            symbol, period=period, limit=limit
+        )
 
         return {
             "symbol": symbol,
@@ -303,14 +294,13 @@ async def get_insider_trades(
         Raw JSON with insider trades list and aggregate buy/sell stats
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
 
     try:
-        async with client:
-            trades = await client.get_insider_trades(symbol, limit=limit)
-            stats = await client.get_insider_trade_stats(symbol)
+        trades = await client.get_insider_trades(symbol, limit=limit)
+        stats = await client.get_insider_trade_stats(symbol)
 
         return {
             "symbol": symbol,
@@ -348,14 +338,13 @@ async def get_dividends_and_splits(
         Raw JSON with dividend history and split history
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
 
     try:
-        async with client:
-            dividends = await client.get_dividends(symbol)
-            splits = await client.get_splits(symbol)
+        dividends = await client.get_dividends(symbol)
+        splits = await client.get_splits(symbol)
 
         return {
             "symbol": symbol,
@@ -393,13 +382,12 @@ async def get_shares_float(
         Raw JSON with float shares, outstanding shares, and float percentage
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
 
     try:
-        async with client:
-            data = await client.get_shares_float(symbol)
+        data = await client.get_shares_float(symbol)
 
         return {
             "symbol": symbol,
@@ -431,13 +419,12 @@ async def get_key_executives(
         Raw JSON with executive name, title, pay, and currency
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
 
     try:
-        async with client:
-            data = await client.get_key_executives(symbol)
+        data = await client.get_key_executives(symbol)
 
         return {
             "symbol": symbol,
@@ -475,15 +462,14 @@ async def get_technical_indicator(
         Raw JSON with date, OHLCV, and indicator values
     """
     try:
-        client = _load_fmp_client()
+        client = await get_fmp_client()
     except Exception as e:  # noqa: BLE001
         return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
 
     try:
-        async with client:
-            data = await client.get_technical_indicator(
-                symbol, indicator=indicator, period=period, timeframe=timeframe
-            )
+        data = await client.get_technical_indicator(
+            symbol, indicator=indicator, period=period, timeframe=timeframe
+        )
 
         return {
             "symbol": symbol,
