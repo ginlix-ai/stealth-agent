@@ -30,7 +30,10 @@ def create_execute_code_tool(sandbox: Any, mcp_registry: Any, thread_id: str = "
     """
 
     @tool("ExecuteCode")
-    async def execute_code(code: str) -> str:
+    async def execute_code(
+        code: str,
+        description: str | None = None,
+    ) -> str:
         """Execute Python code in the sandbox.
 
         Use for: Complex operations, data processing, MCP tool calls
@@ -38,6 +41,7 @@ def create_execute_code_tool(sandbox: Any, mcp_registry: Any, thread_id: str = "
 
         Args:
             code: Python code to execute. Print summary to stdout.
+            description: Brief description (5-10 words, active voice)
 
         Returns:
             SUCCESS with stdout/files, or ERROR with stderr
