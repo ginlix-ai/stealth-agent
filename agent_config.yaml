@@ -44,15 +44,28 @@ mcp:
       env:
         FMP_API_KEY: "${FMP_API_KEY}"
 
-    # Fundamentals MCP server for financial statements, ratios, growth, and valuation.
+    # Fundamentals MCP server for financial statements, ratios, growth, valuation,
+    # insider trades, dividends/splits, shares float, key executives, and technical indicators.
     - name: "fundamentals"
-      enabled: false
-      description: "Raw fundamental data for multi-year analysis"
-      instruction: "Use for financial statements, ratios, growth metrics, and valuation data. Returns raw JSON for programmatic analysis and charting."
+      enabled: true
+      description: "Raw fundamental data, ownership, and technical indicators for multi-year analysis"
+      instruction: "Use for financial statements, ratios, growth metrics, valuation data, insider trades, dividends/splits, shares float, key executives, and technical indicators. Returns raw JSON for programmatic analysis, charting, and model building."
       tool_exposure_mode: "summary"
       transport: "stdio"
       command: "uv"
       args: ["run", "python", "mcp_servers/fundamentals_mcp_server.py"]
+      env:
+        FMP_API_KEY: "${FMP_API_KEY}"
+
+    # Macro MCP server for economic indicators, treasury rates, risk premium, and event calendars.
+    - name: "macro"
+      enabled: true
+      description: "Economic indicators, treasury rates, earnings calendar, and macro events"
+      instruction: "Use for macro-economic data: GDP, CPI, unemployment, treasury yield curve, risk-free rate for DCF, earnings calendar by date range, and economic event calendar. Returns raw JSON."
+      tool_exposure_mode: "summary"
+      transport: "stdio"
+      command: "uv"
+      args: ["run", "python", "mcp_servers/macro_mcp_server.py"]
       env:
         FMP_API_KEY: "${FMP_API_KEY}"
 
@@ -75,14 +88,6 @@ mcp:
       transport: "http"
       url: "https://mcp.alphavantage.co/mcp?apikey=${ALPHA_VANTAGE_API_KEY}"
 
-    - name: "tickertick"
-      description: "Financial news API for ticker news, curated news, and entity news from Tickertick"
-      instruction: "Use for getting financial news about specific tickers, curated market news, news from specific sources, or news about entities like people and companies."
-      tool_exposure_mode: "summary" # 7 news-related tools
-      transport: "stdio"
-      command: "uv"
-      args: ["run", "python", "mcp_servers/tickertick_mcp_server.py"]
-      env: {}
 
     - name: "yfinance"
       enabled: false

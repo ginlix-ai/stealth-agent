@@ -9,6 +9,11 @@ Tools:
 - get_financial_ratios: Raw ratios and key metrics (multi-year)
 - get_growth_metrics: Raw growth rates (multi-year)
 - get_historical_valuation: Raw DCF and enterprise value (multi-year)
+- get_insider_trades: Insider trading transactions and aggregate stats
+- get_dividends_and_splits: Dividend history and stock split history
+- get_shares_float: Shares float, outstanding shares, and float percentage
+- get_key_executives: Key executives with title and compensation
+- get_technical_indicator: Technical indicators (RSI, EMA, MACD, etc.)
 """
 
 from __future__ import annotations
@@ -271,6 +276,223 @@ async def get_historical_valuation(
                 "historical_dcf": historical_dcf or [],
                 "enterprise_value": enterprise_value or [],
             },
+            "source": "fmp",
+        }
+
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e), "symbol": symbol}
+
+
+@mcp.tool()
+async def get_insider_trades(
+    symbol: str,
+    limit: int = 50,
+) -> dict:
+    """Fetch insider trading transactions and aggregate buy/sell statistics.
+
+    Use cases:
+    - Detect insider buying clusters as bullish signals
+    - Screen for unusual insider activity
+    - Track C-suite confidence via their own stock transactions
+
+    Args:
+        symbol: Stock ticker (e.g., AAPL, MSFT)
+        limit: Number of recent transactions to fetch (default: 50)
+
+    Returns:
+        Raw JSON with insider trades list and aggregate buy/sell stats
+    """
+    try:
+        client = _load_fmp_client()
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
+
+    try:
+        async with client:
+            trades = await client.get_insider_trades(symbol, limit=limit)
+            stats = await client.get_insider_trade_stats(symbol)
+
+        return {
+            "symbol": symbol,
+            "data_type": "insider_trades",
+            "count": {
+                "trades": len(trades) if trades else 0,
+                "stats": len(stats) if stats else 0,
+            },
+            "data": {
+                "trades": trades or [],
+                "stats": stats or [],
+            },
+            "source": "fmp",
+        }
+
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e), "symbol": symbol}
+
+
+@mcp.tool()
+async def get_dividends_and_splits(
+    symbol: str,
+) -> dict:
+    """Fetch historical dividend payments and stock splits.
+
+    Use cases:
+    - Analyze dividend growth trajectory for income-oriented models
+    - Adjust historical prices for splits in backtesting
+    - Compare dividend yield history across peers
+
+    Args:
+        symbol: Stock ticker (e.g., AAPL, MSFT)
+
+    Returns:
+        Raw JSON with dividend history and split history
+    """
+    try:
+        client = _load_fmp_client()
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
+
+    try:
+        async with client:
+            dividends = await client.get_dividends(symbol)
+            splits = await client.get_splits(symbol)
+
+        return {
+            "symbol": symbol,
+            "data_type": "dividends_and_splits",
+            "count": {
+                "dividends": len(dividends) if dividends else 0,
+                "splits": len(splits) if splits else 0,
+            },
+            "data": {
+                "dividends": dividends or [],
+                "splits": splits or [],
+            },
+            "source": "fmp",
+        }
+
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e), "symbol": symbol}
+
+
+@mcp.tool()
+async def get_shares_float(
+    symbol: str,
+) -> dict:
+    """Fetch shares float, outstanding shares, and float percentage.
+
+    Use cases:
+    - Identify low-float stocks for volatility analysis
+    - Calculate institutional ownership concentration
+    - Screen for potential short squeeze candidates
+
+    Args:
+        symbol: Stock ticker (e.g., AAPL, MSFT)
+
+    Returns:
+        Raw JSON with float shares, outstanding shares, and float percentage
+    """
+    try:
+        client = _load_fmp_client()
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
+
+    try:
+        async with client:
+            data = await client.get_shares_float(symbol)
+
+        return {
+            "symbol": symbol,
+            "data_type": "shares_float",
+            "count": len(data) if data else 0,
+            "data": data or [],
+            "source": "fmp",
+        }
+
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e), "symbol": symbol}
+
+
+@mcp.tool()
+async def get_key_executives(
+    symbol: str,
+) -> dict:
+    """Fetch key executives with title and compensation details.
+
+    Use cases:
+    - Identify management team for company analysis
+    - Compare executive compensation across peers
+    - Track management changes in earnings analysis
+
+    Args:
+        symbol: Stock ticker (e.g., AAPL, MSFT)
+
+    Returns:
+        Raw JSON with executive name, title, pay, and currency
+    """
+    try:
+        client = _load_fmp_client()
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
+
+    try:
+        async with client:
+            data = await client.get_key_executives(symbol)
+
+        return {
+            "symbol": symbol,
+            "data_type": "key_executives",
+            "count": len(data) if data else 0,
+            "data": data or [],
+            "source": "fmp",
+        }
+
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e), "symbol": symbol}
+
+
+@mcp.tool()
+async def get_technical_indicator(
+    symbol: str,
+    indicator: str,
+    period: int = 14,
+    timeframe: str = "1day",
+) -> dict:
+    """Fetch technical indicator time series data.
+
+    Use cases:
+    - Plot RSI to identify overbought/oversold conditions
+    - Overlay EMA/MACD on price charts for trend analysis
+    - Screen stocks by technical signals
+
+    Args:
+        symbol: Stock ticker (e.g., AAPL, MSFT)
+        indicator: Indicator name — "rsi", "ema", "macd", "adx", "wma", "dema", "tema", "williams", "standardDeviation"
+        period: Indicator period length (default: 14)
+        timeframe: "1min", "5min", "15min", "30min", "1hour", "4hour", "1day" (default: "1day")
+
+    Returns:
+        Raw JSON with date, OHLCV, and indicator values
+    """
+    try:
+        client = _load_fmp_client()
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"Failed to initialize FMP client: {e}", "symbol": symbol}
+
+    try:
+        async with client:
+            data = await client.get_technical_indicator(
+                symbol, indicator=indicator, period=period, timeframe=timeframe
+            )
+
+        return {
+            "symbol": symbol,
+            "data_type": "technical_indicator",
+            "indicator": indicator,
+            "period": period,
+            "timeframe": timeframe,
+            "count": len(data) if data else 0,
+            "data": data or [],
             "source": "fmp",
         }
 

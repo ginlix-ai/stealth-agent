@@ -60,7 +60,6 @@ While PTC excels at complex work like multi-step data processing, financial mode
 **MCP servers** for raw data consumed through PTC code execution:
 - **Price data** for OHLCV time series across stocks, commodities, crypto, and forex
 - **Fundamentals** for multi-year financial statements, ratios, growth metrics, and valuation
-- **News** via TickerTick for ticker-specific and curated market news
 - **Yahoo Finance** for options chains, institutional holdings, insider transactions, ESG data, and cross-company comparisons
 
 The agent picks the right layer automatically: native tools for fast lookups that fit in context, MCP servers when the task requires bulk data processing, charting, or multi-year trend analysis in the sandbox.
