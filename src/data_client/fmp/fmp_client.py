@@ -397,6 +397,43 @@ class FMPClient:
                 return response[0]['peersList']
         return []
 
+    # Ownership & Capital Structure
+    async def get_insider_trades(self, symbol: str, limit: int = 100) -> List[Dict]:
+        """Get insider trading transactions (SEC Form 4 filings)"""
+        return await self._make_request("insider-trading/search",
+                                        params={"symbol": symbol, "limit": limit},
+                                        version="stable")
+
+    async def get_insider_trade_stats(self, symbol: str) -> List[Dict]:
+        """Get aggregate insider trading statistics (buy/sell totals)"""
+        return await self._make_request("insider-trading/statistics",
+                                        params={"symbol": symbol},
+                                        version="stable")
+
+    async def get_dividends(self, symbol: str) -> List[Dict]:
+        """Get historical dividend payments"""
+        return await self._make_request("dividends",
+                                        params={"symbol": symbol},
+                                        version="stable")
+
+    async def get_splits(self, symbol: str) -> List[Dict]:
+        """Get historical stock splits"""
+        return await self._make_request("splits",
+                                        params={"symbol": symbol},
+                                        version="stable")
+
+    async def get_shares_float(self, symbol: str) -> List[Dict]:
+        """Get shares float, outstanding shares, and float percentage"""
+        return await self._make_request("shares-float",
+                                        params={"symbol": symbol},
+                                        version="stable")
+
+    async def get_key_executives(self, symbol: str) -> List[Dict]:
+        """Get key executives with title and compensation"""
+        return await self._make_request("key-executives",
+                                        params={"symbol": symbol},
+                                        version="stable")
+
     # Analyst Data
     async def get_analyst_estimates(self,
                                     symbol: str,
@@ -896,6 +933,51 @@ class FMPClient:
                                         params=params,
                                         version="stable")
 
+    async def get_technical_indicator(self,
+                                      symbol: str,
+                                      indicator: str,
+                                      period: int = 14,
+                                      timeframe: str = "1day",
+                                      from_date: Optional[str] = None,
+                                      to_date: Optional[str] = None) -> List[Dict]:
+        """
+        Get technical indicator data (RSI, EMA, MACD, ADX, WMA, DEMA, TEMA, Williams %R, StdDev)
+
+        Args:
+            symbol: Stock ticker symbol
+            indicator: Indicator name (e.g., "rsi", "ema", "macd", "adx", "wma", "dema", "tema", "williams", "standardDeviation")
+            period: Indicator period length (default 14)
+            timeframe: Timeframe for calculation (default "1day")
+            from_date: Start date (YYYY-MM-DD)
+            to_date: End date (YYYY-MM-DD)
+
+        Returns:
+            List of indicator data points
+        """
+        from datetime import date
+
+        if from_date is None:
+            from_date = (date.today() - timedelta(days=500)).isoformat()
+        elif isinstance(from_date, date):
+            from_date = from_date.isoformat()
+
+        if to_date is None:
+            to_date = date.today().isoformat()
+        elif isinstance(to_date, date):
+            to_date = to_date.isoformat()
+
+        params = {
+            "symbol": symbol,
+            "periodLength": period,
+            "timeframe": timeframe,
+            "from": from_date,
+            "to": to_date,
+        }
+
+        return await self._make_request(f"technical-indicators/{indicator}",
+                                        params=params,
+                                        version="stable")
+
     async def get_stock_price(self,
                               symbol: str,
                               from_date: Optional[str] = None,
@@ -1213,6 +1295,65 @@ class FMPClient:
             params={"query": query, "limit": limit},
             use_cache=True  # Cache search results for better performance
         )
+
+    # Macro & Economic Data
+    async def get_economic_indicators(self, name: str, limit: int = 50) -> List[Dict]:
+        """
+        Get economic indicator time series
+
+        Args:
+            name: Indicator name (e.g., "GDP", "CPI", "unemploymentRate", "federalFundsRate",
+                  "inflationRate", "retailSales", "industrialProductionTotalIndex",
+                  "housingStarts", "consumerSentiment", "nonFarmPayrolls")
+            limit: Number of data points (default 50)
+        """
+        return await self._make_request("economic-indicators",
+                                        params={"name": name, "limit": limit},
+                                        version="stable")
+
+    async def get_economic_calendar(self,
+                                     from_date: Optional[str] = None,
+                                     to_date: Optional[str] = None) -> List[Dict]:
+        """Get upcoming economic events with prior/estimate/actual values"""
+        params = {}
+        if from_date:
+            params["from"] = from_date
+        if to_date:
+            params["to"] = to_date
+        return await self._make_request("economic-calendar",
+                                        params=params,
+                                        version="stable")
+
+    async def get_treasury_rates(self,
+                                  from_date: Optional[str] = None,
+                                  to_date: Optional[str] = None) -> List[Dict]:
+        """Get treasury rates across the full yield curve (1M to 30Y)"""
+        params = {}
+        if from_date:
+            params["from"] = from_date
+        if to_date:
+            params["to"] = to_date
+        return await self._make_request("treasury-rates",
+                                        params=params,
+                                        version="stable")
+
+    async def get_market_risk_premium(self) -> List[Dict]:
+        """Get market risk premium by country (for WACC/CAPM calculations)"""
+        return await self._make_request("market-risk-premium",
+                                        version="stable")
+
+    async def get_earnings_calendar_by_date(self,
+                                             from_date: str,
+                                             to_date: str) -> List[Dict]:
+        """
+        Get earnings calendar for all companies in a date range
+
+        Different from get_historical_earnings_calendar which is per-symbol.
+        This returns all companies reporting between from_date and to_date.
+        """
+        return await self._make_request("earnings-calendar",
+                                        params={"from": from_date, "to": to_date},
+                                        version="stable")
 
     # Utility Methods
     def clear_cache(self):
