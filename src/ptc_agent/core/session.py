@@ -216,6 +216,10 @@ class Session:
 
         if self.sandbox:
             await self.sandbox.stop_sandbox()
+            try:
+                await self.sandbox.daytona_client.close()
+            except Exception:
+                pass
 
         if self.mcp_registry:
             await self.mcp_registry.disconnect_all()
