@@ -11,6 +11,9 @@
   <img src="https://img.shields.io/badge/license-Apache%202.0-green.svg" alt="License" />
 </p>
 
+> [!IMPORTANT]
+> **Gemini 3 Hackathon Submission** — This branch contains the frozen code submitted to the [Gemini 3 Hackathon](https://gemini3.devpost.com/) and is the version running on [www.langalpha.com](https://www.langalpha.com). Please evaluate this branch and site for the submission. For the latest development version, please see the [`main`](https://github.com/ginlix-ai/stealth-agent/tree/main) branch.
+
 ---
 
 <p align="center">
