@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo, forwardRef, u
 import {
   Plus, ArrowUp, X, FileText, Loader2, Archive, Square,
   ScrollText, ChartCandlestick, Zap, FileStack, ChevronDown, FolderOpen, TextSelect,
-  Terminal, Bot,
+  Terminal, Bot, Shrink, HardDriveDownload,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { TokenUsageRing } from './token-usage-ring';
@@ -10,6 +10,15 @@ import { getSkills } from '../../pages/ChatAgent/utils/api';
 import './chat-input.css';
 
 /* --- UTILS --- */
+
+/** Return the appropriate icon for a slash command. */
+function getSlashCommandIcon(cmd, className) {
+  if (cmd.type === 'subagent') return <Bot className={className} />;
+  if (cmd.name === 'offload') return <HardDriveDownload className={className} />;
+  if (cmd.type === 'action') return <Shrink className={className} />;
+  return <Terminal className={className} />;
+}
+
 const formatFileSize = (bytes) => {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
@@ -73,6 +82,8 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_FILES = 5;
 const BUILTIN_SLASH_COMMANDS = [
   { type: 'subagent', name: 'subagent' },
+  { type: 'action', name: 'summarize', aliases: ['compaction', 'compact'] },
+  { type: 'action', name: 'offload', aliases: ['truncate'] },
 ];
 
 /* --- MAIN COMPONENT --- */
@@ -120,6 +131,8 @@ const ChatInput = forwardRef(function ChatInput({
   onClearPrefill = null,
   // Token usage (context window progress)
   tokenUsage = null,
+  // Action commands (e.g. /summarize) — fired immediately on selection
+  onAction = null,
 }, ref) {
   const { t } = useTranslation();
   const [message, setMessage] = useState('');
@@ -347,7 +360,13 @@ const ChatInput = forwardRef(function ChatInput({
     ];
     return items
       .filter((item) => !slashCommands.some((c) => c.name === item.name))
-      .filter((item) => item.name.toLowerCase().includes(query) || item.description.toLowerCase().includes(query))
+      .filter((item) => {
+        if (!query) return true;
+        if (item.name.toLowerCase().includes(query)) return true;
+        if (item.description.toLowerCase().includes(query)) return true;
+        if (item.aliases?.some((a) => a.toLowerCase().includes(query))) return true;
+        return false;
+      })
       .slice(0, 10);
   }, [skills, showSlashMenu, slashQuery, slashCommands, t]);
 
@@ -458,15 +477,20 @@ const ChatInput = forwardRef(function ChatInput({
     const after = message.slice(cursorPos);
     setMessage(before + after);
 
-    // Add command (deduplicate by name)
-    setSlashCommands((prev) => {
-      if (prev.some((c) => c.name === cmd.name)) return prev;
-      return [...prev, cmd];
-    });
-
     setShowSlashMenu(false);
     setSlashStart(-1);
     setSlashQuery('');
+
+    // Action commands fire immediately — no pill, no send required
+    if (cmd.type === 'action') {
+      onAction?.(cmd);
+    } else {
+      // Add command as pill (deduplicate by name)
+      setSlashCommands((prev) => {
+        if (prev.some((c) => c.name === cmd.name)) return prev;
+        return [...prev, cmd];
+      });
+    }
 
     setTimeout(() => {
       if (textareaRef.current) {
@@ -474,7 +498,7 @@ const ChatInput = forwardRef(function ChatInput({
         textareaRef.current.setSelectionRange(before.length, before.length);
       }
     }, 0);
-  }, [slashStart, message]);
+  }, [slashStart, message, onAction]);
 
   const removeSlashCommand = useCallback((name) => {
     setSlashCommands((prev) => prev.filter((c) => c.name !== name));
@@ -638,10 +662,7 @@ const ChatInput = forwardRef(function ChatInput({
                   className="mention-pill mention-pill-slash"
                   title={cmd.description}
                 >
-                  {cmd.type === 'subagent'
-                    ? <Bot className="h-3 w-3 flex-shrink-0 mention-pill-icon" />
-                    : <Terminal className="h-3 w-3 flex-shrink-0 mention-pill-icon" />
-                  }
+                  {getSlashCommandIcon(cmd, "h-3 w-3 flex-shrink-0 mention-pill-icon")}
                   <span>/{cmd.name}</span>
                   <button
                     className="mention-pill-remove"
@@ -753,10 +774,7 @@ const ChatInput = forwardRef(function ChatInput({
                     }}
                     onMouseEnter={() => setSlashActiveIndex(idx)}
                   >
-                    {cmd.type === 'subagent'
-                      ? <Bot className="h-4 w-4 flex-shrink-0 slash-cmd-icon" />
-                      : <Terminal className="h-4 w-4 flex-shrink-0 slash-cmd-icon" />
-                    }
+                    {getSlashCommandIcon(cmd, "h-4 w-4 flex-shrink-0 slash-cmd-icon")}
                     <span className="slash-cmd-name">/{cmd.name}</span>
                     <span className="slash-cmd-desc">{cmd.description}</span>
                   </div>

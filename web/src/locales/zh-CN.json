@@ -222,6 +222,8 @@
     "letsGo": "开始",
     "skip": "跳过",
     "workspaceStarting": "正在启动工作区...",
+    "summarizing": "正在总结对话...",
+    "offloading": "正在转存上下文...",
     "placeholderDefault": "输入 / 调用技能，@ 引用文件",
     "placeholderPendingRejection": "说说希望怎么调整...",
     "placeholderInterrupted": "输入新指令继续引导智能体...",
@@ -230,8 +232,16 @@
     "slashCommand": {
       "subagentName": "subagent",
       "subagentDesc": "使用子代理完成此任务",
+      "summarizeName": "summarize",
+      "summarizeDesc": "压缩对话上下文以释放 token 空间",
+      "offloadDesc": "将大型工具参数转存至沙箱文件系统",
       "noMatching": "无匹配命令"
-    }
+    },
+    "summarizedNotification": "上下文已压缩 · {{from}} 条消息 → 摘要",
+    "offloadedArgsNotification": "工具参数已转存 · {{count}} 个工具",
+    "offloadedReadsNotification": "过期读取结果已转存 · {{count}} 个读取",
+    "offloadedNotification": "上下文已转存 · {{args}} 个工具参数, {{reads}} 个读取",
+    "compactionError": "上下文压缩失败"
   },
   "context": {
     "addToContext": "添加到上下文",

@@ -5,7 +5,7 @@ import { ArrowLeft, FolderOpen, Bot, StopCircle, ScrollText, AlertTriangle, Chec
 import { ScrollArea } from '../../../components/ui/scroll-area';
 import { useAuth } from '../../../contexts/AuthContext';
 import { updateCurrentUser } from '../../Dashboard/utils/api';
-import { softInterruptWorkflow, getWorkspace } from '../utils/api';
+import { softInterruptWorkflow, getWorkspace, summarizeThread, offloadThread } from '../utils/api';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { saveChatSession, getChatSession, clearChatSession } from '../hooks/utils/chatSessionRestore';
 import { useCardState } from '../hooks/useCardState';
@@ -254,6 +254,8 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     isLoading,
     hasActiveSubagents,
     workspaceStarting,
+    isCompacting,
+    setIsCompacting,
     isLoadingHistory,
     isReconnecting,
     messageError,
@@ -271,6 +273,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     tokenUsage,
     threadId: currentThreadId,
     isShared: threadIsShared,
+    insertNotification,
     getSubagentHistory,
     resolveSubagentIdToAgentId,
   } = useChatMessages(workspaceId, threadId, updateTodoListCard, updateSubagentCard, inactivateAllSubagents, completePendingTodos, handleOnboardingRelatedToolComplete, refreshFiles, agentMode, clearSubagentCards, handleWorkspaceCreated);
@@ -367,6 +370,47 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     const additionalContext = contexts.length > 0 ? contexts : null;
     handleSendMessage(message, planMode, additionalContext, attachmentMeta);
   }, [handleSendMessage]);
+
+  // Handle action-type slash commands (e.g. /summarize, /compaction, /offload)
+  const handleAction = useCallback((cmd) => {
+    const tid = currentThreadId || threadId;
+    if (!tid || tid === '__default__') return;
+
+    if (cmd.name === 'summarize') {
+      setIsCompacting('summarize');
+      summarizeThread(tid)
+        .then((data) => {
+          setIsCompacting(false);
+          insertNotification(
+            t('chat.summarizedNotification', { from: data.original_message_count }),
+          );
+        })
+        .catch((err) => {
+          console.error('[ChatView] Summarization failed:', err);
+          const detail = err?.response?.data?.detail;
+          insertNotification(detail || t('chat.compactionError'));
+          setIsCompacting(false);
+        });
+    } else if (cmd.name === 'offload') {
+      setIsCompacting('offload');
+      offloadThread(tid)
+        .then((data) => {
+          setIsCompacting(false);
+          insertNotification(
+            t('chat.offloadedNotification', {
+              args: data.offloaded_args || 0,
+              reads: data.offloaded_reads || 0,
+            }),
+          );
+        })
+        .catch((err) => {
+          console.error('[ChatView] Offload failed:', err);
+          const detail = err?.response?.data?.detail;
+          insertNotification(detail || t('chat.compactionError'));
+          setIsCompacting(false);
+        });
+    }
+  }, [currentThreadId, threadId, insertNotification, setIsCompacting, t]);
 
   // Show sidebar at the start of each backend response (streaming)
   // Auto-refresh workspace files when agent finishes (isLoading transitions true→false)
@@ -1166,6 +1210,13 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                         {t('chat.workspaceStarting')}
                       </div>
                     )}
+                    {isCompacting && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 text-xs"
+                        style={{ color: 'var(--color-text-tertiary)' }}>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--color-accent-primary)' }} />
+                        {t(isCompacting === 'offload' ? 'chat.offloading' : 'chat.summarizing')}
+                      </div>
+                    )}
                     <ChatInput
                       ref={chatInputRef}
                       onSend={handleSendWithAttachments}
@@ -1175,6 +1226,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                       placeholder={chatPlaceholder}
                       files={workspaceFiles}
                       tokenUsage={tokenUsage}
+                      onAction={handleAction}
                     />
                   </>
                 ) : activeAgent ? (

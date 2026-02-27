@@ -493,6 +493,22 @@ export async function updateThreadSharing(threadId, body) {
   return data;
 }
 
+// --- Summarization ---
+
+export async function summarizeThread(threadId, keepMessages = 5) {
+  if (!threadId) throw new Error('Thread ID is required');
+  const { data } = await api.post(`/api/v1/threads/${threadId}/summarize`, null, {
+    params: { keep_messages: keepMessages },
+  });
+  return data;
+}
+
+export async function offloadThread(threadId) {
+  if (!threadId) throw new Error('Thread ID is required');
+  const { data } = await api.post(`/api/v1/threads/${threadId}/offload`);
+  return data;
+}
+
 // --- Skills ---
 
 const _skillsPromises = {};  // module-level cache keyed by mode

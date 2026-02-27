@@ -222,6 +222,8 @@
     "letsGo": "Let's Go",
     "skip": "Skip",
     "workspaceStarting": "Starting workspace...",
+    "summarizing": "Summarizing conversation...",
+    "offloading": "Offloading context...",
     "placeholderDefault": "Type / for skills, @ for files",
     "placeholderPendingRejection": "Describe how to revise the plan...",
     "placeholderInterrupted": "Send new instructions to the agent...",
@@ -230,8 +232,16 @@
     "slashCommand": {
       "subagentName": "subagent",
       "subagentDesc": "Use subagents to complete this task",
+      "summarizeName": "summarize",
+      "summarizeDesc": "Compact conversation context to free up token space",
+      "offloadDesc": "Offload large tool arguments to sandbox filesystem",
       "noMatching": "No matching commands"
-    }
+    },
+    "summarizedNotification": "Context compacted · {{from}} messages → summary",
+    "offloadedArgsNotification": "Tool arguments offloaded · {{count}} tools",
+    "offloadedReadsNotification": "Stale read results offloaded · {{count}} reads",
+    "offloadedNotification": "Context offloaded · {{args}} tool args, {{reads}} reads",
+    "compactionError": "Context compaction failed"
   },
   "context": {
     "addToContext": "Add to context",

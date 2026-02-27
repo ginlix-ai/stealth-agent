@@ -148,6 +148,29 @@ function AttachmentCard({ attachment }) {
 }
 
 /**
+ * NotificationDivider — centered inline divider for system events
+ * (e.g. summarization, offload). Renders as a muted horizontal rule
+ * with text, similar to date dividers in chat apps.
+ */
+function NotificationDivider({ message, content }) {
+  const text = content ?? message?.content;
+  return (
+    <div
+      className="flex items-center gap-3 py-2 my-1"
+    >
+      <div className="flex-1" style={{ borderTop: '1px solid var(--color-border-muted)' }} />
+      <span
+        className="text-xs whitespace-nowrap"
+        style={{ color: 'var(--color-text-tertiary)' }}
+      >
+        {text}
+      </span>
+      <div className="flex-1" style={{ borderTop: '1px solid var(--color-border-muted)' }} />
+    </div>
+  );
+}
+
+/**
  * MessageList Component
  *
  * Displays the chat message history with support for:
@@ -173,30 +196,34 @@ function MessageList({ messages, hideAvatar, compactToolCalls, isSubagentView, r
   // Render message list
   return (
     <div className="space-y-6">
-      {messages.map((message) => (
-        <MessageBubble
-          key={message.id}
-          message={message}
-          hideAvatar={isSubagentView || hideAvatar}
-          compactToolCalls={compactToolCalls}
-          isSubagentView={isSubagentView}
-          readOnly={readOnly}
-          allowFiles={allowFiles}
-          onOpenSubagentTask={onOpenSubagentTask}
-          onOpenFile={onOpenFile}
-          onOpenDir={onOpenDir}
-          onToolCallDetailClick={onToolCallDetailClick}
-          onApprovePlan={onApprovePlan}
-          onRejectPlan={onRejectPlan}
-          onPlanDetailClick={onPlanDetailClick}
-          onAnswerQuestion={onAnswerQuestion}
-          onSkipQuestion={onSkipQuestion}
-          onApproveCreateWorkspace={onApproveCreateWorkspace}
-          onRejectCreateWorkspace={onRejectCreateWorkspace}
-          onApproveStartQuestion={onApproveStartQuestion}
-          onRejectStartQuestion={onRejectStartQuestion}
-        />
-      ))}
+      {messages.map((message) =>
+        message.role === 'notification' ? (
+          <NotificationDivider key={message.id} message={message} />
+        ) : (
+          <MessageBubble
+            key={message.id}
+            message={message}
+            hideAvatar={isSubagentView || hideAvatar}
+            compactToolCalls={compactToolCalls}
+            isSubagentView={isSubagentView}
+            readOnly={readOnly}
+            allowFiles={allowFiles}
+            onOpenSubagentTask={onOpenSubagentTask}
+            onOpenFile={onOpenFile}
+            onOpenDir={onOpenDir}
+            onToolCallDetailClick={onToolCallDetailClick}
+            onApprovePlan={onApprovePlan}
+            onRejectPlan={onRejectPlan}
+            onPlanDetailClick={onPlanDetailClick}
+            onAnswerQuestion={onAnswerQuestion}
+            onSkipQuestion={onSkipQuestion}
+            onApproveCreateWorkspace={onApproveCreateWorkspace}
+            onRejectCreateWorkspace={onRejectCreateWorkspace}
+            onApproveStartQuestion={onApproveStartQuestion}
+            onRejectStartQuestion={onRejectStartQuestion}
+          />
+        )
+      )}
     </div>
   );
 }
@@ -438,6 +465,9 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
     } else if (segment.type === 'start_question') {
       currentTextGroup = null;
       groupedSegments.push(segment);
+    } else if (segment.type === 'notification') {
+      currentTextGroup = null;
+      groupedSegments.push(segment);
     }
   }
 
@@ -445,6 +475,7 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
   if (textOnly) {
     const filtered = groupedSegments.filter((s) => {
       if (s.type === 'text' || s.type === 'reasoning') return true;
+      if (s.type === 'notification') return true;
       if (s.type === 'subagent_task') return true;
       if (s.type === 'plan_approval') return true;
       if (s.type === 'user_question') return true;
@@ -604,6 +635,9 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
       } else if (seg.type === 'start_question') {
         flushActivity();
         renderBlocks.push({ type: 'start_question', key: `start-question-${seg.proposalId}`, segment: seg });
+      } else if (seg.type === 'notification') {
+        flushActivity();
+        renderBlocks.push({ type: 'notification', key: `notification-${seg.order}`, segment: seg });
       } else if (seg.type === 'text') {
         flushActivity();
         renderBlocks.push({ type: 'text', key: `text-${seg.order}`, segment: seg });
@@ -703,6 +737,12 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
                   onClick={() => onToolCallDetailClick?.(block.proc)}
                 />
               </div>
+            );
+          }
+
+          if (block.type === 'notification') {
+            return (
+              <NotificationDivider key={block.key} content={block.segment.content} />
             );
           }
 
@@ -950,6 +990,10 @@ function MessageContentSegments({ segments, reasoningProcesses, toolCallProcesse
             );
           }
           return null;
+        } else if (segment.type === 'notification') {
+          return (
+            <NotificationDivider key={`notification-${segment.order}-${index}`} content={segment.content} />
+          );
         }
         return null;
       })}

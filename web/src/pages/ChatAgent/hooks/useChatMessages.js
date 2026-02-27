@@ -14,10 +14,11 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { sendChatMessageStream, replayThreadHistory, getWorkflowStatus, reconnectToWorkflowStream, sendHitlResponse, streamSubagentTaskEvents } from '../utils/api';
 import { getStoredThreadId, setStoredThreadId } from './utils/threadStorage';
 export { removeStoredThreadId } from './utils/threadStorage';
-import { createUserMessage, createAssistantMessage, insertMessage, appendMessage, updateMessage } from './utils/messageHelpers';
+import { createUserMessage, createAssistantMessage, createNotificationMessage, insertMessage, appendMessage, updateMessage } from './utils/messageHelpers';
 import { createRecentlySentTracker } from './utils/recentlySentTracker';
 import {
   handleReasoningSignal,
@@ -71,7 +72,89 @@ function isOnboardingRelatedToolSuccess(resultContent) {
   return !!(parsed.risk_preference || parsed.watchlist_item || parsed.portfolio_holding);
 }
 
+/**
+ * Shared handler for context_window SSE events (token_usage, summarize, offload).
+ * Used by both history replay and live stream to avoid duplication.
+ *
+ * @param {Object} event - The context_window event
+ * @param {Object} callbacks
+ * @param {Function} callbacks.getMsgId - Returns current assistant message ID (or null)
+ * @param {Function} callbacks.nextOrder - Returns next content order counter value
+ * @param {Function} callbacks.setMessages - React state setter for messages
+ * @param {Function} callbacks.setTokenUsage - React state setter for token usage
+ * @param {Function|null} callbacks.setIsCompacting - React state setter (null for history)
+ * @param {Function} callbacks.insertNotification - Inserts standalone notification message
+ * @param {Function} callbacks.t - i18n translation function
+ */
+function handleContextWindowEvent(event, { getMsgId, nextOrder, setMessages, setTokenUsage, setIsCompacting, insertNotification, t }) {
+  const action = event.action;
+
+  if (action === 'token_usage') {
+    const callInput = event.input_tokens || 0;
+    const callOutput = event.output_tokens || 0;
+    setTokenUsage((prev) => ({
+      totalInput: (prev?.totalInput || 0) + callInput,
+      totalOutput: (prev?.totalOutput || 0) + callOutput,
+      lastOutput: callOutput,
+      total: event.total_tokens || 0,
+      threshold: event.threshold || prev?.threshold || 0,
+    }));
+    return;
+  }
+
+  if (action === 'summarize') {
+    if (setIsCompacting && event.signal === 'start') {
+      setIsCompacting('summarize');
+      return;
+    }
+    if (setIsCompacting) setIsCompacting(false);
+    if (event.signal === 'complete') {
+      const text = t('chat.summarizedNotification', { from: event.original_message_count });
+      const msgId = getMsgId();
+      if (msgId) {
+        const order = nextOrder();
+        setMessages((prev) => updateMessage(prev, msgId, (msg) => ({
+          ...msg,
+          contentSegments: [...(msg.contentSegments || []), { type: 'notification', content: text, order }],
+        })));
+      } else {
+        insertNotification(text);
+      }
+    }
+    return;
+  }
+
+  if (action === 'offload') {
+    if (event.signal === 'complete') {
+      let text;
+      if (event.kind === 'reads') {
+        text = t('chat.offloadedReadsNotification', { count: event.offloaded_reads });
+      } else if (event.kind === 'args') {
+        text = t('chat.offloadedArgsNotification', { count: event.offloaded_args });
+      } else {
+        // Manual /offload — shows combined count
+        text = t('chat.offloadedNotification', {
+          args: event.offloaded_args || 0,
+          reads: event.offloaded_reads || 0,
+        });
+      }
+      const msgId = getMsgId();
+      if (msgId) {
+        const order = nextOrder();
+        setMessages((prev) => updateMessage(prev, msgId, (msg) => ({
+          ...msg,
+          contentSegments: [...(msg.contentSegments || []), { type: 'notification', content: text, order }],
+        })));
+      } else {
+        insertNotification(text);
+      }
+    }
+    return;
+  }
+}
+
 export function useChatMessages(workspaceId, initialThreadId = null, updateTodoListCard = null, updateSubagentCard = null, inactivateAllSubagents = null, completePendingTodos = null, onOnboardingRelatedToolComplete = null, onFileArtifact = null, agentMode = 'ptc', clearSubagentCards = null, onWorkspaceCreated = null) {
+  const { t } = useTranslation();
   // State
   const [messages, setMessages] = useState([]);
   const [threadId, setThreadId] = useState(() => {
@@ -85,6 +168,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [hasActiveSubagents, setHasActiveSubagents] = useState(false);  // Subagent streams open after main agent finished
   const [workspaceStarting, setWorkspaceStarting] = useState(false);  // Workspace is starting up (stopped/archived sandbox)
+  const [isCompacting, setIsCompacting] = useState(false);  // Context compaction in progress (summarization/offload)
   const [messageError, setMessageError] = useState(null);
   // HITL (Human-in-the-Loop) plan mode interrupt state
   const [pendingInterrupt, setPendingInterrupt] = useState(null);
@@ -252,7 +336,28 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           console.log('[History] Updated active pair to:', pairIndex, 'counter:', currentActivePairState?.contentOrderCounter);
         }
 
-        // Handle token_usage events from history (for context window progress ring)
+        // Handle context_window events from history (token_usage, summarize, offload)
+        if (eventType === 'context_window') {
+          handleContextWindowEvent(event, {
+            getMsgId: () => currentActivePairIndex !== null
+              ? assistantMessagesByPair.get(currentActivePairIndex) : null,
+            nextOrder: () => {
+              if (currentActivePairState) {
+                currentActivePairState.contentOrderCounter++;
+                return currentActivePairState.contentOrderCounter;
+              }
+              return 0;
+            },
+            setMessages,
+            setTokenUsage,
+            setIsCompacting: null,  // no start events in replayed history
+            insertNotification: () => {},  // standalone notifications not needed in replay
+            t,
+          });
+          return;
+        }
+
+        // Backward compat: handle old token_usage events from history
         if (eventType === 'token_usage') {
           const callInput = event.input_tokens || 0;
           const callOutput = event.output_tokens || 0;
@@ -1620,6 +1725,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   const cleanupAfterStreamEnd = (assistantMessageId) => {
     setIsLoading(false);
     setWorkspaceStarting(false);
+    setIsCompacting(false);
     currentMessageRef.current = null;
     isStreamingRef.current = false;
 
@@ -1816,19 +1922,17 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         return;
       }
 
-      // Handle token_usage events (for context window progress ring)
-      // Backend emits per-call values; we accumulate totals on the frontend.
-      if (eventType === 'token_usage') {
-        const callInput = event.input_tokens || 0;
-        const callOutput = event.output_tokens || 0;
-        setTokenUsage((prev) => ({
-          totalInput: (prev?.totalInput || 0) + callInput,
-          totalOutput: (prev?.totalOutput || 0) + callOutput,
-          lastOutput: callOutput,
-          // total_tokens = context window usage for the latest call (used for ring progress)
-          total: event.total_tokens || 0,
-          threshold: event.threshold || prev?.threshold || 0,
-        }));
+      // Handle unified context_window events (token_usage, summarize, offload)
+      if (eventType === 'context_window') {
+        handleContextWindowEvent(event, {
+          getMsgId: () => currentMessageRef.current,
+          nextOrder: () => refs.contentOrderCounterRef.current++,
+          setMessages,
+          setTokenUsage,
+          setIsCompacting,
+          insertNotification,
+          t,
+        });
         return;
       }
 
@@ -2903,12 +3007,18 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     resumeWithHitlResponse(hitlResponse, false);
   }, [pendingInterrupt, resumeWithHitlResponse]);
 
+  const insertNotification = useCallback((text, variant = 'info') => {
+    setMessages((prev) => appendMessage(prev, createNotificationMessage(text, variant)));
+  }, []);
+
   return {
     messages,
     threadId,
     isLoading,
     hasActiveSubagents,
     workspaceStarting,
+    isCompacting,
+    setIsCompacting,
     isLoadingHistory,
     isReconnecting,
     messageError,
@@ -2925,6 +3035,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
     handleRejectStartQuestion,
     tokenUsage,
     isShared,
+    insertNotification,
     // Resolve subagentId (e.g. toolCallId from segment) to stable agent_id for card operations.
     resolveSubagentIdToAgentId: (subagentId) =>
       toolCallIdToTaskIdMapRef.current.get(subagentId) || subagentId,

@@ -3,6 +3,10 @@
  * Provides helper functions for creating and updating message objects
  */
 
+// Module-level sequence counter to avoid ID collisions when multiple
+// notifications are created within the same millisecond.
+let _notifSeq = 0;
+
 /**
  * Creates a user message object
  * @param {string} message - The message content
@@ -82,4 +86,20 @@ export function insertMessage(messages, insertIndex, newMessage) {
  */
 export function appendMessage(messages, newMessage) {
   return [...messages, newMessage];
+}
+
+/**
+ * Creates a notification message for inline dividers (e.g. summarization, offload)
+ * @param {string} text - The notification text to display
+ * @param {'info'|'success'|'warning'} variant - Visual variant
+ * @returns {Object} Notification message object
+ */
+export function createNotificationMessage(text, variant = 'info') {
+  return {
+    id: `notification-${Date.now()}-${_notifSeq++}`,
+    role: 'notification',
+    content: text,
+    variant,
+    timestamp: new Date(),
+  };
 }
