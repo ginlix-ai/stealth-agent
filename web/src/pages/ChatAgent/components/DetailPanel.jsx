@@ -293,6 +293,12 @@ function ArtifactOrMarkdown({ artifact, content, toolName, toolCallProcess, onOp
     }
   }
 
+  // ExecuteCode: wrap output in code block for readability
+  if (toolName === 'ExecuteCode') {
+    const displayContent = (rawContent || 'No result content').replace(/^SUCCESS\n?/, '');
+    return <Markdown variant="panel" content={`\`\`\`code\n${displayContent}\n\`\`\``} className="text-sm" />;
+  }
+
   // Fallback: render content as markdown (strip line numbers from Read/SEC filing results)
   const displayContent = stripLineNumbers(rawContent || 'No result content');
 
