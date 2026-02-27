@@ -22,7 +22,6 @@ from src.server.database.workspace import (
     delete_workspace as db_delete_workspace,
     get_workspace as db_get_workspace,
     get_workspaces_by_status,
-    get_workspaces_for_user,
     update_workspace_activity,
     update_workspace_status,
 )
@@ -439,7 +438,7 @@ class WorkspaceManager:
             ValueError: If workspace not found
             RuntimeError: If workspace is in error/deleted state
         """
-        logger.info(
+        logger.debug(
             f"get_session_for_workspace called: workspace_id={workspace_id}, user_id={user_id}, "
             f"in_cache={workspace_id in self._sessions}, already_synced={workspace_id in self._user_data_synced}"
         )
@@ -460,7 +459,7 @@ class WorkspaceManager:
             sandbox_id_from_db = workspace.get("sandbox_id")
             # Use workspace owner's user_id for syncing (don't rely on endpoint passing it)
             workspace_user_id = workspace.get("user_id") or user_id
-            logger.info(
+            logger.debug(
                 f"Workspace {workspace_id} from DB: status={status}, sandbox_id={sandbox_id_from_db}, user_id={workspace_user_id}"
             )
 
@@ -476,7 +475,7 @@ class WorkspaceManager:
             # Check cache first
             if workspace_id in self._sessions:
                 session = self._sessions[workspace_id]
-                logger.info(
+                logger.debug(
                     f"Found cached session for {workspace_id}, "
                     f"initialized={session._initialized}, has_sandbox={session.sandbox is not None}"
                 )
@@ -614,7 +613,6 @@ class WorkspaceManager:
                     f"(will retry next request): {e}"
                 )
 
-        await update_workspace_activity(workspace_id)
         return session
 
     async def _restart_workspace(
@@ -886,12 +884,6 @@ class WorkspaceManager:
         stopped_count = 0
 
         # Get running workspaces
-        running_workspaces, _ = await get_workspaces_for_user(
-            user_id="",  # This won't work - need to get all running workspaces
-            limit=1000,
-        )
-
-        # Actually, let's use get_workspaces_by_status
         running_workspaces = await get_workspaces_by_status("running", limit=1000)
 
         for workspace in running_workspaces:

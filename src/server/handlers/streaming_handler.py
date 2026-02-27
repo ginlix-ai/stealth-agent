@@ -625,24 +625,25 @@ class WorkflowStreamHandler:
                 # Extract agent identity from namespace tuple (subgraphs) and metadata (parent graph)
                 agent_name = self._extract_agent_name(agent_from_stream, message_metadata)
 
-                # Log metadata for debugging
-                logger.debug(
-                    f"[MESSAGE_METADATA] agent={agent_name} metadata={message_metadata}"
-                )
-                logger.debug(
-                    f"[MESSAGE_KWARGS] agent={agent_name} additional_kwargs={message_chunk.additional_kwargs}"
-                )
-                logger.debug(
-                    f"[MESSAGE_RESPONSE_META] agent={agent_name} response_metadata={message_chunk.response_metadata}"
-                )
-                logger.debug(
-                    f"[RAW_CONTENT] agent={agent_name} type={type(message_chunk).__name__} content={message_chunk.content}"
-                )
-
-                if reasoning_raw := message_chunk.additional_kwargs.get("reasoning_content"):
+                # Log metadata for debugging (guarded to avoid eager f-string evaluation)
+                if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        f"[RAW_REASONING] agent={agent_name} reasoning_content={reasoning_raw}"
+                        f"[MESSAGE_METADATA] agent={agent_name} metadata={message_metadata}"
                     )
+                    logger.debug(
+                        f"[MESSAGE_KWARGS] agent={agent_name} additional_kwargs={message_chunk.additional_kwargs}"
+                    )
+                    logger.debug(
+                        f"[MESSAGE_RESPONSE_META] agent={agent_name} response_metadata={message_chunk.response_metadata}"
+                    )
+                    logger.debug(
+                        f"[RAW_CONTENT] agent={agent_name} type={type(message_chunk).__name__} content={message_chunk.content}"
+                    )
+
+                    if reasoning_raw := message_chunk.additional_kwargs.get("reasoning_content"):
+                        logger.debug(
+                            f"[RAW_REASONING] agent={agent_name} reasoning_content={reasoning_raw}"
+                        )
 
                 # Track message for persistence (if tracking is active)
                 # Only track complete messages (AIMessage, ToolMessage), not chunks

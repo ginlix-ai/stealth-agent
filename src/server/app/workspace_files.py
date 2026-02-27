@@ -22,16 +22,17 @@ Endpoints:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import mimetypes
 import shlex
 from typing import Any
 
-from fastapi import APIRouter, Body, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from src.server.utils.api import CurrentUserId
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response
 
 from src.server.database.workspace import get_workspace as db_get_workspace
 from src.server.services.workspace_manager import WorkspaceManager
@@ -40,6 +41,11 @@ from src.server.services.file_persistence_service import FilePersistenceService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["Workspace Files"])
+
+# Image MIME types that benefit from HTTP caching
+_CACHEABLE_IMAGE_TYPES = frozenset({
+    "image/png", "image/jpeg", "image/gif", "image/svg+xml", "image/webp",
+})
 
 _SYSTEM_DIR_PREFIXES = (
     # Agent infrastructure
@@ -522,10 +528,38 @@ async def write_workspace_file(
     }
 
 
+def _build_download_response(
+    content: bytes, filename: str, mime: str, request: Request
+) -> Response:
+    """Build a download response with caching headers for image types."""
+    etag = hashlib.md5(content).hexdigest()
+    safe_filename = filename.replace('"', '\\"')
+    headers: dict[str, str] = {
+        "Content-Disposition": f'inline; filename="{safe_filename}"',
+        "ETag": f'"{etag}"',
+    }
+    if mime in _CACHEABLE_IMAGE_TYPES:
+        headers["Cache-Control"] = "private, max-age=300"
+    else:
+        headers["Cache-Control"] = "private, no-cache"
+
+    # Return 304 if client already has this version
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match and if_none_match.strip('" ') == etag:
+        return Response(status_code=304, headers=headers)
+
+    return Response(
+        content=content,
+        media_type=mime,
+        headers=headers,
+    )
+
+
 @router.get("/{workspace_id}/files/download")
 async def download_workspace_file(
     workspace_id: str,
     x_user_id: CurrentUserId,
+    request: Request,
     path: str = Query(..., description="File path (virtual or absolute)."),
 ) -> Response:
     """Download raw bytes from the workspace's sandbox, or from DB if stopped."""
@@ -562,11 +596,7 @@ async def download_workspace_file(
         filename = file_record.get("file_name", "download")
         mime = file_record.get("mime_type") or "application/octet-stream"
 
-        return StreamingResponse(
-            iter([content]),
-            media_type=mime,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
+        return _build_download_response(content, filename, mime, request)
 
     sandbox = await _acquire_sandbox(workspace_id, x_user_id)
 
@@ -588,10 +618,8 @@ async def download_workspace_file(
     filename = client_path.split("/")[-1] if client_path else "download"
     mime, _enc = mimetypes.guess_type(filename)
 
-    return StreamingResponse(
-        iter([content]),
-        media_type=mime or "application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    return _build_download_response(
+        content, filename, mime or "application/octet-stream", request
     )
 
 
