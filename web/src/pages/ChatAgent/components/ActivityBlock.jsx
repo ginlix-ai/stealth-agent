@@ -218,9 +218,8 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
             className="mt-2 space-y-2"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0, height: 0, marginTop: 0 }}
+            exit={{ opacity: 0, height: 0, marginTop: 0, overflow: 'hidden' }}
             transition={SPRING_SNAPPY}
-            style={{ overflow: 'hidden' }}
           >
             {/* Live items in chronological order */}
             <AnimatePresence initial={false}>
@@ -229,11 +228,11 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
                   return (
                     <motion.div
                       key={`live-r-${item.id}`}
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: item._liveState === 'completing' ? 0.6 : 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0, paddingTop: 0, paddingBottom: 0 }}
+                      initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+                      animate={{ opacity: item._liveState === 'completing' ? 0.6 : 1, height: 'auto', overflow: 'visible' }}
+                      exit={{ opacity: 0, height: 0, overflow: 'hidden', paddingTop: 0, paddingBottom: 0 }}
                       transition={SPRING}
-                      className="px-3 overflow-hidden"
+                      className="px-3"
                       style={{ paddingTop: '8px', paddingBottom: '8px' }}
                     >
                       <div
@@ -269,11 +268,10 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
                   return (
                     <motion.div
                       key={`live-t-${item.id || item.toolCallId}`}
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
+                      initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+                      animate={{ opacity: 1, height: 'auto', overflow: 'visible' }}
+                      exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
                       transition={SPRING_SNAPPY}
-                      style={{ overflow: 'hidden' }}
                     >
                       <ToolCallLiveRow tc={item} liveState={item._liveState} />
                     </motion.div>
@@ -288,11 +286,10 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
               {hasPreparingTools && (
                 <motion.div
                   key="preparing"
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
+                  initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+                  animate={{ opacity: 1, height: 'auto', overflow: 'visible' }}
+                  exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
                   transition={SPRING_SNAPPY}
-                  style={{ overflow: 'hidden' }}
                 >
                   <PreparingToolCallRow tc={preparingToolCall} />
                 </motion.div>
