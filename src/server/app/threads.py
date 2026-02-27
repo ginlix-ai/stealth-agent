@@ -461,6 +461,13 @@ async def summarize_thread(
     return await trigger_summarization(thread_id, keep_messages)
 
 
+@router.post("/{thread_id}/offload", status_code=200)
+async def offload_thread(thread_id: str):
+    """Truncate large tool arguments and offload originals to sandbox (Tier 1 only)."""
+    from src.server.handlers.workflow_handler import trigger_offload
+    return await trigger_offload(thread_id)
+
+
 @router.get("/{thread_id}/tasks/{task_id}")
 async def stream_subagent_task(
     thread_id: str,

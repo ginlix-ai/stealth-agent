@@ -47,6 +47,7 @@ agent_config = None  # PTC Agent configuration (loaded from config files)
 session_service = None  # PTC Session service instance
 workspace_manager = None  # Workspace manager instance
 checkpointer = None  # PTC Agent LangGraph checkpointer for state persistence
+store = None  # LangGraph Store for cross-turn metadata persistence
 graph = None  # Most recently used LangGraph (for persistence snapshots)
 
 
@@ -56,21 +57,22 @@ graph = None  # Most recently used LangGraph (for persistence snapshots)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize resources when server starts, cleanup when stops."""
-    global agent_config, session_service, workspace_manager, checkpointer
+    global agent_config, session_service, workspace_manager, checkpointer, store
 
     # Configure logging based on environment settings (first thing on startup)
     configure_logging()
 
-
     # Initialize and open conversation database pool
     from src.server.database.conversation import get_or_create_pool
+
     conv_pool = get_or_create_pool()
     # Extract connection details from pool
-    conninfo = conv_pool._conninfo if hasattr(conv_pool, '_conninfo') else "unknown"
+    conninfo = conv_pool._conninfo if hasattr(conv_pool, "_conninfo") else "unknown"
     try:
         # Parse basic connection info (format: postgresql://user:pass@host:port/dbname?sslmode=...)
         import re
-        match = re.search(r'@([^:]+):(\d+)/([^?]+)', conninfo)
+
+        match = re.search(r"@([^:]+):(\d+)/([^?]+)", conninfo)
         if match:
             db_host, db_port, db_name = match.groups()
             await conv_pool.open()
@@ -86,15 +88,19 @@ async def lifespan(app: FastAPI):
             logger.info("Conversation DB: Connected successfully")
     except Exception as e:
         if match:
-            logger.error(f"Conversation DB: Failed to connect to {db_host}:{db_port}/{db_name} - {e}")
+            logger.error(
+                f"Conversation DB: Failed to connect to {db_host}:{db_port}/{db_name} - {e}"
+            )
         else:
             logger.error(f"Conversation DB: Failed to connect - {e}")
         raise
 
     # Auto-provision local dev user when Supabase auth is disabled
     from src.config.settings import AUTH_ENABLED, LOCAL_DEV_USER_ID
+
     if not AUTH_ENABLED:
         from src.server.database.user import create_user_from_auth
+
         await create_user_from_auth(
             user_id=LOCAL_DEV_USER_ID,
             name="Local User",
@@ -118,8 +124,7 @@ async def lifespan(app: FastAPI):
         manager = BackgroundTaskManager.get_instance()
         await manager.start_cleanup_task()
     except Exception as e:
-        logger.warning(
-            f"Failed to start BackgroundTaskManager cleanup task: {e}")
+        logger.warning(f"Failed to start BackgroundTaskManager cleanup task: {e}")
 
     # Initialize PTC Agent configuration and session service
     try:
@@ -137,6 +142,7 @@ async def lifespan(app: FastAPI):
         server_idle_timeout = max(daytona_auto_stop - 600, 300)
 
         from src.server.services.session_manager import SessionService
+
         session_service = SessionService.get_instance(
             config=agent_config,
             idle_timeout=server_idle_timeout,
@@ -147,6 +153,7 @@ async def lifespan(app: FastAPI):
 
         # Initialize workspace manager
         from src.server.services.workspace_manager import WorkspaceManager
+
         workspace_manager = WorkspaceManager.get_instance(
             config=agent_config,
             idle_timeout=server_idle_timeout,
@@ -156,7 +163,13 @@ async def lifespan(app: FastAPI):
         logger.info("Workspace Manager initialized")
 
         # Initialize PTC Agent checkpointer for state persistence
-        from src.server.utils.checkpointer import get_checkpointer, open_checkpointer_pool
+        from src.server.utils.checkpointer import (
+            get_checkpointer,
+            open_checkpointer_pool,
+            get_store,
+            setup_store,
+        )
+
         checkpointer = get_checkpointer(
             memory_type=os.getenv("MEMORY_DB_TYPE", "postgres"),
             db_host=os.getenv("DB_HOST", "localhost"),
@@ -173,6 +186,17 @@ async def lifespan(app: FastAPI):
                 await conn.execute("SELECT 1")
         logger.info("PTC Agent checkpointer initialized")
 
+        # Initialize LangGraph Store (shares pool with checkpointer)
+        try:
+            store = get_store(checkpointer)
+            if store:
+                await setup_store(store)
+                logger.info("LangGraph Store initialized")
+        except Exception as e:
+            logger.warning(f"LangGraph Store setup failed: {e}")
+            logger.warning("Offloaded ID dedup will use in-memory fallback")
+            store = None
+
     except FileNotFoundError as e:
         logger.warning(f"PTC Agent config not found: {e}")
         logger.warning("PTC Agent endpoints will not be available")
@@ -183,6 +207,7 @@ async def lifespan(app: FastAPI):
     # Start AutomationScheduler (polling loop for time-based triggers)
     try:
         from src.server.services.automation_scheduler import AutomationScheduler
+
         automation_scheduler = AutomationScheduler.get_instance()
         await automation_scheduler.start()
         logger.info("AutomationScheduler started")
@@ -195,22 +220,23 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Application shutdown started...")
 
-    # 0. Shutdown AutomationScheduler
+    # 1. Shutdown AutomationScheduler
     try:
         from src.server.services.automation_scheduler import AutomationScheduler
+
         scheduler = AutomationScheduler.get_instance()
         await scheduler.shutdown()
     except Exception as e:
         logger.warning(f"Error shutting down AutomationScheduler: {e}")
 
-    # 0. Cancel background subagent tasks
+    # 2. Cancel background subagent tasks
     try:
         registry_store = BackgroundRegistryStore.get_instance()
         await registry_store.cancel_all(force=True)
     except Exception as e:
         logger.warning(f"Error cancelling background subagent tasks: {e}")
 
-    # 0a. Shutdown Workspace Manager (stop cleanup task, clear cache)
+    # 3. Shutdown Workspace Manager (stop cleanup task, clear cache)
     if workspace_manager is not None:
         try:
             logger.info("Shutting down Workspace Manager...")
@@ -219,7 +245,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Error during Workspace Manager shutdown: {e}")
 
-    # 0b. Shutdown PTC Session Service (stop sandboxes)
+    # 4. Shutdown PTC Session Service (stop sandboxes)
     if session_service is not None:
         try:
             logger.info("Shutting down PTC Session Service...")
@@ -228,27 +254,28 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Error during PTC Session Service shutdown: {e}")
 
-    # 0c. Close PTC Agent checkpointer pool
+    # 5. Close PTC Agent checkpointer pool
     if checkpointer is not None:
         try:
             from src.server.utils.checkpointer import close_checkpointer_pool
+
             logger.info("Closing PTC Agent checkpointer pool...")
             await close_checkpointer_pool(checkpointer)
             logger.info("PTC Agent checkpointer pool closed")
         except Exception as e:
             logger.warning(f"Error closing PTC Agent checkpointer pool: {e}")
 
-    # 1. FIRST: Gracefully shutdown background workflows
+    # 6. Gracefully shutdown background workflows
     try:
         manager = BackgroundTaskManager.get_instance()
         await manager.shutdown(timeout=50.0)  # Leave 10s for pool cleanup
     except Exception as e:
         logger.error(f"Error during BackgroundTaskManager shutdown: {e}")
 
-    # 2. THEN: Close database pools
-    # Close conversation database pool
+    # 7. Close database pools
     try:
         from src.server.database.conversation import get_or_create_pool
+
         conv_pool = get_or_create_pool()
         if not conv_pool.closed:
             logger.info("Closing conversation database pool...")
@@ -257,10 +284,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Error closing conversation database pool: {e}")
 
-
-    # 3. FINALLY: Close Redis cache connection
+    # 8. Close Redis cache connection
     try:
         from src.utils.cache.redis_cache import close_cache
+
         logger.info("Closing Redis cache client...")
         await close_cache()
         logger.info("Redis cache client closed")
@@ -281,6 +308,7 @@ app = FastAPI(
 
 class RequestIDMiddleware:
     """Add request ID for tracing without using BaseHTTPMiddleware"""
+
     def __init__(self, app):
         self.app = app
 
@@ -306,6 +334,7 @@ class RequestIDMiddleware:
 
         await self.app(scope, receive, send_wrapper)
 
+
 # Register GZip compression middleware (compresses JSON responses >= 1KB)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
@@ -325,10 +354,15 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,  # Restrict to specific origins
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE",
-                   "OPTIONS"],  # Use the configured list of methods
-    allow_headers=["*"
-                   ],  # Now allow all headers, but can be restricted further
+    allow_methods=[
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+    ],  # Use the configured list of methods
+    allow_headers=["*"],  # Now allow all headers, but can be restricted further
 )
 
 
@@ -359,18 +393,32 @@ from src.server.app.skills import router as skills_router
 app.include_router(threads_router)  # /api/v1/threads/* - Thread CRUD, messages, control
 app.include_router(sessions_router)  # /api/v1/sessions - Active session stats
 app.include_router(workspaces_router)  # /api/v1/workspaces/* - Workspace CRUD
-app.include_router(workspace_files_router)  # /api/v1/workspaces/{id}/files/* - Live file access
-app.include_router(workspace_sandbox_router)  # /api/v1/workspaces/{id}/sandbox/* - Sandbox stats & packages
+app.include_router(
+    workspace_files_router
+)  # /api/v1/workspaces/{id}/files/* - Live file access
+app.include_router(
+    workspace_sandbox_router
+)  # /api/v1/workspaces/{id}/sandbox/* - Sandbox stats & packages
 app.include_router(cache_router)  # /api/v1/cache/* - Cache management
 app.include_router(market_data_router)  # /api/v1/market-data/* - Market data proxy
 app.include_router(users_router)  # /api/v1/users/* - User management
-app.include_router(watchlist_router)  # /api/v1/users/me/watchlist/* - Watchlist management
-app.include_router(portfolio_router)  # /api/v1/users/me/portfolio/* - Portfolio management
+app.include_router(
+    watchlist_router
+)  # /api/v1/users/me/watchlist/* - Watchlist management
+app.include_router(
+    portfolio_router
+)  # /api/v1/users/me/portfolio/* - Portfolio management
 app.include_router(infoflow_router)  # /api/v1/infoflow/* - InfoFlow content feed
 app.include_router(sec_proxy_router)  # /api/v1/sec-proxy/* - SEC EDGAR document proxy
-app.include_router(api_keys_router)  # /api/v1/users/me/api-keys + /api/v1/models - BYOK & model config
-app.include_router(automations_router)  # /api/v1/automations/* - Scheduled automation triggers
+app.include_router(
+    api_keys_router
+)  # /api/v1/users/me/api-keys + /api/v1/models - BYOK & model config
+app.include_router(
+    automations_router
+)  # /api/v1/automations/* - Scheduled automation triggers
 app.include_router(oauth_router)  # /api/v1/oauth/* - OAuth provider connections (Codex)
-app.include_router(public_router)  # /api/v1/public/* - Public shared thread access (no auth)
+app.include_router(
+    public_router
+)  # /api/v1/public/* - Public shared thread access (no auth)
 app.include_router(skills_router)  # /api/v1/skills - Available agent skills
 app.include_router(health_router)  # /health - Health check

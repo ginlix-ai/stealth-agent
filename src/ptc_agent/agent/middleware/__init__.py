@@ -54,7 +54,6 @@ from ptc_agent.agent.middleware.todo_operations import (
 
 # Summarization middleware
 from ptc_agent.agent.middleware.summarization import (
-    CustomSummarizationMiddleware,
     SummarizationMiddleware,
     DEFAULT_SUMMARY_PROMPT,
     count_tokens_tiktoken,
@@ -118,7 +117,6 @@ __all__ = [
     # Todo operations
     "TodoWriteMiddleware",
     # Summarization
-    "CustomSummarizationMiddleware",
     "SummarizationMiddleware",
     "DEFAULT_SUMMARY_PROMPT",
     "count_tokens_tiktoken",

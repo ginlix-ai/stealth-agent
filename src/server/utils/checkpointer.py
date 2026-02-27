@@ -12,12 +12,16 @@ from typing import Any, Optional
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.store.postgres import AsyncPostgresStore
 from psycopg_pool import AsyncConnectionPool
 
 logger = logging.getLogger(__name__)
 
 # Module-level connection pool cache to reuse connections across graph compilations
 _postgres_pool_cache: dict[str, AsyncConnectionPool] = {}
+
+# Module-level store instance (shares pool with checkpointer)
+_postgres_store: Optional[AsyncPostgresStore] = None
 
 
 def _on_reconnect_failed(pool):
@@ -72,7 +76,9 @@ def get_checkpointer(memory_type: str = "memory", **kwargs) -> Optional[Any]:
         db_port = kwargs.get("db_port") or os.getenv("MEMORY_DB_PORT", "5432")
         db_name = kwargs.get("db_name") or os.getenv("MEMORY_DB_NAME", "postgres")
         db_user = kwargs.get("db_user") or os.getenv("MEMORY_DB_USER", "postgres")
-        db_password = kwargs.get("db_password") or os.getenv("MEMORY_DB_PASSWORD", "postgres")
+        db_password = kwargs.get("db_password") or os.getenv(
+            "MEMORY_DB_PASSWORD", "postgres"
+        )
 
         # Auto-detect SSL mode for Supabase
         sslmode = "require" if "supabase.com" in db_host else "disable"
@@ -80,7 +86,9 @@ def get_checkpointer(memory_type: str = "memory", **kwargs) -> Optional[Any]:
 
         # Cache connection pools by URI to avoid creating new pools on every graph instantiation
         if db_uri not in _postgres_pool_cache:
-            logger.info(f"Creating PostgreSQL connection pool for checkpointer: {db_host}:{db_port}/{db_name}")
+            logger.info(
+                f"Creating PostgreSQL connection pool for checkpointer: {db_host}:{db_port}/{db_name}"
+            )
             _postgres_pool_cache[db_uri] = AsyncConnectionPool(
                 conninfo=db_uri,
                 min_size=1,
@@ -103,6 +111,65 @@ def get_checkpointer(memory_type: str = "memory", **kwargs) -> Optional[Any]:
 
     else:
         raise ValueError(f"Unsupported storage type: {memory_type}")
+
+
+def get_store(checkpointer: Any) -> Optional[AsyncPostgresStore]:
+    """
+    Get an AsyncPostgresStore that shares the checkpointer's connection pool.
+
+    Must be called after get_checkpointer() has created a Postgres checkpointer.
+    Returns None if the checkpointer is not Postgres-based.
+
+    Args:
+        checkpointer: Checkpointer instance (from get_checkpointer)
+
+    Returns:
+        AsyncPostgresStore sharing the checkpointer's pool, or None
+    """
+    global _postgres_store
+    if _postgres_store is not None:
+        return _postgres_store
+
+    if checkpointer and hasattr(checkpointer, "conn"):
+        pool = checkpointer.conn
+        if isinstance(pool, AsyncConnectionPool):
+            _postgres_store = AsyncPostgresStore(conn=pool)
+            logger.info("Created AsyncPostgresStore (shares checkpointer pool)")
+            return _postgres_store
+
+    return None
+
+
+async def setup_store(store: Any) -> bool:
+    """
+    Verify the store table exists.
+
+    Note: store.setup() requires autocommit (for CREATE INDEX CONCURRENTLY)
+    which the shared checkpointer pool doesn't have. Use the manual setup
+    script instead: ``uv run python scripts/setup_store_table.py``
+
+    Args:
+        store: AsyncPostgresStore instance
+
+    Returns:
+        True if store table is accessible, False otherwise
+    """
+    if not store or not isinstance(store, AsyncPostgresStore):
+        return False
+
+    pool = store.conn
+    if isinstance(pool, AsyncConnectionPool):
+        try:
+            async with pool.connection() as conn:
+                await conn.execute("SELECT 1 FROM store LIMIT 0")
+        except Exception as e:
+            logger.warning(f"AsyncPostgresStore table not accessible: {e}")
+            return False
+    else:
+        logger.warning(f"Unexpected pool type for store: {type(pool)}")
+        return False
+    logger.info("AsyncPostgresStore table verified")
+    return True
 
 
 async def open_checkpointer_pool(checkpointer: Any) -> bool:

@@ -13,6 +13,7 @@ def build_flash_graph(
     config: AgentConfig,
     checkpointer: Any | None = None,
     user_profile: dict | None = None,
+    store: Any | None = None,
 ) -> Any:
     """Build flash agent graph without sandbox.
 
@@ -33,4 +34,5 @@ def build_flash_graph(
     return flash_agent.create_agent(
         checkpointer=checkpointer,
         user_profile=user_profile,
+        store=store,
     )

@@ -6,8 +6,11 @@
 
 llm:
   # Model name from src/llms/manifest/models.json
-  name: "gemini-3-pro"
-  flash: "gemini-3-flash"
+  name: "qwen3.5-plus-anthropic"
+  flash: "qwen3.5-plus-anthropic"
+  fallback:
+    - "kimi-k2.5"
+    - "doubao-seed-2.0-lite-anthropic"
 
 daytona:
   # Daytona sandbox configuration
@@ -17,8 +20,6 @@ daytona:
   auto_delete_interval: 604800 # 7 days in seconds
   python_version: "3.12"
 
-  # Snapshot configuration for faster sandbox initialization (7x speedup)
-  # First build takes ~10-15 minutes, subsequent sandboxes take ~8 seconds
   # Hash will be automatically appended based on dependencies
   snapshot_enabled: true # Recommended: Enable snapshot-based sandbox creation
   snapshot_name: "open-ptc-v1" # Base name for snapshot (hash will be appended)
@@ -119,7 +120,7 @@ storage:
   # Cloud storage provider for image/chart uploads
   # All credentials and settings are loaded from .env file
   # Options: s3, r2, oss, none (to disable uploads)
-  provider: "s3"
+  provider: "none"
 
 logging:
   # Logging configuration
@@ -147,9 +148,12 @@ subagents:
 # Uses LangChain's built-in SummarizationMiddleware
 summarization:
   enabled: true # Enable/disable conversation summarization
-  llm: "gemini-3-flash" # Model from models.json for generating conversation summaries
-  token_threshold: 200000 # Trigger summarization when messages exceed this token count
+  llm: "qwen3.5-plus-anthropic" # Model from models.json for generating conversation summaries
+  token_threshold: 120000 # Trigger summarization when messages exceed this token count
   keep_messages: 5 # Preserve last N messages after summarization
+  truncate_args_trigger_messages: 20 # Truncate tool args when >= N messages (Tier 1)
+  truncate_args_keep_messages: 5 # Protect last N messages from arg truncation
+  truncate_args_max_length: 2000 # Per-arg-value max chars before truncation
 
 # =============================================================================
 # TOOL CONFIGURATION (moved from conf.yaml)

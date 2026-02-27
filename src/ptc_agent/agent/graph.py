@@ -91,6 +91,7 @@ async def build_ptc_graph(
     operation_callback: Any | None = None,
     checkpointer: Any | None = None,
     background_registry: Any | None = None,
+    store: Any | None = None,
 ) -> Any:
     """
     Build a compiled LangGraph for a specific conversation.
@@ -149,6 +150,7 @@ async def build_ptc_graph(
         operation_callback=operation_callback,
         checkpointer=checkpointer,
         background_registry=background_registry,
+        store=store,
     )
 
     logger.info(
@@ -172,6 +174,7 @@ async def build_ptc_graph_with_session(
     user_id: str | None = None,
     plan_mode: bool = False,
     thread_id: str | None = None,
+    store: Any | None = None,
 ) -> Any:
     """
     Build a compiled LangGraph using a provided session.
@@ -235,6 +238,7 @@ async def build_ptc_graph_with_session(
         session=session,
         thread_id=thread_id,
         on_agent_md_write=session.invalidate_agent_md,
+        store=store,
     )
 
     logger.info(

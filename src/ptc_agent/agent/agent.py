@@ -269,6 +269,7 @@ class PTCAgent:
         plan_mode: bool = False,
         thread_id: str | None = None,
         on_agent_md_write: Any | None = None,
+        store: Any | None = None,
     ) -> Any:
         """Create a deepagent with PTC pattern capabilities.
 
@@ -522,7 +523,8 @@ class PTCAgent:
         # --- Build final middleware stacks ---
 
         # Custom SSE-enabled summarization emits 'summarization_signal' events
-        summarization = SummarizationMiddleware()
+        # Pass backend for offloading conversation history to sandbox
+        summarization = SummarizationMiddleware.from_config(backend=backend)
 
         # Build model resilience middleware (retry + fallback)
         model_resilience = self._build_model_resilience_middleware()
@@ -584,6 +586,7 @@ class PTCAgent:
             tools=tools,
             middleware=deepagent_middleware,
             checkpointer=checkpointer,
+            store=store,
         ).with_config({"recursion_limit": 1000})
 
         # Wrap with orchestrator for background execution support

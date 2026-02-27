@@ -23,7 +23,11 @@ from ptc_agent.agent.graph import build_ptc_graph_with_session
 from ptc_agent.agent.flash import build_flash_graph
 from ptc_agent.agent.graph import get_user_profile_for_prompt
 from src.server.services.workspace_manager import WorkspaceManager
-from src.server.database.workspace import update_workspace_activity, get_or_create_flash_workspace, get_workspace as db_get_workspace
+from src.server.database.workspace import (
+    update_workspace_activity,
+    get_or_create_flash_workspace,
+    get_workspace as db_get_workspace,
+)
 from src.server.services.background_task_manager import (
     BackgroundTaskManager,
     TaskStatus,
@@ -48,8 +52,14 @@ from src.server.utils.skill_context import (
     parse_skill_contexts,
     build_skill_content,
 )
-from src.server.utils.multimodal_context import parse_multimodal_contexts, inject_multimodal_context
-from src.server.utils.directive_context import parse_directive_contexts, build_directive_reminder
+from src.server.utils.multimodal_context import (
+    parse_multimodal_contexts,
+    inject_multimodal_context,
+)
+from src.server.utils.directive_context import (
+    parse_directive_contexts,
+    build_directive_reminder,
+)
 from src.server.dependencies.usage_limits import release_burst_slot
 
 # Locale/timezone configuration
@@ -66,11 +76,12 @@ logger = logging.getLogger(__name__)
 _sse_logger = logging.getLogger("sse_events")
 
 from src.config.settings import is_sse_event_log_enabled
+
 _SSE_LOG_ENABLED = is_sse_event_log_enabled()
 
 # Maps agent mode → (config field on llm, preference key in other_preference)
 _MODE_MODEL_MAP = {
-    "ptc":   ("name",  "preferred_model"),
+    "ptc": ("name", "preferred_model"),
     "flash": ("flash", "preferred_flash_model"),
 }
 
@@ -255,18 +266,23 @@ async def resolve_oauth_llm_client(user_id: str, model_name: str):
         return None
 
     from src.server.services.codex_oauth import get_valid_token
+
     token_data = await get_valid_token(user_id)
     if not token_data:
         return None
 
     access_token = token_data["access_token"]
     if not access_token or not isinstance(access_token, str):
-        logger.error(f"[CHAT] Codex OAuth token is empty or not a string: type={type(access_token)}")
+        logger.error(
+            f"[CHAT] Codex OAuth token is empty or not a string: type={type(access_token)}"
+        )
         return None
 
     token_type = "sk-key" if access_token.startswith("sk-") else "oauth-jwt"
     account_id = token_data.get("account_id", "")
-    logger.info(f"[CHAT] Using Codex OAuth for provider={model_info['provider']} token_type={token_type} account_id={account_id[:8]}...")
+    logger.info(
+        f"[CHAT] Using Codex OAuth for provider={model_info['provider']} token_type={token_type} account_id={account_id[:8]}..."
+    )
 
     headers = {}
     if account_id:
@@ -321,7 +337,9 @@ async def resolve_llm_config(
             config.llm_client = None
             logger.info(f"[CHAT] Using {pref_key}: {preferred}")
         else:
-            logger.info(f"[CHAT] No {pref_key} set, using system default: {getattr(config.llm, model_field, None) or config.llm.name}")
+            logger.info(
+                f"[CHAT] No {pref_key} set, using system default: {getattr(config.llm, model_field, None) or config.llm.name}"
+            )
 
     # Resolve the effective model from whichever field we just set
     effective_model = getattr(config.llm, model_field, None) or config.llm.name
@@ -334,7 +352,9 @@ async def resolve_llm_config(
         config.llm_client = oauth_client
     # Then try BYOK
     elif byok_active:
-        byok_client = await resolve_byok_llm_client(user_id, effective_model, byok_active)
+        byok_client = await resolve_byok_llm_client(
+            user_id, effective_model, byok_active
+        )
         if byok_client:
             if config is base_config:
                 config = config.model_copy(deep=True)
@@ -417,8 +437,12 @@ async def astream_flash_workflow(
                 att_meta = [
                     {
                         "name": ctx.description or "file",
-                        "type": "image" if not ctx.data.startswith("data:application/pdf") else "pdf",
-                        "size": len(ctx.data.split(",", 1)[1]) * 3 // 4 if "," in ctx.data else 0,
+                        "type": "image"
+                        if not ctx.data.startswith("data:application/pdf")
+                        else "pdf",
+                        "size": len(ctx.data.split(",", 1)[1]) * 3 // 4
+                        if "," in ctx.data
+                        else 0,
                     }
                     for ctx in multimodal_ctxs
                 ]
@@ -430,7 +454,9 @@ async def astream_flash_workflow(
             metadata=query_metadata,
         )
 
-        logger.info(f"[FLASH_CHAT] Database records created: workspace_id={workspace_id}")
+        logger.info(
+            f"[FLASH_CHAT] Database records created: workspace_id={workspace_id}"
+        )
 
         # =====================================================================
         # Token and Tool Tracking
@@ -463,6 +489,7 @@ async def astream_flash_workflow(
             config=config,
             checkpointer=setup.checkpointer,
             user_profile=flash_user_profile,
+            store=setup.store,
         )
 
         # Build input state from messages
@@ -478,7 +505,10 @@ async def astream_flash_workflow(
                             content_items.append({"type": "text", "text": item.text})
                         elif item.type == "image" and item.image_url:
                             content_items.append(
-                                {"type": "image_url", "image_url": {"url": item.image_url}}
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": item.image_url},
+                                }
                             )
                 messages.append(
                     {"role": msg.role, "content": content_items or str(msg.content)}
@@ -488,7 +518,9 @@ async def astream_flash_workflow(
         multimodal_contexts = parse_multimodal_contexts(request.additional_context)
         if multimodal_contexts:
             messages = inject_multimodal_context(messages, multimodal_contexts)
-            logger.info(f"[FLASH_CHAT] Multimodal context injected: {len(multimodal_contexts)} attachment(s)")
+            logger.info(
+                f"[FLASH_CHAT] Multimodal context injected: {len(multimodal_contexts)} attachment(s)"
+            )
 
         # Skill Context Injection (Flash mode) — inline with last user message
         loaded_skill_names: list[str] = []
@@ -513,7 +545,9 @@ async def astream_flash_workflow(
         directive_reminder = build_directive_reminder(directives)
         if directive_reminder:
             _append_to_last_user_message(messages, directive_reminder)
-            logger.info(f"[FLASH_CHAT] Directive context injected inline ({len(directives)} directives)")
+            logger.info(
+                f"[FLASH_CHAT] Directive context injected inline ({len(directives)} directives)"
+            )
 
         # Build input state or resume command
         if request.hitl_response:
@@ -640,9 +674,7 @@ async def astream_flash_workflow(
         try:
             while True:
                 try:
-                    sse_event = await asyncio.wait_for(
-                        live_queue.get(), timeout=1.0
-                    )
+                    sse_event = await asyncio.wait_for(live_queue.get(), timeout=1.0)
                     if sse_event is None:
                         break
                     yield sse_event
@@ -678,9 +710,7 @@ async def astream_flash_workflow(
         finally:
             if not _disconnected:
                 try:
-                    await manager.unsubscribe_from_live_events(
-                        thread_id, live_queue
-                    )
+                    await manager.unsubscribe_from_live_events(thread_id, live_queue)
                 except Exception:
                     pass
                 try:
@@ -763,8 +793,7 @@ async def _handle_sse_disconnect(
 
         if is_explicit_cancel:
             logger.info(
-                f"[CHAT] Workflow explicitly cancelled by user: "
-                f"thread_id={thread_id}"
+                f"[CHAT] Workflow explicitly cancelled by user: thread_id={thread_id}"
             )
             await tracker.mark_cancelled(thread_id)
 
@@ -774,9 +803,7 @@ async def _handle_sse_disconnect(
             _tool_usage = handler.get_tool_usage() if handler else None
 
             try:
-                _sse_events = (
-                    handler.get_sse_events() if handler else None
-                )
+                _sse_events = handler.get_sse_events() if handler else None
                 await persistence_service.persist_cancelled(
                     execution_time=time.time() - start_time,
                     metadata={
@@ -787,9 +814,7 @@ async def _handle_sse_disconnect(
                     sse_events=_sse_events,
                 )
             except Exception as persist_error:
-                logger.error(
-                    f"[CHAT] Failed to persist cancellation: {persist_error}"
-                )
+                logger.error(f"[CHAT] Failed to persist cancellation: {persist_error}")
 
             await manager.cancel_workflow(thread_id)
             await release_burst_slot(user_id)
@@ -811,8 +836,7 @@ async def _handle_sse_disconnect(
             )
     except Exception as e:
         logger.error(
-            f"[CHAT] Error during SSE disconnect cleanup for "
-            f"{thread_id}: {e}",
+            f"[CHAT] Error during SSE disconnect cleanup for {thread_id}: {e}",
             exc_info=True,
         )
     finally:
@@ -955,8 +979,12 @@ async def astream_ptc_workflow(
                 att_meta = [
                     {
                         "name": ctx.description or "file",
-                        "type": "image" if not ctx.data.startswith("data:application/pdf") else "pdf",
-                        "size": len(ctx.data.split(",", 1)[1]) * 3 // 4 if "," in ctx.data else 0,
+                        "type": "image"
+                        if not ctx.data.startswith("data:application/pdf")
+                        else "pdf",
+                        "size": len(ctx.data.split(",", 1)[1]) * 3 // 4
+                        if "," in ctx.data
+                        else 0,
                     }
                     for ctx in multimodal_ctxs
                 ]
@@ -1085,6 +1113,7 @@ async def astream_ptc_workflow(
             user_id=user_id,
             plan_mode=effective_plan_mode,
             thread_id=thread_id,
+            store=setup.store,
         )
 
         if session.sandbox:
@@ -1107,7 +1136,10 @@ async def astream_ptc_workflow(
                             content_items.append({"type": "text", "text": item.text})
                         elif item.type == "image" and item.image_url:
                             content_items.append(
-                                {"type": "image_url", "image_url": {"url": item.image_url}}
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": item.image_url},
+                                }
                             )
                 messages.append(
                     {"role": msg.role, "content": content_items or str(msg.content)}
@@ -1141,7 +1173,9 @@ async def astream_ptc_workflow(
         multimodal_contexts = parse_multimodal_contexts(request.additional_context)
         if multimodal_contexts and not request.hitl_response:
             messages = inject_multimodal_context(messages, multimodal_contexts)
-            logger.info(f"[PTC_CHAT] Multimodal context injected: {len(multimodal_contexts)} attachment(s)")
+            logger.info(
+                f"[PTC_CHAT] Multimodal context injected: {len(multimodal_contexts)} attachment(s)"
+            )
 
         # Build input state or resume command
         if request.hitl_response:
@@ -1182,7 +1216,9 @@ async def astream_ptc_workflow(
             )
             # Append reminder to the last user message
             if isinstance(input_state, dict) and input_state.get("messages"):
-                _append_to_last_user_message(input_state["messages"], plan_mode_reminder)
+                _append_to_last_user_message(
+                    input_state["messages"], plan_mode_reminder
+                )
             logger.info(f"[PTC_CHAT] Plan mode enabled for thread_id={thread_id}")
 
         # =====================================================================
@@ -1192,8 +1228,12 @@ async def astream_ptc_workflow(
         directive_reminder = build_directive_reminder(directives)
         if directive_reminder and not request.hitl_response:
             if isinstance(input_state, dict) and input_state.get("messages"):
-                _append_to_last_user_message(input_state["messages"], directive_reminder)
-                logger.info(f"[PTC_CHAT] Directive context injected inline ({len(directives)} directives)")
+                _append_to_last_user_message(
+                    input_state["messages"], directive_reminder
+                )
+                logger.info(
+                    f"[PTC_CHAT] Directive context injected inline ({len(directives)} directives)"
+                )
 
         # =====================================================================
         # Save user request to system thread directory (non-critical)
@@ -1298,9 +1338,7 @@ async def astream_ptc_workflow(
         )
         if not ready_for_new_request:
             # Try to queue the message for injection into the running workflow
-            queued = await queue_message_for_thread(
-                thread_id, user_input, user_id
-            )
+            queued = await queue_message_for_thread(thread_id, user_input, user_id)
             if queued:
                 # Return a short SSE response confirming the queue, then exit
                 event_data = json.dumps(
@@ -1333,20 +1371,28 @@ async def astream_ptc_workflow(
                 # Read fresh refs from task_info (may have been updated by reinvoke)
                 task_info = manager.tasks.get(thread_id)
                 _handler = task_info.metadata.get("handler") if task_info else handler
-                _token_cb = task_info.metadata.get("token_callback") if task_info else token_callback
-                _start_time = task_info.metadata.get("start_time", start_time) if task_info else start_time
+                _token_cb = (
+                    task_info.metadata.get("token_callback")
+                    if task_info
+                    else token_callback
+                )
+                _start_time = (
+                    task_info.metadata.get("start_time", start_time)
+                    if task_info
+                    else start_time
+                )
 
                 execution_time = time.time() - _start_time
 
                 _persistence_service = ConversationPersistenceService.get_instance(
                     thread_id
                 )
-                _persistence_service._on_pair_persisted = lambda: manager.clear_event_buffer(thread_id)
+                _persistence_service._on_pair_persisted = (
+                    lambda: manager.clear_event_buffer(thread_id)
+                )
 
                 # Get per-call records for usage tracking
-                _per_call_records = (
-                    _token_cb.per_call_records if _token_cb else None
-                )
+                _per_call_records = _token_cb.per_call_records if _token_cb else None
 
                 # Get tool usage summary from handler
                 _tool_usage = None
@@ -1588,9 +1634,7 @@ async def astream_ptc_workflow(
                 if persistence_service:
                     try:
                         error_msg = f"Max retries exceeded ({retry_count}/{MAX_RETRIES}): {type(e).__name__}: {str(e)}"
-                        _sse_events = (
-                            handler.get_sse_events() if handler else None
-                        )
+                        _sse_events = handler.get_sse_events() if handler else None
                         await persistence_service.persist_error(
                             error_message=error_msg,
                             errors=[error_msg],
@@ -1648,9 +1692,7 @@ async def astream_ptc_workflow(
             # Persist error to database
             if persistence_service:
                 try:
-                    _sse_events = (
-                        handler.get_sse_events() if handler else None
-                    )
+                    _sse_events = handler.get_sse_events() if handler else None
                     await persistence_service.persist_error(
                         error_message=str(e),
                         execution_time=time.time() - start_time,
@@ -1732,8 +1774,7 @@ async def reconnect_to_workflow_stream(
     )
 
     logger.info(
-        f"[PTC_RECONNECT] Replaying {len(buffered_events)} events "
-        f"for {thread_id}"
+        f"[PTC_RECONNECT] Replaying {len(buffered_events)} events for {thread_id}"
     )
 
     for event in buffered_events:
@@ -1749,9 +1790,7 @@ async def reconnect_to_workflow_stream(
         try:
             while True:
                 try:
-                    event = await asyncio.wait_for(
-                        live_queue.get(), timeout=1.0
-                    )
+                    event = await asyncio.wait_for(live_queue.get(), timeout=1.0)
                     if event is None:
                         break
                     yield event
@@ -1769,7 +1808,9 @@ async def reconnect_to_workflow_stream(
             await manager.decrement_connection(thread_id)
 
 
-async def stream_subagent_task_events(thread_id: str, task_id: str, last_event_id: int | None = None):
+async def stream_subagent_task_events(
+    thread_id: str, task_id: str, last_event_id: int | None = None
+):
     """SSE stream of a single subagent's content events.
 
     Per-task SSE stream with its own Redis buffer. Events are

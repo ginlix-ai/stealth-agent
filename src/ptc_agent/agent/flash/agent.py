@@ -25,7 +25,10 @@ from ptc_agent.config import AgentConfig
 
 # Import model resilience middleware
 try:
-    from langchain.agents.middleware import ModelRetryMiddleware, ModelFallbackMiddleware
+    from langchain.agents.middleware import (
+        ModelRetryMiddleware,
+        ModelFallbackMiddleware,
+    )
 except ImportError:
     ModelRetryMiddleware = None  # type: ignore[misc,assignment]
     ModelFallbackMiddleware = None  # type: ignore[misc,assignment]
@@ -76,6 +79,7 @@ class FlashAgent:
                 self.llm: Any = config.llm_client
             else:
                 from src.llms import create_llm
+
                 self.llm = create_llm(config.llm.flash)
             model = config.llm.flash
             provider = "llm_config"
@@ -156,6 +160,7 @@ class FlashAgent:
         checkpointer: Any | None = None,
         llm: Any | None = None,
         user_profile: dict | None = None,
+        store: Any | None = None,
     ) -> Any:
         """Create a Flash agent with minimal middleware stack.
 
@@ -197,7 +202,9 @@ class FlashAgent:
         )
         shared_middleware.append(skill_loader_middleware)
         tools.extend(skill_loader_middleware.tools)  # LoadSkill tool
-        tools.extend(skill_loader_middleware.get_all_skill_tools())  # Pre-register skill tools
+        tools.extend(
+            skill_loader_middleware.get_all_skill_tools()
+        )  # Pre-register skill tools
         logger.info(
             "Flash skill loader enabled",
             skill_count=len(skill_loader_middleware.skill_registry),
@@ -214,11 +221,11 @@ class FlashAgent:
         logger.info("AskUserQuestion tool enabled for Flash agent")
 
         # Optional summarization (shares config with main agent)
-        from src.config.settings import get_summarization_config
-
-        summarization_config = get_summarization_config()
-        if summarization_config.get("enabled", True):
-            main_middleware.append(SummarizationMiddleware())
+        summarization = SummarizationMiddleware.from_config(backend=None)
+        if summarization is not None:
+            main_middleware.append(summarization)
+            from src.config.settings import get_summarization_config
+            summarization_config = get_summarization_config()
             logger.info(
                 "Summarization enabled",
                 threshold=summarization_config.get("token_threshold", 120000),
@@ -274,6 +281,7 @@ class FlashAgent:
             tools=tools,
             middleware=middleware,
             checkpointer=checkpointer,
+            store=store,
         ).with_config({"recursion_limit": 100})
 
         return agent

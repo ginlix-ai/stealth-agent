@@ -486,13 +486,29 @@ def get_summarization_config() -> Dict[str, Any]:
         - llm: Model name for generating summaries
         - token_threshold: Token count threshold to trigger summarization
         - keep_messages: Number of recent messages to preserve after summarization
+        - truncate_args_trigger_messages: Message count to trigger arg truncation (or None)
+        - truncate_args_keep_messages: Messages to protect from truncation
+        - truncate_args_max_length: Per-arg-value max chars before truncation
     """
-    return {
+    result: Dict[str, Any] = {
         "enabled": bool(_get_agent_nested_config('summarization.enabled', True)),
         "llm": str(_get_agent_nested_config('summarization.llm', 'gpt-5-nano')),
         "token_threshold": int(_get_agent_nested_config('summarization.token_threshold', 120000)),
         "keep_messages": int(_get_agent_nested_config('summarization.keep_messages', 5)),
     }
+
+    # Truncation config (None means disabled)
+    truncate_trigger = _get_agent_nested_config('summarization.truncate_args_trigger_messages')
+    if truncate_trigger is not None:
+        result["truncate_args_trigger_messages"] = int(truncate_trigger)
+        result["truncate_args_keep_messages"] = int(
+            _get_agent_nested_config('summarization.truncate_args_keep_messages', 20)
+        )
+        result["truncate_args_max_length"] = int(
+            _get_agent_nested_config('summarization.truncate_args_max_length', 2000)
+        )
+
+    return result
 
 
 def is_summarization_enabled() -> bool:

@@ -527,36 +527,31 @@ class WorkflowStreamHandler:
                                 )
                             continue
 
-                        # Handle summarization lifecycle signals
-                        if event_type == "summarization_signal":
-                            signal_data = {
+                        # Handle unified context_window events (token_usage, summarize, offload)
+                        if event_type == "context_window":
+                            cw_data = {
                                 "thread_id": self.thread_id,
-                                "signal": event_data.get("signal"),  # "start", "complete", or "error"
+                                "agent": self._extract_agent_name(agent_from_stream, event_data),
                             }
-                            # Include optional metadata
-                            if "summary_length" in event_data:
-                                signal_data["summary_length"] = event_data["summary_length"]
-                            if "error" in event_data:
-                                signal_data["error"] = event_data["error"]
+                            # Forward all relevant fields from middleware payload
+                            for key in ("action", "signal", "input_tokens", "output_tokens",
+                                        "total_tokens", "summary_length", "original_message_count",
+                                        "truncated_count", "error",
+                                        "kind", "offloaded_args", "offloaded_reads"):
+                                if key in event_data:
+                                    cw_data[key] = event_data[key]
+                            # Inject threshold for token_usage action
+                            if event_data.get("action") == "token_usage":
+                                from src.config.settings import get_summarization_token_threshold
+                                cw_data["threshold"] = get_summarization_token_threshold()
 
+                            action = event_data.get("action", "")
+                            signal = event_data.get("signal", "")
                             logger.info(
-                                f"[SUMMARIZATION] Emitting signal: {event_data.get('signal')} "
+                                f"[CONTEXT_WINDOW] Emitting {action}/{signal} "
                                 f"(thread_id={self.thread_id})"
                             )
-                            yield self._format_sse_event("summarization_signal", signal_data)
-                            continue
-
-                        # Handle token usage updates (for context window display)
-                        if event_type == "token_usage":
-                            from src.config.settings import get_summarization_token_threshold
-                            usage_data = {
-                                "thread_id": self.thread_id,
-                                "input_tokens": event_data.get("input_tokens", 0),
-                                "output_tokens": event_data.get("output_tokens", 0),
-                                "total_tokens": event_data.get("total_tokens", 0),
-                                "threshold": get_summarization_token_threshold(),
-                            }
-                            yield self._format_sse_event("token_usage", usage_data)
+                            yield self._format_sse_event("context_window", cw_data)
                             continue
 
                         # Handle queued message injection signal
@@ -809,7 +804,7 @@ class WorkflowStreamHandler:
         if checkpoint_ns:
             return str(checkpoint_ns)
 
-        return str(message_metadata.get("langgraph_node", "unknown"))
+        return str(message_metadata.get("langgraph_node", "agent"))
 
     async def _process_message_chunk(
         self,
