@@ -85,8 +85,9 @@ function isOnboardingRelatedToolSuccess(resultContent) {
  * @param {Function|null} callbacks.setIsCompacting - React state setter (null for history)
  * @param {Function} callbacks.insertNotification - Inserts standalone notification message
  * @param {Function} callbacks.t - i18n translation function
+ * @param {React.MutableRefObject} callbacks.offloadBatch - Mutable ref for batching offload events
  */
-function handleContextWindowEvent(event, { getMsgId, nextOrder, setMessages, setTokenUsage, setIsCompacting, insertNotification, t }) {
+function handleContextWindowEvent(event, { getMsgId, nextOrder, setMessages, setTokenUsage, setIsCompacting, insertNotification, t, offloadBatch }) {
   const action = event.action;
 
   if (action === 'token_usage') {
@@ -126,28 +127,52 @@ function handleContextWindowEvent(event, { getMsgId, nextOrder, setMessages, set
 
   if (action === 'offload') {
     if (event.signal === 'complete') {
-      let text;
+      const batch = offloadBatch;
+
+      // Accumulate counts
       if (event.kind === 'reads') {
-        text = t('chat.offloadedReadsNotification', { count: event.offloaded_reads });
+        batch.current.reads += event.offloaded_reads || 0;
       } else if (event.kind === 'args') {
-        text = t('chat.offloadedArgsNotification', { count: event.offloaded_args });
+        batch.current.args += event.offloaded_args || 0;
       } else {
-        // Manual /offload — shows combined count
-        text = t('chat.offloadedNotification', {
-          args: event.offloaded_args || 0,
-          reads: event.offloaded_reads || 0,
-        });
+        // Manual /offload — combined event
+        batch.current.args += event.offloaded_args || 0;
+        batch.current.reads += event.offloaded_reads || 0;
       }
-      const msgId = getMsgId();
-      if (msgId) {
-        const order = nextOrder();
-        setMessages((prev) => updateMessage(prev, msgId, (msg) => ({
-          ...msg,
-          contentSegments: [...(msg.contentSegments || []), { type: 'notification', content: text, order }],
-        })));
-      } else {
-        insertNotification(text);
+
+      // Capture msgId from first event in batch
+      if (batch.current.msgId === undefined) {
+        batch.current.msgId = getMsgId();
       }
+
+      // Debounce: merge back-to-back offload events into a single notification
+      clearTimeout(batch.current.timer);
+      batch.current.timer = setTimeout(() => {
+        const { args, reads, msgId } = batch.current;
+        let text;
+        if (args > 0 && reads > 0) {
+          text = t('chat.offloadedNotification', { args, reads });
+        } else if (reads > 0) {
+          text = t('chat.offloadedReadsNotification', { count: reads });
+        } else if (args > 0) {
+          text = t('chat.offloadedArgsNotification', { count: args });
+        }
+
+        if (text) {
+          if (msgId) {
+            const order = nextOrder();
+            setMessages((prev) => updateMessage(prev, msgId, (msg) => ({
+              ...msg,
+              contentSegments: [...(msg.contentSegments || []), { type: 'notification', content: text, order }],
+            })));
+          } else {
+            insertNotification(text);
+          }
+        }
+
+        // Reset batch
+        batch.current = { args: 0, reads: 0, timer: null };
+      }, 100);
     }
     return;
   }
@@ -212,6 +237,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   const lastEventIdRef = useRef(null);
   // Ref-based thread ID for use inside closures (avoids stale React state in callbacks)
   const threadIdRef = useRef(threadId);
+  // Batch back-to-back offload events into a single notification
+  const offloadBatchRef = useRef({ args: 0, reads: 0, timer: null });
   // Track reconnection state for UI indicator
   const [isReconnecting, setIsReconnecting] = useState(false);
 
@@ -353,6 +380,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             setIsCompacting: null,  // no start events in replayed history
             insertNotification: () => {},  // standalone notifications not needed in replay
             t,
+            offloadBatch: offloadBatchRef,
           });
           return;
         }
@@ -1932,6 +1960,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           setIsCompacting,
           insertNotification,
           t,
+          offloadBatch: offloadBatchRef,
         });
         return;
       }
