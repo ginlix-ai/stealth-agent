@@ -96,3 +96,14 @@ redis:
     enabled: true  # Enable SWR for cache reads
     soft_ttl_ratio: 0.6  # Refresh when remaining TTL < 60% of original (e.g., at 3 min for 5 min TTL)
     warm_after_invalidation: true  # Pre-populate cache after invalidation
+
+
+# =============================================================================
+# GITHUB BOT CONFIGURATION
+# =============================================================================
+# GitHub bot for agent self-improvement (issue reporting, PR proposals)
+github:
+  enabled: true
+  bot_name: "langalpha-bot"
+  bot_email: "bot@ginlix.ai"
+  token_env: "GITHUB_BOT_TOKEN"  # env var name holding the bot PAT (resolved from .env)

@@ -2016,6 +2016,21 @@ class PTCSandbox:
                         else:
                             exec_env[key] = value
 
+            # Inject GitHub bot env vars if configured
+            from src.config.settings import get_nested_config
+
+            if get_nested_config("github.enabled", False):
+                token_env = get_nested_config("github.token_env", "GITHUB_BOT_TOKEN")
+                token = os.getenv(token_env)
+                if token:
+                    exec_env["GITHUB_TOKEN"] = token
+                    bot_name = get_nested_config("github.bot_name", "langalpha-bot")
+                    bot_email = get_nested_config("github.bot_email", "bot@ginlix.ai")
+                    exec_env["GIT_AUTHOR_NAME"] = bot_name
+                    exec_env["GIT_AUTHOR_EMAIL"] = bot_email
+                    exec_env["GIT_COMMITTER_NAME"] = bot_name
+                    exec_env["GIT_COMMITTER_EMAIL"] = bot_email
+
             # Use code_run() for native artifact support (captures matplotlib charts)
             from daytona_sdk.common.process import CodeRunParams
 

@@ -237,6 +237,14 @@ SKILL_REGISTRY: dict[str, SkillDefinition] = {
         exposure="ptc",
         command="competitive-analysis",
     ),
+    "self-improve": SkillDefinition(
+        name="self-improve",
+        description="Report issues and propose fixes to improve your own capabilities when you encounter errors or limitations",
+        tools=[],
+        skill_md_path="skills/self-improve/SKILL.md",
+        exposure="ptc",
+        command="report-issue",
+    ),
     "initiating-coverage": SkillDefinition(
         name="initiating-coverage",
         description="Full equity research initiation: company research, financial model, valuation, charts, 30-50 page report",
