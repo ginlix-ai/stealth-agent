@@ -293,9 +293,10 @@ function ArtifactOrMarkdown({ artifact, content, toolName, toolCallProcess, onOp
     }
   }
 
-  // ExecuteCode: wrap output in code block for readability
-  if (toolName === 'ExecuteCode') {
-    const displayContent = (rawContent || 'No result content').replace(/^SUCCESS\n?/, '');
+  // ExecuteCode / Bash: wrap output in code block for readability
+  if (toolName === 'ExecuteCode' || toolName === 'Bash') {
+    let displayContent = rawContent || 'No result content';
+    if (toolName === 'ExecuteCode') displayContent = displayContent.replace(/^SUCCESS\n?/, '');
     return <Markdown variant="panel" content={`\`\`\`code\n${displayContent}\n\`\`\``} className="text-sm" />;
   }
 
