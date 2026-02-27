@@ -96,7 +96,6 @@ class PTCSandbox:
         "matplotlib",
         "seaborn",
         "plotly",
-        "mplfinance==0.12.10b0",
         # Image analysis
         "pillow",
         "opencv-python-headless",
@@ -109,6 +108,11 @@ class PTCSandbox:
         "beautifulsoup4",
         "lxml",
         "pyyaml",
+        # Office skill dependencies
+        "defusedxml",
+        "pdfplumber",
+        "reportlab",
+        "markitdown[pptx]",
         # Utilities
         "tqdm",
         "tabulate",
@@ -282,7 +286,8 @@ class PTCSandbox:
             base_image.run_commands(
                 # Install system dependencies including ripgrep for fast search
                 "apt-get update",
-                "apt-get install -y curl ripgrep jq git unzip",
+                "apt-get install -y curl ripgrep jq git unzip"
+                " libreoffice gcc poppler-utils pandoc qpdf",
                 # Install uv for fast Python package management
                 "curl -LsSf https://astral.sh/uv/install.sh | sh",
                 "mv /root/.local/bin/uv /usr/local/bin/uv",
@@ -291,6 +296,17 @@ class PTCSandbox:
                 "apt-get install -y nodejs",
                 # Install MCP server packages globally
                 *[f"npm install -g {pkg}" for pkg in mcp_packages],
+                # Office skill npm dependencies (docx creation, pptx creation)
+                "npm install -g docx pptxgenjs",
+                # GitHub CLI (direct binary — apt repo unreliable in sandbox builds)
+                "curl -fsSL https://github.com/cli/cli/releases/download/"
+                "v2.87.3/gh_2.87.3_linux_amd64.tar.gz -o /tmp/gh.tar.gz"
+                " && tar -xzf /tmp/gh.tar.gz -C /tmp"
+                " && mv /tmp/gh_2.87.3_linux_amd64/bin/gh /usr/local/bin/gh"
+                " && rm -rf /tmp/gh.tar.gz /tmp/gh_2.87.3_linux_amd64",
+                # Playwright CLI with Chromium browser
+                "npm install -g playwright"
+                " && npx playwright install --with-deps chromium",
                 # Clean up apt cache to reduce image size
                 "apt-get clean",
                 "rm -rf /var/lib/apt/lists/*",
@@ -330,6 +346,13 @@ class PTCSandbox:
                 "jq",
                 "git",
                 "unzip",
+                "libreoffice",
+                "gcc",
+                "poppler-utils",
+                "pandoc",
+                "qpdf",
+                "gh",
+                "playwright",
             ],  # Include apt/curl-installed packages in hash
         }
 
