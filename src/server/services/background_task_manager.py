@@ -1956,6 +1956,21 @@ class BackgroundTaskManager:
                     "completed_subagents": [],
                 }
 
+            # Query registry for active/completed task IDs
+            active_tasks: list[str] = []
+            completed_tasks: list[str] = []
+            try:
+                from src.server.services.background_registry_store import BackgroundRegistryStore
+                registry = await BackgroundRegistryStore.get_instance().get_registry(thread_id)
+                if registry:
+                    for task in await registry.get_all_tasks():
+                        if task.is_pending:
+                            active_tasks.append(task.task_id)
+                        else:
+                            completed_tasks.append(task.task_id)
+            except Exception:
+                pass
+
             if task_info.status not in [TaskStatus.QUEUED, TaskStatus.RUNNING]:
                 logger.info(
                     f"[BackgroundTaskManager] Cannot soft interrupt {thread_id}: "
@@ -1966,10 +1981,10 @@ class BackgroundTaskManager:
                     "thread_id": thread_id,
                     "can_resume": False,
                     # Backward-compatible key
-                    "background_tasks": list(task_info.active_subagents),
+                    "background_tasks": active_tasks,
                     # Preferred keys (used by CLI)
-                    "active_subagents": list(task_info.active_subagents),
-                    "completed_subagents": list(task_info.completed_subagents),
+                    "active_subagents": active_tasks,
+                    "completed_subagents": completed_tasks,
                 }
 
             # Set soft interrupt flag (different from cancel)
@@ -1977,7 +1992,7 @@ class BackgroundTaskManager:
             task_info.soft_interrupted = True
             logger.info(
                 f"[BackgroundTaskManager] Soft interrupt signaled: {thread_id}, "
-                f"active_subagents={list(task_info.active_subagents)}"
+                f"active_subagents={active_tasks}"
             )
 
             return {
@@ -1985,10 +2000,10 @@ class BackgroundTaskManager:
                 "thread_id": thread_id,
                 "can_resume": True,
                 # Backward-compatible key
-                "background_tasks": list(task_info.active_subagents),
+                "background_tasks": active_tasks,
                 # Preferred keys (used by CLI)
-                "active_subagents": list(task_info.active_subagents),
-                "completed_subagents": list(task_info.completed_subagents),
+                "active_subagents": active_tasks,
+                "completed_subagents": completed_tasks,
             }
 
     async def get_workflow_status(self, thread_id: str) -> Dict[str, Any]:
