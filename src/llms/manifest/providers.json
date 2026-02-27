@@ -133,11 +133,11 @@
         }
       },
       {
-        "id": "claude-sonnet-4-5-20250929",
-        "name": "Claude 4.5 Sonnet",
+        "id": "claude-sonnet-4-6",
+        "name": "Claude 4.6 Sonnet",
         "is_reasoning": true,
-        "description": "Claude 4.5 Sonnet model",
-        "alias": ["claude-sonnet-4.5"],
+        "description": "Claude 4.6 Sonnet model",
+        "alias": ["claude-sonnet-4.6"],
         "pricing": {
           "input_tiers": [
             {"max_tokens": 200000, "rate": 3.00, "cached_input": 0.30},
@@ -156,45 +156,13 @@
     ],
     "gemini": [
       {
-        "id": "gemini-2.5-pro",
-        "name": "Gemini 2.5 Pro",
-        "is_reasoning": true,
-        "description": "Google's advanced reasoning model with thinking capabilities",
+        "id": "gemini-3.1-flash-image-preview",
+        "name": "Gemini 3.1 Flash Image Preview",
+        "description": "Designed for speed and efficiency, effective for quick interactive responses and high throughput image generation",
         "pricing": {
-          "input": 1.25,
-          "cached_input": 0.31,
-          "output": 10.00,
-          "storage": 4.50,
-          "unit": "per_1m_tokens"
-        }
-      },
-      {
-        "id": "gemini-2.5-flash",
-        "name": "Gemini 2.5 Flash",
-        "is_reasoning": true,
-        "description": "Fast reasoning model with thinking disabled by default",
-        "alias": ["google/gemini-2.5-flash"],
-        "pricing": {
-          "input": 0.30,
-          "cached_input": 0.075,
-          "output": 2.50,
-          "storage": 1.00,
-          "unit": "per_1m_tokens"
-        }
-      },
-      {
-        "id": "gemini-2.5-flash-lite",
-        "name": "Gemini 2.5 Flash-Lite",
-        "is_reasoning": true,
-        "description": "Cost-optimized model with thinking disabled by default"
-      },
-      {
-        "id": "gemini-3-pro-image-preview",
-        "name": "Gemini 3 Pro Image Preview",
-        "description": "Native image generation model optimized for speed, flexibility, and contextual understanding",
-        "pricing": {
-          "input": 2.00,
-          "output": 12.00,
+          "input": 0.25,
+          "output": 1.50,
+          "output_image": 60.00,
           "unit": "per_1m_tokens"
         }
       },
@@ -212,10 +180,10 @@
         }
       },
       {
-        "id": "gemini-3-pro-preview",
-        "name": "Gemini 3 Pro Preview",
+        "id": "gemini-3.1-pro-preview",
+        "name": "Gemini 3.1 Pro Preview",
         "is_reasoning": true,
-        "description": "Google's most powerful agentic and vibe-coding model",
+        "description": "Google's latest performance, intelligence, and usability improvements for multimodal understanding, agentic capabilities, and vibe-coding",
         "pricing": {
           "input_tiers": [
             {"max_tokens": 200000, "rate": 2.00, "cached_input": 0.20},
@@ -302,6 +270,24 @@
     ],
     "z-ai-cn": [
       {
+        "id": "glm-5",
+        "name": "GLM-5",
+        "is_reasoning": true,
+        "description": "Z.AI's latest GLM-5 model with input-dependent tiered pricing",
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.55, "cached_input": 0.14},
+            {"max_tokens": null, "rate": 0.83, "cached_input": 0.21}
+          ],
+          "output_tiers": [
+            {"max_tokens": 32000, "rate": 2.48},
+            {"max_tokens": null, "rate": 3.03}
+          ],
+          "output_pricing_mode": "input_dependent",
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
         "id": "glm-4.7",
         "name": "GLM-4.7",
         "is_reasoning": false,
@@ -338,11 +324,10 @@
     ],
     "minimax": [
       {
-        "id": "minimax-m2.1-stable",
-        "name": "MiniMax-M2-Stable",
-        "alias": ["MiniMax-M2", "minimax-m2"],
-        "is_reasoning": false,
-        "description": "MiniMax's M2 Stable model with high concurrency for commercial use",
+        "id": "minimax-m2.5",
+        "name": "MiniMax-M2.5",
+        "alias": ["MiniMax-M2.5", "minimax-m2.5"],
+        "description": "MiniMax's M2.5 model",
         "pricing": {
           "input": 0.30,
           "output": 1.20,
@@ -352,14 +337,13 @@
         }
       },
       {
-        "id": "minimax-m2.1",
-        "name": "MiniMax-M2.1",
-        "alias": ["MiniMax-M2.1", "minimax-m2.1"],
-        "is_reasoning": false,
-        "description": "Modle if for coding plan",
+        "id": "minimax-m2.5-highspeed",
+        "name": "MiniMax-M2.5-Highspeed",
+        "alias": ["MiniMax-M2.5-highspeed"],
+        "description": "MiniMax's M2.5 Highspeed model with faster inference and higher output pricing",
         "pricing": {
-          "input": 0.30,
-          "output": 1.20,
+          "input": 0.60,
+          "output": 2.40,
           "cached_input": 0.03,
           "cache_storage": 0.375,
           "unit": "per_1m_tokens"
@@ -368,115 +352,110 @@
     ],
     "volcengine": [
       {
-        "id": "doubao-seed-1.8",
-        "name": "Doubao Seed 1.8",
+        "id": "doubao-seed-2.0-pro",
+        "name": "Doubao Seed 2.0 Pro",
         "is_reasoning": true,
-        "description": "Latest base model with thinking capabilities and input-dependent tiered pricing",
-        "alias": ["doubao-seed-1-8-251228", "doubao-seed-1-8"],
+        "description": "Doubao Seed 2.0 Pro - high-capability model with tiered pricing",
         "pricing": {
           "input_tiers": [
-            {"max_tokens": 32000, "rate": 0.11},
-            {"max_tokens": 128000, "rate": 0.17},
-            {"max_tokens": 256000, "rate": 0.33}
+            {"max_tokens": 32000, "rate": 3.2, "cached_input": 0.64},
+            {"max_tokens": 128000, "rate": 4.8, "cached_input": 0.64},
+            {"max_tokens": 256000, "rate": 9.6, "cached_input": 0.64}
           ],
           "output_tiers": [
-            {"max_tokens": 32000, "rate": 1.11},
-            {"max_tokens": 128000, "rate": 2.22},
-            {"max_tokens": 256000, "rate": 3.33}
+            {"max_tokens": 32000, "rate": 16.0},
+            {"max_tokens": 128000, "rate": 24.0},
+            {"max_tokens": 256000, "rate": 48.0}
           ],
           "output_pricing_mode": "input_dependent",
-          "cache_storage": 0.0024,
-          "cache_hit": 0.022,
+          "cache_storage": 0.017,
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "doubao-seed-2.0-lite",
+        "name": "Doubao Seed 2.0 Lite",
+        "is_reasoning": true,
+        "description": "Doubao Seed 2.0 Lite - balanced performance and cost",
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.6, "cached_input": 0.12},
+            {"max_tokens": 128000, "rate": 0.9, "cached_input": 0.12},
+            {"max_tokens": 256000, "rate": 1.8, "cached_input": 0.12}
+          ],
+          "output_tiers": [
+            {"max_tokens": 32000, "rate": 3.6},
+            {"max_tokens": 128000, "rate": 5.4},
+            {"max_tokens": 256000, "rate": 10.8}
+          ],
+          "output_pricing_mode": "input_dependent",
+          "cache_storage": 0.017,
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "doubao-seed-2.0-mini",
+        "name": "Doubao Seed 2.0 Mini",
+        "is_reasoning": true,
+        "description": "Doubao Seed 2.0 Mini - lightweight and cost-efficient",
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 0.2, "cached_input": 0.04},
+            {"max_tokens": 128000, "rate": 0.4, "cached_input": 0.04},
+            {"max_tokens": 256000, "rate": 0.8, "cached_input": 0.04}
+          ],
+          "output_tiers": [
+            {"max_tokens": 32000, "rate": 2.0},
+            {"max_tokens": 128000, "rate": 4.0},
+            {"max_tokens": 256000, "rate": 8.0}
+          ],
+          "output_pricing_mode": "input_dependent",
+          "cache_storage": 0.017,
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "doubao-seed-2.0-code",
+        "name": "Doubao Seed 2.0 Code",
+        "is_reasoning": true,
+        "description": "Doubao Seed 2.0 Code - optimized for coding tasks",
+        "pricing": {
+          "input_tiers": [
+            {"max_tokens": 32000, "rate": 3.2, "cached_input": 0.64},
+            {"max_tokens": 128000, "rate": 4.8, "cached_input": 0.64},
+            {"max_tokens": 256000, "rate": 9.6, "cached_input": 0.64}
+          ],
+          "output_tiers": [
+            {"max_tokens": 32000, "rate": 16.0},
+            {"max_tokens": 128000, "rate": 24.0},
+            {"max_tokens": 256000, "rate": 48.0}
+          ],
+          "output_pricing_mode": "input_dependent",
+          "cache_storage": 0.017,
           "unit": "per_1m_tokens"
         }
       }
     ],
     "dashscope": [
       {
-        "id": "qwen3-max",
-        "name": "Qwen3 Max",
-        "is_reasoning": false,
-        "description": "Alibaba's Qwen3 Max model - highest capability, non-thinking mode only",
-        "context_window": 252000,
-        "max_output": 32768,
-        "pricing": {
-          "input_tiers": [
-            {"max_tokens": 32000, "rate": 0.44, "cached_input": 0.088},
-            {"max_tokens": 128000, "rate": 0.89, "cached_input": 0.178},
-            {"max_tokens": null, "rate": 1.33, "cached_input": 0.266}
-          ],
-          "output_tiers": [
-            {"max_tokens": 32000, "rate": 1.78},
-            {"max_tokens": 128000, "rate": 3.56},
-            {"max_tokens": null, "rate": 5.33}
-          ],
-          "unit": "per_1m_tokens"
-        }
-      },
-      {
-        "id": "qwen3-max-preview",
-        "name": "Qwen3 Max Preview",
+        "id": "qwen3.5-plus",
+        "name": "Qwen3.5 Plus",
         "is_reasoning": true,
-        "description": "Alibaba's Qwen3 Max Preview - supports thinking mode",
-        "context_window": 252000,
+        "description": "Alibaba's Qwen3.5 Plus model with thinking capabilities and 1M context",
+        "context_window": 1000000,
         "max_output": 32768,
         "pricing": {
           "input_tiers": [
-            {"max_tokens": 32000, "rate": 0.83, "cached_input": 0.166},
-            {"max_tokens": 128000, "rate": 1.39, "cached_input": 0.278},
-            {"max_tokens": null, "rate": 2.08, "cached_input": 0.416}
+            {"max_tokens": 128000, "rate": 0.115},
+            {"max_tokens": 256000, "rate": 0.287},
+            {"max_tokens": 1000000, "rate": 0.573}
           ],
           "output_tiers": [
-            {"max_tokens": 32000, "rate": 3.33},
-            {"max_tokens": 128000, "rate": 5.56},
-            {"max_tokens": null, "rate": 8.33}
+            {"max_tokens": 128000, "rate": 0.688},
+            {"max_tokens": 256000, "rate": 1.72},
+            {"max_tokens": 1000000, "rate": 3.44}
           ],
-          "unit": "per_1m_tokens"
-        }
-      }
-    ],
-    "dashscope-sg": [
-      {
-        "id": "qwen3-vl-plus",
-        "name": "Qwen3 VL Plus (SG)",
-        "is_reasoning": true,
-        "is_vision": true,
-        "description": "Alibaba's Qwen3 vision-language model (Plus tier) - Singapore region",
-        "context_window": 262144,
-        "max_output": 32768,
-        "pricing": {
-          "input_tiers": [
-            {"max_tokens": 32000, "rate": 0.20, "cached_input": 0.04},
-            {"max_tokens": 128000, "rate": 0.31, "cached_input": 0.06},
-            {"max_tokens": 256000, "rate": 0.61, "cached_input": 0.12}
-          ],
-          "output_tiers": [
-            {"max_tokens": 32000, "rate": 1.63},
-            {"max_tokens": 128000, "rate": 2.45},
-            {"max_tokens": 256000, "rate": 4.89}
-          ],
-          "unit": "per_1m_tokens"
-        }
-      },
-      {
-        "id": "qwen3-vl-flash",
-        "name": "Qwen3 VL Flash (SG)",
-        "is_reasoning": true,
-        "is_vision": true,
-        "description": "Alibaba's Qwen3 vision-language model (Flash tier) - Singapore region, fast and cost-efficient",
-        "context_window": 262144,
-        "max_output": 32768,
-        "pricing": {
-          "input_tiers": [
-            {"max_tokens": 32000, "rate": 0.05, "cached_input": 0.01},
-            {"max_tokens": 128000, "rate": 0.08, "cached_input": 0.02},
-            {"max_tokens": 256000, "rate": 0.12, "cached_input": 0.02}
-          ],
-          "output_tiers": [
-            {"max_tokens": 32000, "rate": 0.41},
-            {"max_tokens": 128000, "rate": 0.61},
-            {"max_tokens": 256000, "rate": 0.98}
-          ],
+          "output_pricing_mode": "input_dependent",
           "unit": "per_1m_tokens"
         }
       }
@@ -507,6 +486,34 @@
           "input": 0.15,
           "cached_input": 0.075,
           "output": 0.60,
+          "unit": "per_1m_tokens"
+        }
+      }
+    ],
+    "moonshot": [
+      {
+        "id": "kimi-for-coding",
+        "name": "Kimi for Coding",
+        "is_reasoning": true,
+        "description": "Moonshot AI's Kimi model optimized for coding tasks",
+        "context_window": 262144,
+        "pricing": {
+          "input": 0.60,
+          "cached_input": 0.10,
+          "output": 3.00,
+          "unit": "per_1m_tokens"
+        }
+      },
+      {
+        "id": "kimi-k2.5",
+        "name": "Kimi K2.5",
+        "is_reasoning": true,
+        "description": "Moonshot AI's Kimi K2.5 multi-modal model with extended context",
+        "context_window": 262144,
+        "pricing": {
+          "input": 0.60,
+          "cached_input": 0.10,
+          "output": 3.00,
           "unit": "per_1m_tokens"
         }
       }
@@ -633,20 +640,21 @@
       "base_url": "https://ark.cn-beijing.volces.com/api/compatible",
       "env_key": "VOLCENGINE_API_KEY"
     },
-    "dashscope": {
-      "sdk": "qwq",
-      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "env_key": "DASHSCOPE_API_KEY"
-    },
-    "dashscope-sg": {
-      "sdk": "qwq",
-      "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-      "env_key": "DASHSCOPE_API_KEY_INT"
-    },
-    "dashscope-anthropic": {
+    "doubao-coding": {
       "sdk": "anthropic",
-      "base_url": "https://dashscope.aliyuncs.com/apps/anthropic",
-      "env_key": "DASHSCOPE_API_KEY"
+      "base_url": "https://ark.cn-beijing.volces.com/api/coding",
+      "env_key": "VOLCENGINE_API_KEY"
+    },
+    "dashscope": {
+      "sdk": "openai",
+      "base_url": "https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1",
+      "env_key": "DASHSCOPE_API_KEY",
+      "use_response_api": true
+    },
+    "dashscope-coding": {
+      "sdk": "anthropic",
+      "base_url": "https://coding.dashscope.aliyuncs.com/apps/anthropic",
+      "env_key": "DASHSCOPE_API_KEY_CODING"
     },
     "groq": {
       "sdk": "openai",
@@ -659,6 +667,14 @@
       "base_url": "https://api.cerebras.ai/v1",
       "env_key": "CEREBRAS_API_KEY",
       "use_response_api": false
+    },
+    "codex-oauth": {
+      "sdk": "codex",
+      "base_url": "https://chatgpt.com/backend-api/codex",
+      "env_key": null,
+      "use_response_api": true,
+      "auth_type": "oauth",
+      "display_name": "ChatGPT Codex"
     }
   },
   "infrastructure_pricing": {

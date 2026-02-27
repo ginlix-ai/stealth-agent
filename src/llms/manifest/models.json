@@ -92,57 +92,35 @@
   "claude-opus-4-6": {
     "model_id": "claude-opus-4-6",
     "provider": "anthropic",
+    "visible": true,
     "parameters": {
       "thinking": {
         "type": "adaptive"
       }
     }
   },
-    "claude-sonnet-4-5": {
-      "model_id": "claude-sonnet-4-5-20250929",
-      "provider": "anthropic",
-      "parameters": {
-        "max_tokens": 16000,
-        "thinking": {
-          "type": "enabled",
-          "budget_tokens": 10000
-        },
-        "enable_caching": true
+  "claude-sonnet-4-6": {
+    "model_id": "claude-sonnet-4-6",
+    "provider": "anthropic",
+    "visible": true,
+    "parameters": {
+      "thinking": {
+        "type": "adaptive"
       }
-    },
-  "gemini-2.5-pro": {
-    "model_id": "gemini-2.5-pro",
-    "provider": "gemini",
-    "visible": true,
-    "parameters": {
-      "thinking_budget": 0,
-      "temperature": 0,
-      "top_p": 1,
-      "max_output_tokens": 8192
     }
   },
-  "gemini-2.5-flash": {
-    "model_id": "gemini-2.5-flash",
-    "provider": "gemini",
+  "claude-haiku-4-5": {
+    "model_id": "claude-haiku-4-5",
+    "provider": "anthropic",
     "visible": true,
     "parameters": {
-      "thinking_budget": 0,
-      "temperature": 0
+      "thinking": {
+        "type": "enabled"
+      }
     }
   },
-  "gemini-2.5-flash-lite": {
-    "model_id": "gemini-2.5-flash-lite",
-    "provider": "gemini",
-    "visible": true,
-    "parameters": {
-      "thinking_budget": 0,
-      "temperature": 0,
-      "top_p": 1,
-      "max_output_tokens": 8192
-    }
-  },
-  "gemini-3-pro": {
-    "model_id": "gemini-3-pro-preview",
+  "gemini-3.1-pro": {
+    "model_id": "gemini-3.1-pro-preview",
     "provider": "gemini",
     "visible": true,
     "parameters": {
@@ -159,8 +137,8 @@
       "thinking_level": "medium"
     }
   },
-  "gemini-3-pro-image": {
-    "model_id": "gemini-3-pro-image-preview",
+  "gemini-3.1-flash-image": {
+    "model_id": "gemini-3.1-flash-image-preview",
     "provider": "gemini",
     "visible": true
   },
@@ -207,18 +185,88 @@
       "reasoning_effort": "medium"
     }
   },
-  "doubao-seed-1.8": {
-    "model_id": "doubao-seed-1-8-251228",
+  "doubao-seed-2.0-pro": {
+    "model_id": "doubao-seed-2-0-pro-260215",
     "provider": "volcengine",
+    "visible": true,
     "parameters": {
-      "store": true,
-      "reasoning": {
-        "effort": "medium"
-      }
+      "use_previous_response_id": false
     },
     "extra_body": {
-      "thinking": {"type": "disabled"},
-      "caching": {"type": "enabled"}
+      "thinking": {"type": "enabled"}
+    }
+  },
+  "doubao-seed-2.0-lite": {
+    "model_id": "doubao-seed-2-0-lite-260215",
+    "provider": "volcengine",
+    "visible": true,
+    "parameters": {
+      "use_previous_response_id": false
+    },
+    "extra_body": {
+      "thinking": {"type": "enabled"}
+    }
+  },
+  "doubao-seed-2.0-mini": {
+    "model_id": "doubao-seed-2-0-mini-260215",
+    "provider": "volcengine",
+    "visible": true,
+    "parameters": {
+      "use_previous_response_id": false
+    },
+    "extra_body": {
+      "thinking": {"type": "enabled"}
+    }
+  },
+  "doubao-seed-2.0-code": {
+    "model_id": "doubao-seed-2-0-code-preview-260215",
+    "provider": "volcengine",
+    "visible": true,
+    "parameters": {
+      "use_previous_response_id": false
+    },
+    "extra_body": {
+      "thinking": {"type": "enabled"}
+    }
+  },
+  "doubao-seed-2.0-pro-anthropic": {
+    "model_id": "doubao-seed-2-0-pro-260215",
+    "provider": "doubao-anthropic",
+    "visible": true,
+    "parameters": {
+      "thinking": {
+        "type": "enabled"
+      }
+    }
+  },
+  "doubao-seed-2.0-lite-anthropic": {
+    "model_id": "doubao-seed-2-0-lite-260215",
+    "provider": "doubao-anthropic",
+    "visible": true,
+    "parameters": {
+      "thinking": {
+        "type": "enabled"
+      }
+    }
+  },
+  "doubao-seed-2.0-mini-anthropic": {
+    "model_id": "doubao-seed-2-0-mini-260215",
+    "provider": "doubao-anthropic",
+    "visible": true,
+    "parameters": {
+      "thinking": {
+        "type": "enabled"
+      }
+    }
+  },
+  "doubao-seed-2.0-code-anthropic": {
+    "model_id": "doubao-seed-2-0-code-preview-260215",
+    "provider": "doubao-anthropic",
+    "visible": true,
+    "parameters": {
+      "thinking": {
+        "type": "enabled"
+      }
     }
   },
   "deepseek-reasoner": {
@@ -228,67 +276,48 @@
       "temperature": 0
     }
   },
-  "glm-4.7": {
-    "model_id": "glm-4.7",
+  "glm-5": {
+    "model_id": "glm-5",
     "provider": "z-ai",
     "parameters": {
+      "max_tokens": 128000,
       "thinking": {
-        "type": "enabled",
-        "budget_tokens": 10000
+        "type": "enabled"
       }
     }
   },
-  "glm-4.7-cn": {
-    "model_id": "glm-4.7",
+  "glm-5-cn": {
+    "model_id": "glm-5",
     "provider": "z-ai-cn",
     "parameters": {
+      "max_tokens": 128000,
       "thinking": {
-        "type": "enabled",
-        "budget_tokens": 10000
+        "type": "enabled"
       }
     }
   },
-  "minimax-m2.1": {
-    "model_id": "minimax-m2.1",
+  "minimax-m2.5": {
+    "model_id": "MiniMax-M2.5-highspeed",
     "provider": "minimax",
     "parameters": {
+      "max_tokens": 128000,
       "thinking": {
-        "type": "enabled",
-        "budget_tokens": 10000
+        "type": "enabled"
       }
     }
   },
-  "minimax-m2.1-stable": {
-    "model_id": "minimax-m2.1-stable",
-    "provider": "minimax",
-    "parameters": {
-      "thinking": {
-        "type": "enabled",
-        "budget_tokens": 10000
-      }
-    }
-  },
-  "qwen3-max": {
-    "model_id": "qwen3-max",
-    "provider": "dashscope"
-  },
-  "qwen3-max-preview": {
-    "model_id": "qwen3-max-preview",
+  "qwen3.5-plus": {
+    "model_id": "qwen3.5-plus",
     "provider": "dashscope",
-    "parameters":{
-      "enable_thinking": true
-    }
-  },
-  "qwen3-max-anthropic": {
-    "model_id": "qwen3-max",
-    "provider": "dashscope-anthropic"
-  },
-  "qwen3-max-preview-anthropic": {
-    "model_id": "qwen3-max-preview",
-    "provider": "dashscope-anthropic",
+    "visible": true,
     "extra_body": {
       "enable_thinking": true
     }
+  },
+  "qwen3.5-plus-anthropic": {
+    "model_id": "qwen3.5-plus",
+    "provider": "dashscope-coding",
+    "visible": true
   },
   "embedding-small": {
     "model_id": "text-embedding-3-small",
@@ -311,13 +340,105 @@
       "dimensions": 1536
     }
   },
-  "kimi": {
+  "kimi-k2.5": {
     "model_id": "kimi-for-coding",
     "provider": "moonshot",
+    "visible": true,
     "parameters": {
       "thinking": {
         "type": "enabled"
       }
     }
-  }
+  },
+  "kimi-k2.5-doubao": {
+    "model_id": "kimi-k2.5",
+    "provider": "doubao-coding",
+    "visible": true,
+    "parameters": {
+      "thinking": {
+        "type": "enabled"
+      },
+      "max_tokens": 32768
+    }
+  },
+  "gpt-5.1-codex-mini-oauth": {
+    "model_id": "gpt-5.1-codex-mini",
+    "provider": "codex-oauth",
+    "visible": true,
+    "parameters": {
+      "reasoning": {
+        "effort": "medium",
+        "summary": "auto"
+      },
+      "include": ["reasoning.encrypted_content"],
+      "store": false,
+      "model_kwargs": {
+        "instructions": "You are a helpful AI assistant."
+      }
+    }
+},
+  "gpt-5.2-oauth": {
+    "model_id": "gpt-5.2",
+    "provider": "codex-oauth",
+    "visible": true,
+    "parameters": {
+      "reasoning": {
+        "effort": "medium",
+        "summary": "auto"
+      },
+      "include": ["reasoning.encrypted_content"],
+      "store": false,
+      "model_kwargs": {
+        "instructions": "You are a helpful AI assistant."
+      }
+    }
+},
+  "gpt-5.3-codex-oauth": {
+    "model_id": "gpt-5.3-codex",
+    "provider": "codex-oauth",
+    "visible": true,
+    "parameters": {
+      "reasoning": {
+        "effort": "medium",
+        "summary": "auto"
+      },
+      "include": ["reasoning.encrypted_content"],
+      "store": false,
+      "model_kwargs": {
+        "instructions": "You are a helpful AI assistant."
+      }
+    }
+},
+  "gpt-5.1-codex-max-oauth": {
+    "model_id": "gpt-5.1-codex-max",
+    "provider": "codex-oauth",
+    "visible": true,
+    "parameters": {
+      "reasoning": {
+        "effort": "medium",
+        "summary": "auto"
+      },
+      "include": ["reasoning.encrypted_content"],
+      "store": false,
+      "model_kwargs": {
+        "instructions": "You are a helpful AI assistant."
+      }
+    }
+},
+  "gpt-5.3-codex-spark-oauth": {
+    "model_id": "gpt-5.3-codex-spark",
+    "provider": "codex-oauth",
+    "visible": true,
+    "parameters": {
+      "reasoning": {
+        "effort": "medium",
+        "summary": "auto"
+      },
+      "include": ["reasoning.encrypted_content"],
+      "store": false,
+      "model_kwargs": {
+        "instructions": "You are a helpful AI assistant."
+      }
+    }
+}
 }

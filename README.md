@@ -1,15 +1,18 @@
 <p align="center">
-  <img src="web/public/logo_words.svg" alt="LangAlpha" height="120" />
+  <img src="web/public/logo_words.png" alt="LangAlpha" height="120" />
   <br>
   <strong>A vibe investing agent harness</strong>
   <br>
   LangAlpha is built to help interpret financial markets and support investment decisions.
   <br><br>
-  <a href="https://ai.google.dev/gemini-api"><img src="https://img.shields.io/badge/Gemini_3-8E75B2?logo=googlegemini&logoColor=white" alt="Gemini 3" /></a>
+  <a href="https://ai.google.dev/gemini-api"><img src="https://img.shields.io/badge/Gemini_3.1-8E75B2?logo=googlegemini&logoColor=white" alt="Gemini 3.1" /></a>
   <img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+" />
   <a href="https://github.com/langchain-ai/langchain"><img src="https://img.shields.io/badge/LangChain-1c3c3c?logo=langchain&logoColor=white" alt="LangChain" /></a>
   <img src="https://img.shields.io/badge/license-Apache%202.0-green.svg" alt="License" />
 </p>
+
+> [!NOTE]
+> **Gemini 3 Hackathon** — If you're a judge or reviewer for the [Gemini 3 Hackathon](https://gemini3.devpost.com/), please refer to the [`hackathon/gemini-3`](https://github.com/ginlix-ai/stealth-agent/tree/hackathon/gemini-3) branch for the frozen submission. This `main` branch contains ongoing development beyond the submission.
 
 ---
 
@@ -34,11 +37,11 @@ In practice, you create a workspace per research goal ("Q2 rebalance", "data cen
 
 ## What Powers It
 
-### Built on Gemini 3
+### Built on Gemini 3.1
 
-LangAlpha is built natively on **Gemini 3** and ships with two modes:
+LangAlpha is built natively on **Gemini 3.1** and ships with two modes:
 
-- **PTC mode** uses **Gemini 3 Pro** for deep, multi-step investment research. Strong reasoning drives multi-step analysis where the agent plans its approach, thinks through financial data, and writes code for complex analysis. Long context lets it cross-reference SEC filings and research reports in a single pass, and native multimodal intelligence means it can interpret charts, financial PDFs, and visual data directly.
+- **PTC mode** uses **Gemini 3.1 Pro** for deep, multi-step investment research. Strong reasoning drives multi-step analysis where the agent plans its approach, thinks through financial data, and writes code for complex analysis. Long context lets it cross-reference SEC filings and research reports in a single pass, and native multimodal intelligence means it can interpret charts, financial PDFs, and visual data directly.
 - **Flash mode** uses **Gemini 3 Flash** for fast conversational responses: quick market lookups, chart-and-chat in TradingCenter, and lightweight Q&A without spinning up a full workspace.
 
 ### Programmatic Tool Calling (PTC) and Workspace Architecture

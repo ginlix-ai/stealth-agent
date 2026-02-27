@@ -6,11 +6,11 @@
 
 llm:
   # Model name from src/llms/manifest/models.json
-  name: "qwen3.5-plus-anthropic"
-  flash: "qwen3.5-plus-anthropic"
+  name: "gemini-3.1-pro"
+  flash: "gemini-3-flash"
   fallback:
-    - "kimi-k2.5"
-    - "doubao-seed-2.0-lite-anthropic"
+    - "gemini-2.5-pro"
+    - "gemini-2.5-flash"
 
 daytona:
   # Daytona sandbox configuration
@@ -153,7 +153,7 @@ subagents:
 # Uses LangChain's built-in SummarizationMiddleware
 summarization:
   enabled: true # Enable/disable conversation summarization
-  llm: "qwen3.5-plus-anthropic" # Model from models.json for generating conversation summaries
+  llm: "gemini-3-flash" # Model from models.json for generating conversation summaries
   token_threshold: 120000 # Trigger summarization when messages exceed this token count
   keep_messages: 5 # Preserve last N messages after summarization
   truncate_args_trigger_messages: 20 # Truncate tool args when >= N messages (Tier 1)
