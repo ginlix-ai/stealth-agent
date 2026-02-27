@@ -355,7 +355,7 @@ const ChatInput = forwardRef(function ChatInput({
     if (!showSlashMenu) return [];
     const query = slashQuery.toLowerCase();
     const items = [
-      ...skills.filter((s) => s.command).map((s) => ({ type: 'skill', name: s.command, skillName: s.name, description: s.description })),
+      ...skills.filter((s) => s.command).map((s) => ({ type: 'skill', name: s.command, skillName: s.name, description: t(`chat.slashCommand.${s.command}Desc`, { defaultValue: s.description }) })),
       ...BUILTIN_SLASH_COMMANDS.map((c) => ({ ...c, description: t(`chat.slashCommand.${c.name}Desc`) })),
     ];
     return items
