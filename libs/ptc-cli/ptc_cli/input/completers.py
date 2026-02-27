@@ -9,6 +9,13 @@ from prompt_toolkit.completion import (
     Completion,
 )
 from prompt_toolkit.document import Document
+from ptc_agent.core.paths import (
+    AGENT_SYSTEM_DIRS,
+    ALWAYS_HIDDEN_BASENAMES,
+    ALWAYS_HIDDEN_PATH_SEGMENTS,
+    ALWAYS_HIDDEN_SUFFIXES,
+    HIDDEN_DIR_NAMES,
+)
 
 from ptc_cli.core import COMMANDS
 
@@ -17,16 +24,10 @@ AT_MENTION_RE = re.compile(r"@(?P<path>(?:[^\s@]|(?<=\\)\s)*)$")
 SLASH_COMMAND_RE = re.compile(r"^/(?P<command>[a-z]*)$")
 SLASH_FILE_CMD_RE = re.compile(r"^/(view|download|copy)\s+(?P<path>(?:[^\s]|(?<=\\)\s)*)$")
 
-# System directories to filter by default in /view, /download, /copy
-SYSTEM_DIRS = ("code/", "tools/", "mcp_servers/", "skills/")
-
-# Hidden by default (only show when user explicitly types the prefix).
-HIDDEN_DIRS = ("_internal/",)
-
-# Always hidden from completion (regardless of prefix).
-ALWAYS_HIDDEN_SEGMENTS = ("/__pycache__/",)
-ALWAYS_HIDDEN_BASENAMES = ("__init__.py",)
-ALWAYS_HIDDEN_SUFFIXES = (".pyc",)
+# Derived from shared constants (source of truth: ptc_agent.core.paths)
+SYSTEM_DIRS = tuple(f"{d}/" for d in sorted(AGENT_SYSTEM_DIRS))
+HIDDEN_DIRS = tuple(f"{d}/" for d in sorted(HIDDEN_DIR_NAMES))
+ALWAYS_HIDDEN_SEGMENTS = ALWAYS_HIDDEN_PATH_SEGMENTS
 
 
 class SandboxFileCompleter(Completer):

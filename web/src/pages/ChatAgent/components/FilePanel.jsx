@@ -128,8 +128,9 @@ function sortFiles(filePaths, sortBy) {
 /** Directory display priority: root first, then results/, data/, rest alphabetical */
 const DIR_PRIORITY = { '/': 0, 'results': 1, 'data': 2 };
 
-/** System directory prefixes — collapsed by default when visible */
-const SYSTEM_DIR_PREFIXES = ['code', 'tools', 'mcp_servers', 'skills', '.agent'];
+/** System directory prefixes — collapsed by default when visible.
+ *  Source of truth: src/ptc_agent/core/paths.py → AGENT_SYSTEM_DIRS */
+export const SYSTEM_DIR_PREFIXES = ['code', 'tools', 'mcp_servers', 'skills', '.agent', '.self-improve'];
 
 function dirSortKey(dir) {
   if (DIR_PRIORITY[dir] != null) return DIR_PRIORITY[dir];

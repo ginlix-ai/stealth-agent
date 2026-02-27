@@ -17,6 +17,7 @@ import shlex
 from datetime import datetime, timezone
 from typing import Any
 
+from ptc_agent.core.paths import AGENT_SYSTEM_DIRS
 from src.server.database.workspace_file import (
     bulk_update_file_mtimes,
     bulk_upsert_files,
@@ -98,21 +99,20 @@ class FilePersistenceService:
     MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB per file
     MAX_WORKSPACE_SIZE = 1024 * 1024 * 1024  # 1GB total per workspace
 
-    # Directories to exclude from sync (relative to /home/daytona/)
-    # Note: .agent/user is excluded (DB-managed, read-only), but .agent/threads
-    # is persisted so thread working directories survive sandbox restarts.
-    EXCLUDE_DIRS = {
+    # Directories to exclude from sync (relative to /home/daytona/).
+    # Built from shared AGENT_SYSTEM_DIRS (source of truth: ptc_agent.core.paths)
+    # plus environment/tool dirs that should never be persisted.
+    # Note: .agent is NOT excluded wholesale — only sub-paths .agent/user and
+    # .agent/large_tool_results.  .agent/threads/ is intentionally persisted
+    # so thread working directories survive sandbox restarts.
+    EXCLUDE_DIRS = (AGENT_SYSTEM_DIRS - {".agent"}) | {
+        ".agent/user",
+        ".agent/large_tool_results",
         "node_modules",
         ".venv",
         "__pycache__",
         ".git",
         "_internal",
-        ".agent/user",
-        ".agent/large_tool_results",
-        "code",
-        "tools",
-        "mcp_servers",
-        "skills",
         ".cache",
         ".npm",
         ".local",

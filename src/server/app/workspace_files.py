@@ -34,6 +34,13 @@ from pydantic import BaseModel, Field
 from src.server.utils.api import CurrentUserId
 from fastapi.responses import Response
 
+from ptc_agent.core.paths import (
+    AGENT_SYSTEM_DIRS,
+    ALWAYS_HIDDEN_BASENAMES as _SHARED_BASENAMES,
+    ALWAYS_HIDDEN_PATH_SEGMENTS,
+    ALWAYS_HIDDEN_SUFFIXES,
+    HIDDEN_DIR_NAMES,
+)
 from src.server.database.workspace import get_workspace as db_get_workspace
 from src.server.services.workspace_manager import WorkspaceManager
 from src.server.services.file_persistence_service import FilePersistenceService
@@ -47,10 +54,12 @@ _CACHEABLE_IMAGE_TYPES = frozenset({
     "image/png", "image/jpeg", "image/gif", "image/svg+xml", "image/webp",
 })
 
-_SYSTEM_DIR_PREFIXES = (
-    # Agent infrastructure — toggleable via include_system query param
-    "code/", "tools/", "mcp_servers/", "skills/", ".agent/",
-)
+# Derived from shared constants (source of truth: ptc_agent.core.paths)
+_SYSTEM_DIR_PREFIXES = tuple(f"{d}/" for d in sorted(AGENT_SYSTEM_DIRS))
+_HIDDEN_DIR_PREFIXES = tuple(f"{d}/" for d in sorted(HIDDEN_DIR_NAMES))
+_ALWAYS_HIDDEN_SEGMENTS = ALWAYS_HIDDEN_PATH_SEGMENTS
+_ALWAYS_HIDDEN_BASENAMES = _SHARED_BASENAMES + (".file_sync_marker",)
+_ALWAYS_HIDDEN_SUFFIXES = ALWAYS_HIDDEN_SUFFIXES
 
 _ALWAYS_HIDDEN_DIR_PREFIXES = (
     # Package managers / dependencies
@@ -62,16 +71,6 @@ _ALWAYS_HIDDEN_DIR_PREFIXES = (
     # VCS
     ".git/",
 )
-
-# Hidden internal directories (used for SDKs/packages uploaded into the sandbox).
-# These should not show up in `/files` output unless the user explicitly lists them.
-_HIDDEN_DIR_PREFIXES = ("_internal/",)
-
-# These paths should never appear in listing/completions and should not be readable/downloadable
-# through the workspace file APIs.
-_ALWAYS_HIDDEN_SEGMENTS = ("/__pycache__/",)
-_ALWAYS_HIDDEN_BASENAMES = ("__init__.py", ".file_sync_marker")
-_ALWAYS_HIDDEN_SUFFIXES = (".pyc",)
 
 # Generous but bounded defaults.
 DEFAULT_READ_LIMIT_LINES = 20_000

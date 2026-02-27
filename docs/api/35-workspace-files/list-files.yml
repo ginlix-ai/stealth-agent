@@ -38,7 +38,7 @@ docs: |
 
   ### Query Parameters
   - `path` (optional): Directory to list (virtual or absolute). Defaults to "."
-  - `include_system` (optional): Include system directories (code/, tools/, mcp_servers/, skills/). Defaults to false
+  - `include_system` (optional): Include system directories (code/, tools/, mcp_servers/, skills/, .agent/, .self-improve/). Defaults to false
   - `pattern` (optional): Glob pattern evaluated in sandbox. Defaults to "**/*"
 
   ### Path Handling
@@ -48,7 +48,7 @@ docs: |
   - Preserves /tmp paths as absolute
 
   ### Hidden Directories
-  - System directories (code/, tools/, mcp_servers/, skills/) hidden by default
+  - System directories (code/, tools/, mcp_servers/, skills/, .agent/, .self-improve/) hidden by default
   - Internal SDK directories (_internal/) hidden unless explicitly requested
   - Cache/bytecode files (__pycache__/, *.pyc, __init__.py) always hidden
 

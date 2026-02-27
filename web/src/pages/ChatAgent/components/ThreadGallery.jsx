@@ -7,7 +7,7 @@ import DeleteConfirmModal from './DeleteConfirmModal';
 import RenameThreadModal from './RenameThreadModal';
 import ChatInput from '../../../components/ui/chat-input';
 import { attachmentsToImageContexts } from '../utils/fileUpload';
-import FilePanel from './FilePanel';
+import FilePanel, { SYSTEM_DIR_PREFIXES } from './FilePanel';
 import SandboxSettingsPanel from './SandboxSettingsPanel';
 import { getWorkspaceThreads, getWorkspace, deleteThread, updateThreadTitle } from '../utils/api';
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
@@ -619,10 +619,13 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
                     {showFilePanel ? t('common.close') : t('thread.viewAll')}
                   </div>
                 </div>
-                {/* Show first two file names — clicking a name opens that file directly */}
+                {/* Show first two user file names — system dirs (.agent/, code/, etc.) are excluded */}
                 {files.length > 0 && (
                   <div className="flex flex-col gap-0.5">
-                    {files.slice(0, 2).map((filePath, index) => {
+                    {files.filter((fp) => {
+                      const top = fp.split('/')[0];
+                      return !SYSTEM_DIR_PREFIXES.includes(top);
+                    }).slice(0, 2).map((filePath, index) => {
                       const fileName = filePath.split('/').pop();
                       return (
                         <div
