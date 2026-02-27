@@ -560,6 +560,7 @@ const ChatInput = forwardRef(function ChatInput({
     }
     onSend(finalMessage, planMode, readyAttachments, slashCommands);
     setMessage('');
+    attachedFiles.forEach(f => { if (f.preview) URL.revokeObjectURL(f.preview); });
     setAttachedFiles([]);
     setMentionedFiles([]);
     setSlashCommands([]);

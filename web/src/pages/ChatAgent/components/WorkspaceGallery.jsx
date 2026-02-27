@@ -653,7 +653,7 @@ function WorkspaceGallery({ onWorkspaceSelect, cache, prefetchThreads }) {
             {error}
           </p>
           <button
-            onClick={loadWorkspaces}
+            onClick={() => loadWorkspaces(0)}
             className="px-4 py-2 rounded-md text-sm font-medium transition-colors"
             style={{
               backgroundColor: 'var(--color-accent-primary)',

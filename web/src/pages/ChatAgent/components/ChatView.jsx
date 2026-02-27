@@ -25,6 +25,22 @@ import TodoDrawer from './TodoDrawer';
 import { parseErrorMessage } from '../utils/parseErrorMessage';
 import '../../Dashboard/Dashboard.css';
 
+// Static main agent object — never changes, so defined once at module level
+const MAIN_AGENT = {
+  id: 'main',
+  name: 'Boss',
+  displayName: 'LangAlpha',
+  taskId: '',
+  description: '',
+  type: 'main',
+  status: 'active',
+  toolCalls: 0,
+  currentTool: '',
+  messages: [],
+  isActive: true,
+  isMainAgent: true,
+};
+
 /**
  * SubagentStatusIndicator — inline status line for subagent view.
  */
@@ -196,10 +212,12 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
   }, [threadId]);
 
   // Direct URL navigation fallback: detect flash workspace and resolve name from API
+  const wsFetchedRef = useRef(null); // tracks workspaceId we already fetched for
   useEffect(() => {
     if (!workspaceId) return;
-    // Skip API call if we already have both pieces of info
     if (location.state?.agentMode && workspaceName) return;
+    if (wsFetchedRef.current === workspaceId) return;
+    wsFetchedRef.current = workspaceId;
     let cancelled = false;
     getWorkspace(workspaceId).then((ws) => {
       if (cancelled) return;
@@ -207,7 +225,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
       if (ws?.name && !workspaceName) setWorkspaceName(ws.name);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [workspaceId, location.state?.agentMode, workspaceName]);
+  }, [workspaceId, location.state?.agentMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Floating cards management - extracted to custom hook for better encapsulation
   // Must be called before useChatMessages since updateTodoListCard and updateSubagentCard are passed to it
@@ -353,7 +371,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
         name: a.file.name,
         type: a.type,
         size: a.file.size,
-        preview: a.preview || null,
+        preview: null,
         dataUrl: a.dataUrl,
       }));
     }
@@ -447,36 +465,35 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cards]);
 
-  // Convert cards to agents array for sidebar
-  // Filter out hidden agents and add main agent
-  // Limit to 12 agents total (1 main + 11 subagents), hide older ones
-  const allSubagentAgents = Object.entries(cards)
-    .filter(([cardId]) => cardId.startsWith('subagent-'))
-    .map(([cardId, card]) => ({
-      id: cardId.replace('subagent-', ''),
-      name: card.subagentData?.displayId || t('chat.worker'),
-      taskId: card.subagentData?.taskId || card.subagentData?.agentId || '',
-      description: card.subagentData?.description || '',
-      prompt: card.subagentData?.prompt || '',
-      type: card.subagentData?.type || 'general-purpose',
-      status: card.subagentData?.status || 'active',
-      toolCalls: card.subagentData?.toolCalls || 0,
-      currentTool: card.subagentData?.currentTool || '',
-      messages: card.subagentData?.messages || [],
-      isActive: card.subagentData?.isActive !== false,
-      isMainAgent: false,
-    }))
-    .reverse(); // Newer first (Object.entries returns insertion order, so reverse = newest first)
-
-  // Filter out hidden agents
-  const visibleSubagentAgents = allSubagentAgents.filter(agent => !hiddenAgentIds.has(agent.id));
-
-  // Limit to 11 subagents (main agent makes 12 total)
-  const maxSubagents = 11;
-  const subagentAgents = visibleSubagentAgents.slice(0, maxSubagents);
-  const excessSubagents = visibleSubagentAgents.slice(maxSubagents);
+  // Convert cards to agents array for sidebar (memoized to avoid re-renders)
+  const { subagentAgents, excessSubagents } = useMemo(() => {
+    const maxSubagents = 11;
+    const all = Object.entries(cards)
+      .filter(([cardId]) => cardId.startsWith('subagent-'))
+      .map(([cardId, card]) => ({
+        id: cardId.replace('subagent-', ''),
+        name: card.subagentData?.displayId || t('chat.worker'),
+        taskId: card.subagentData?.taskId || card.subagentData?.agentId || '',
+        description: card.subagentData?.description || '',
+        prompt: card.subagentData?.prompt || '',
+        type: card.subagentData?.type || 'general-purpose',
+        status: card.subagentData?.status || 'active',
+        toolCalls: card.subagentData?.toolCalls || 0,
+        currentTool: card.subagentData?.currentTool || '',
+        messages: card.subagentData?.messages || [],
+        isActive: card.subagentData?.isActive !== false,
+        isMainAgent: false,
+      }))
+      .reverse();
+    const visible = all.filter(agent => !hiddenAgentIds.has(agent.id));
+    return {
+      subagentAgents: visible.slice(0, maxSubagents),
+      excessSubagents: visible.slice(maxSubagents),
+    };
+  }, [cards, hiddenAgentIds, t]);
 
   // Auto-hide excess agents (beyond 11 subagents)
+  const excessIds = useMemo(() => excessSubagents.map(a => a.id).join(','), [excessSubagents]);
   useEffect(() => {
     if (excessSubagents.length > 0) {
       setHiddenAgentIds((prev) => {
@@ -487,26 +504,10 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
         return newSet;
       });
     }
-  }, [excessSubagents.length, excessSubagents.map(a => a.id).join(',')]);
-
-  // Main agent (always first) - Director
-  const mainAgent = {
-    id: 'main',
-    name: 'Boss', // Icon label at bottom
-    displayName: 'LangAlpha', // Floating card / panel header title
-    taskId: '',
-    description: '',
-    type: 'main',
-    status: 'active',
-    toolCalls: 0,
-    currentTool: '',
-    messages: [],
-    isActive: true,
-    isMainAgent: true,
-  };
+  }, [excessSubagents.length, excessIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Combine: main agent first, then visible subagents (limited to 11)
-  const agents = [mainAgent, ...subagentAgents];
+  const agents = useMemo(() => [MAIN_AGENT, ...subagentAgents], [subagentAgents]);
 
   // Find the active agent object for subagent view
   const activeAgent = activeAgentId !== 'main'
