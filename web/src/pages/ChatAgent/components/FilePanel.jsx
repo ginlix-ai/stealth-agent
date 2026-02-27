@@ -128,8 +128,13 @@ function sortFiles(filePaths, sortBy) {
 /** Directory display priority: root first, then results/, data/, rest alphabetical */
 const DIR_PRIORITY = { '/': 0, 'results': 1, 'data': 2 };
 
+/** System directory prefixes — collapsed by default when visible */
+const SYSTEM_DIR_PREFIXES = ['code', 'tools', 'mcp_servers', 'skills', '.agent'];
+
 function dirSortKey(dir) {
-  return DIR_PRIORITY[dir] ?? 3;
+  if (DIR_PRIORITY[dir] != null) return DIR_PRIORITY[dir];
+  if (SYSTEM_DIR_PREFIXES.includes(dir)) return 99;
+  return 3;
 }
 
 /**
@@ -393,6 +398,8 @@ function FilePanel({
   readOnly = false,
   apiAdapter = null,
   onAddContext = null,
+  showSystemFiles = false,
+  onToggleSystemFiles = null,
 }) {
   const { t } = useTranslation();
   // Resolve API functions — use adapter overrides if provided, otherwise fall back to authenticated imports
@@ -741,6 +748,23 @@ function FilePanel({
   // Directory collapse state
   const [collapsedDirs, setCollapsedDirs] = useState(new Set());
   const fileTree = useMemo(() => buildFileTree(filteredSortedFiles), [filteredSortedFiles]);
+
+  // Auto-collapse system directories when they appear in the tree
+  useEffect(() => {
+    if (!showSystemFiles) return;
+    const sysDirs = fileTree
+      .filter((node) => SYSTEM_DIR_PREFIXES.includes(node.name))
+      .map((node) => node.fullPath);
+    if (sysDirs.length === 0) return;
+    setCollapsedDirs((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const d of sysDirs) {
+        if (!next.has(d)) { next.add(d); changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }, [fileTree, showSystemFiles]);
 
   const toggleDir = useCallback((dir) => {
     setCollapsedDirs((prev) => {
@@ -1479,6 +1503,16 @@ function FilePanel({
               </button>
             ))}
           </div>
+          {/* System files toggle */}
+          {onToggleSystemFiles && (
+            <button
+              className={`file-panel-chip ${showSystemFiles ? 'active' : ''}`}
+              onClick={onToggleSystemFiles}
+              title="Show system directories (.agent/, code/, tools/, etc.)"
+            >
+              System
+            </button>
+          )}
           {/* Sort dropdown */}
           <div className="file-panel-sort-wrapper" ref={sortMenuRef}>
             <button

@@ -7,9 +7,10 @@ import { listWorkspaceFiles } from '../utils/api';
  * Provides a debounced refresh to avoid rapid re-fetches.
  *
  * @param {string} workspaceId
+ * @param {{ includeSystem?: boolean }} options
  * @returns {{ files: string[], loading: boolean, error: string|null, refresh: () => void }}
  */
-export function useWorkspaceFiles(workspaceId) {
+export function useWorkspaceFiles(workspaceId, { includeSystem = false } = {}) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -20,7 +21,7 @@ export function useWorkspaceFiles(workspaceId) {
     setLoading(true);
     setError(null);
     try {
-      const data = await listWorkspaceFiles(workspaceId, '.', { autoStart });
+      const data = await listWorkspaceFiles(workspaceId, '.', { autoStart, includeSystem });
       setFiles(data.files || []);
     } catch (err) {
       const status = err?.response?.status;
@@ -41,9 +42,9 @@ export function useWorkspaceFiles(workspaceId) {
     } finally {
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [workspaceId, includeSystem]);
 
-  // Fetch on mount / workspaceId change
+  // Fetch on mount / workspaceId change / includeSystem toggle
   useEffect(() => {
     fetchFiles();
   }, [fetchFiles]);

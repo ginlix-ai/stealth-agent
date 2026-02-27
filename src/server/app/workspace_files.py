@@ -48,8 +48,11 @@ _CACHEABLE_IMAGE_TYPES = frozenset({
 })
 
 _SYSTEM_DIR_PREFIXES = (
-    # Agent infrastructure
+    # Agent infrastructure — toggleable via include_system query param
     "code/", "tools/", "mcp_servers/", "skills/", ".agent/",
+)
+
+_ALWAYS_HIDDEN_DIR_PREFIXES = (
     # Package managers / dependencies
     "node_modules/", ".venv/", "venv/", "vendor/",
     # Build artifacts
@@ -195,6 +198,9 @@ def _is_always_hidden_path(client_path: str) -> bool:
     if any(seg in normalized for seg in _ALWAYS_HIDDEN_SEGMENTS):
         return True
 
+    if any(client_path.startswith(prefix) for prefix in _ALWAYS_HIDDEN_DIR_PREFIXES):
+        return True
+
     return False
 
 
@@ -275,7 +281,14 @@ async def list_workspace_files(
                 if f["path"].startswith(normalized_path + "/")
                 or f["path"] == normalized_path
             ]
-        files = [f["path"] for f in file_tree]
+        allow_hidden = _requested_hidden_ok(path)
+        files = [
+            f["path"]
+            for f in file_tree
+            if not _is_always_hidden_path(f["path"])
+            and (include_system or not _is_system_path(f["path"]))
+            and (allow_hidden or not _is_hidden_path(f["path"]))
+        ]
         return {
             "workspace_id": workspace_id,
             "path": path,

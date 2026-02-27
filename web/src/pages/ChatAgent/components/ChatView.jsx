@@ -147,6 +147,10 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
   const [detailPlanData, setDetailPlanData] = useState(null);
   // Track hidden agents (removed from sidebar, but not from state)
   const [hiddenAgentIds, setHiddenAgentIds] = useState(new Set());
+  // Show system files in FilePanel (.agent/, code/, tools/, etc.)
+  const [showSystemFiles, setShowSystemFiles] = useState(
+    () => localStorage.getItem('filePanel.showSystemFiles') === 'true'
+  );
   // Track whether the agent was soft-interrupted
   const [wasInterrupted, setWasInterrupted] = useState(false);
   // Track intentional back navigation (skip session save on unmount)
@@ -264,7 +268,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     loading: filesLoading,
     error: filesError,
     refresh: refreshFiles,
-  } = useWorkspaceFiles(isFlashMode ? null : workspaceId);
+  } = useWorkspaceFiles(isFlashMode ? null : workspaceId, { includeSystem: showSystemFiles });
 
   // Chat messages management - receives updateTodoListCard and updateSubagentCard from floating cards hook
   const {
@@ -1260,6 +1264,13 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
                 filesError={filesError}
                 onRefreshFiles={refreshFiles}
                 onAddContext={handleAddContext}
+                showSystemFiles={showSystemFiles}
+                onToggleSystemFiles={() => {
+                  setShowSystemFiles((v) => {
+                    localStorage.setItem('filePanel.showSystemFiles', String(!v));
+                    return !v;
+                  });
+                }}
               />
             ) : rightPanelType === 'detail' && (detailToolCall || detailPlanData) ? (
               <DetailPanel

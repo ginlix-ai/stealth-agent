@@ -58,6 +58,10 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
   const [showSandboxPanel, setShowSandboxPanel] = useState(false);
   const [filePanelWidth, setFilePanelWidth] = useState(850);
   const [filePanelTargetFile, setFilePanelTargetFile] = useState(null);
+  // Show system files in FilePanel (.agent/, code/, tools/, etc.)
+  const [showSystemFiles, setShowSystemFiles] = useState(
+    () => localStorage.getItem('filePanel.showSystemFiles') === 'true'
+  );
   // Initialize files from cache for instant display on return navigation
   const [files, setFiles] = useState(() => cache?.current?.[workspaceId]?.files || []);
   const isDraggingRef = useRef(false);
@@ -82,7 +86,7 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
     loading: panelFilesLoading,
     error: panelFilesError,
     refresh: refreshPanelFiles,
-  } = useWorkspaceFiles(isFlash ? null : workspaceId);
+  } = useWorkspaceFiles(isFlash ? null : workspaceId, { includeSystem: showSystemFiles });
 
   const navigate = useNavigate();
   const { threadId: currentThreadId } = useParams();
@@ -702,6 +706,13 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
               filesError={panelFilesError}
               onRefreshFiles={refreshPanelFiles}
               onAddContext={handleAddContext}
+              showSystemFiles={showSystemFiles}
+              onToggleSystemFiles={() => {
+                setShowSystemFiles((v) => {
+                  localStorage.setItem('filePanel.showSystemFiles', String(!v));
+                  return !v;
+                });
+              }}
             />
           </div>
         </>
