@@ -183,6 +183,14 @@ setup_tables() {
         log_warn "setup_tables.py not found, skipping..."
     fi
 
+    # Run store table setup (LangGraph Store for cross-turn metadata)
+    if [ -f "$SCRIPT_DIR/setup_store_table.py" ]; then
+        log_info "Running setup_store_table.py..."
+        python "$SCRIPT_DIR/setup_store_table.py"
+    else
+        log_warn "setup_store_table.py not found, skipping..."
+    fi
+
     log_info "Database tables setup complete"
 }
 
