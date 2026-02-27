@@ -453,6 +453,17 @@ function stripFrontMatter(content) {
 }
 
 /**
+ * Escape dollar signs used as currency (e.g. $129.82) so remark-math
+ * does not treat them as inline-math delimiters.
+ * Matches a lone $ followed by an optional sign and a digit.
+ * Leaves $$ (display math) untouched via negative lookbehind/lookahead.
+ */
+function escapeCurrencyDollars(content) {
+  if (!content || typeof content !== 'string') return content;
+  return content.replace(/(?<!\$)\$(?!\$)(?=[-+]?\d)/g, '\\$');
+}
+
+/**
  * Normalize LaTeX delimiters for remark-math compatibility.
  *
  * LLMs often emit \[...\] (display) and \(...\) (inline) notation,
@@ -473,7 +484,10 @@ function normalizeLatexDelimiters(content) {
 
 function Markdown({ content, variant = 'panel', className = '', style }) {
   const config = VARIANTS[variant];
-  const processed = useMemo(() => normalizeLatexDelimiters(fixMarkdownTables(stripFrontMatter(content))), [content]);
+  const processed = useMemo(
+    () => normalizeLatexDelimiters(escapeCurrencyDollars(fixMarkdownTables(stripFrontMatter(content)))),
+    [content]
+  );
   return (
     <div
       className={`${config.className} ${className}`.trim()}
