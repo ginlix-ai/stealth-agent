@@ -65,6 +65,8 @@ class SummarizationState(AgentState):
     _truncation_batch_count: Annotated[NotRequired[int], PrivateStateAttr]
     _offloaded_tool_call_ids: Annotated[NotRequired[set[str]], PrivateStateAttr]
     _offloaded_read_result_ids: Annotated[NotRequired[set[str]], PrivateStateAttr]
+    _cached_input_tokens: Annotated[NotRequired[int], PrivateStateAttr]
+    _cached_output_tokens: Annotated[NotRequired[int], PrivateStateAttr]
 
 
 # Tool names whose arguments carry large payloads (file contents, code strings)

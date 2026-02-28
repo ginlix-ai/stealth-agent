@@ -164,19 +164,8 @@ class SummarizationMiddleware(AgentMiddleware):
         self.summary_prompt = summary_prompt
         self.trim_tokens_to_summarize = trim_tokens_to_summarize
 
-        # Cached token usage from last model call (updated in _update_token_cache_from_response)
-        self._cached_input_tokens: int = 0
-        self._cached_output_tokens: int = 0
-
-        # Backend for offloading conversation history to sandbox
+        # Backend for offloading conversation history to sandbox (immutable config)
         self._backend = backend
-
-        # Track tool call IDs already offloaded (loaded from graph state each call)
-        self._offloaded_tool_call_ids: set[str] = set()
-        self._offloaded_read_result_ids: set[str] = set()
-
-        # Batch truncation: message count at last Tier 1 trigger (loaded from graph state)
-        self._last_truncation_msg_count: int = 0
 
         # Parse truncate_args_settings
         if truncate_args_settings is None:
@@ -230,19 +219,21 @@ class SummarizationMiddleware(AgentMiddleware):
            - YES: offload -> summarize -> call handler -> cache tokens -> return
                   ExtendedModelResponse with state update
         """
-        # 1. Read summarization event + offloaded IDs + batch counter from state
+        # 1. Read all per-invocation state from graph state into locals.
+        #    No self._ mutations — keeps the middleware instance stateless and
+        #    safe to share across concurrent invocations.
         previous_event: SummarizationEvent | None = request.state.get(
             "_summarization_event"
         )
-        self._offloaded_tool_call_ids = set(
+        offloaded_tool_call_ids = set(
             request.state.get("_offloaded_tool_call_ids") or ()
         )
-        self._offloaded_read_result_ids = set(
+        offloaded_read_result_ids = set(
             request.state.get("_offloaded_read_result_ids") or ()
         )
-        self._last_truncation_msg_count = request.state.get(
-            "_truncation_batch_count", 0
-        )
+        last_truncation_msg_count: int = request.state.get("_truncation_batch_count", 0)
+        cached_input_tokens: int = request.state.get("_cached_input_tokens", 0)
+        cached_output_tokens: int = request.state.get("_cached_output_tokens", 0)
 
         # 2. Reconstruct effective messages
         self._ensure_message_ids(request.messages)
@@ -252,8 +243,8 @@ class SummarizationMiddleware(AgentMiddleware):
 
         # 3. Count tokens once (prefer cached from last model call, fall back to tiktoken).
         #    Pass through to _truncate_args / _truncate_read_results to avoid recomputing.
-        if self._cached_input_tokens > 0:
-            total_tokens = self._cached_input_tokens + self._cached_output_tokens
+        if cached_input_tokens > 0:
+            total_tokens = cached_input_tokens + cached_output_tokens
         else:
             counted_msgs = (
                 [request.system_message, *effective_messages]
@@ -268,6 +259,7 @@ class SummarizationMiddleware(AgentMiddleware):
             request.system_message,
             request.tools,
             total_tokens=total_tokens,
+            last_truncation_msg_count=last_truncation_msg_count,
         )
 
         # Track whether state needs persisting via ExtendedModelResponse
@@ -276,14 +268,12 @@ class SummarizationMiddleware(AgentMiddleware):
         # Offload original args to backend before they're lost (skip already-offloaded)
         if truncated and originals:
             new_originals = {
-                k: v
-                for k, v in originals.items()
-                if k not in self._offloaded_tool_call_ids
+                k: v for k, v in originals.items() if k not in offloaded_tool_call_ids
             }
             skipped_count = len(originals) - len(new_originals)
             if new_originals:
                 await aoffload_truncated_args(self._backend, new_originals)
-                self._offloaded_tool_call_ids.update(new_originals)
+                offloaded_tool_call_ids.update(new_originals)
                 state_changed = True
                 self._emit_context_signal(
                     "offload",
@@ -310,12 +300,13 @@ class SummarizationMiddleware(AgentMiddleware):
                 request.system_message,
                 request.tools,
                 total_tokens=total_tokens,
+                last_truncation_msg_count=last_truncation_msg_count,
             )
         )
         if read_truncated and read_offloaded_ids:
-            new_ids = read_offloaded_ids - self._offloaded_read_result_ids
+            new_ids = read_offloaded_ids - offloaded_read_result_ids
             if new_ids:
-                self._offloaded_read_result_ids.update(new_ids)
+                offloaded_read_result_ids.update(new_ids)
                 state_changed = True
                 self._emit_context_signal(
                     "offload",
@@ -331,19 +322,27 @@ class SummarizationMiddleware(AgentMiddleware):
 
         # Advance batch counter when Tier 1 produced new offloads
         if state_changed:
-            self._last_truncation_msg_count = len(effective_messages)
+            last_truncation_msg_count = len(effective_messages)
 
         # 5. TIER 2: Check if summarization is needed
         if not self._should_summarize(truncated_messages, total_tokens):
             try:
                 response = await handler(request.override(messages=truncated_messages))
-                self._update_token_cache_from_response(response)
-                if state_changed:
-                    return ExtendedModelResponse(
-                        model_response=response,
-                        command=Command(update=self._build_state_update()),
-                    )
-                return response
+                cached_input_tokens, cached_output_tokens = self._extract_token_usage(
+                    response
+                )
+                return ExtendedModelResponse(
+                    model_response=response,
+                    command=Command(
+                        update=self._build_state_update(
+                            offloaded_tool_call_ids=offloaded_tool_call_ids,
+                            offloaded_read_result_ids=offloaded_read_result_ids,
+                            last_truncation_msg_count=last_truncation_msg_count,
+                            cached_input_tokens=cached_input_tokens,
+                            cached_output_tokens=cached_output_tokens,
+                        )
+                    ),
+                )
             except ContextOverflowError:
                 # Fall through to summarization as emergency fallback
                 logger.warning(
@@ -355,21 +354,29 @@ class SummarizationMiddleware(AgentMiddleware):
         if cutoff_index <= 0:
             # Can't summarize — too few messages
             response = await handler(request.override(messages=truncated_messages))
-            self._update_token_cache_from_response(response)
-            if state_changed:
-                return ExtendedModelResponse(
-                    model_response=response,
-                    command=Command(update=self._build_state_update()),
-                )
-            return response
+            cached_input_tokens, cached_output_tokens = self._extract_token_usage(
+                response
+            )
+            return ExtendedModelResponse(
+                model_response=response,
+                command=Command(
+                    update=self._build_state_update(
+                        offloaded_tool_call_ids=offloaded_tool_call_ids,
+                        offloaded_read_result_ids=offloaded_read_result_ids,
+                        last_truncation_msg_count=last_truncation_msg_count,
+                        cached_input_tokens=cached_input_tokens,
+                        cached_output_tokens=cached_output_tokens,
+                    )
+                ),
+            )
 
         messages_to_summarize, preserved_messages = self._partition_messages(
             truncated_messages, cutoff_index
         )
 
         # Reset token cache (context is about to change dramatically)
-        self._cached_input_tokens = 0
-        self._cached_output_tokens = 0
+        cached_input_tokens = 0
+        cached_output_tokens = 0
 
         # Offload evicted messages to backend (non-fatal)
         file_path = await aoffload_to_backend(self._backend, messages_to_summarize)
@@ -397,10 +404,10 @@ class SummarizationMiddleware(AgentMiddleware):
         response = await handler(request.override(messages=modified_messages))
 
         # Cache tokens from the new (reduced) context
-        self._update_token_cache_from_response(response)
+        cached_input_tokens, cached_output_tokens = self._extract_token_usage(response)
 
         # Reset batch counter after summarization (message count drops dramatically)
-        self._last_truncation_msg_count = 0
+        last_truncation_msg_count = 0
 
         # Return with state update to persist summarization event + offloaded IDs
         return ExtendedModelResponse(
@@ -408,7 +415,13 @@ class SummarizationMiddleware(AgentMiddleware):
             command=Command(
                 update={
                     "_summarization_event": new_event,
-                    **self._build_state_update(),
+                    **self._build_state_update(
+                        offloaded_tool_call_ids=offloaded_tool_call_ids,
+                        offloaded_read_result_ids=offloaded_read_result_ids,
+                        last_truncation_msg_count=last_truncation_msg_count,
+                        cached_input_tokens=cached_input_tokens,
+                        cached_output_tokens=cached_output_tokens,
+                    ),
                 }
             ),
         )
@@ -424,19 +437,19 @@ class SummarizationMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelResponse | ExtendedModelResponse:
         """Sync fallback — same flow as awrap_model_call but skips backend offloading."""
-        # 1. Load state
+        # 1. Load all per-invocation state from graph state into locals
         previous_event: SummarizationEvent | None = request.state.get(
             "_summarization_event"
         )
-        self._offloaded_tool_call_ids = set(
+        offloaded_tool_call_ids = set(
             request.state.get("_offloaded_tool_call_ids") or ()
         )
-        self._offloaded_read_result_ids = set(
+        offloaded_read_result_ids = set(
             request.state.get("_offloaded_read_result_ids") or ()
         )
-        self._last_truncation_msg_count = request.state.get(
-            "_truncation_batch_count", 0
-        )
+        last_truncation_msg_count: int = request.state.get("_truncation_batch_count", 0)
+        cached_input_tokens: int = request.state.get("_cached_input_tokens", 0)
+        cached_output_tokens: int = request.state.get("_cached_output_tokens", 0)
 
         self._ensure_message_ids(request.messages)
         effective_messages = self._get_effective_messages(
@@ -444,7 +457,10 @@ class SummarizationMiddleware(AgentMiddleware):
         )
 
         truncated_messages, truncated, originals = self._truncate_args(
-            effective_messages, request.system_message, request.tools
+            effective_messages,
+            request.system_message,
+            request.tools,
+            last_truncation_msg_count=last_truncation_msg_count,
         )
         # Note: sync path skips backend offloading for truncated args
 
@@ -453,45 +469,54 @@ class SummarizationMiddleware(AgentMiddleware):
         # Track newly truncated args (no backend offload in sync path)
         if truncated and originals:
             new_originals = {
-                k: v
-                for k, v in originals.items()
-                if k not in self._offloaded_tool_call_ids
+                k: v for k, v in originals.items() if k not in offloaded_tool_call_ids
             }
             if new_originals:
-                self._offloaded_tool_call_ids.update(new_originals)
+                offloaded_tool_call_ids.update(new_originals)
                 state_changed = True
 
         # Tier 1 (cont.): Truncate duplicate/non-critical Read results
         truncated_messages, read_truncated, read_offloaded_ids = (
             self._truncate_read_results(
-                truncated_messages, request.system_message, request.tools
+                truncated_messages,
+                request.system_message,
+                request.tools,
+                last_truncation_msg_count=last_truncation_msg_count,
             )
         )
         if read_truncated and read_offloaded_ids:
-            new_ids = read_offloaded_ids - self._offloaded_read_result_ids
+            new_ids = read_offloaded_ids - offloaded_read_result_ids
             if new_ids:
-                self._offloaded_read_result_ids.update(new_ids)
+                offloaded_read_result_ids.update(new_ids)
                 state_changed = True
 
         # Advance batch counter when Tier 1 produced new offloads
         if state_changed:
-            self._last_truncation_msg_count = len(effective_messages)
+            last_truncation_msg_count = len(effective_messages)
 
-        if self._cached_input_tokens > 0:
-            total_tokens = self._cached_input_tokens + self._cached_output_tokens
+        if cached_input_tokens > 0:
+            total_tokens = cached_input_tokens + cached_output_tokens
         else:
             total_tokens = self.token_counter(truncated_messages)
 
         if not self._should_summarize(truncated_messages, total_tokens):
             try:
                 response = handler(request.override(messages=truncated_messages))
-                self._update_token_cache_from_response(response)
-                if state_changed:
-                    return ExtendedModelResponse(
-                        model_response=response,
-                        command=Command(update=self._build_state_update()),
-                    )
-                return response
+                cached_input_tokens, cached_output_tokens = self._extract_token_usage(
+                    response
+                )
+                return ExtendedModelResponse(
+                    model_response=response,
+                    command=Command(
+                        update=self._build_state_update(
+                            offloaded_tool_call_ids=offloaded_tool_call_ids,
+                            offloaded_read_result_ids=offloaded_read_result_ids,
+                            last_truncation_msg_count=last_truncation_msg_count,
+                            cached_input_tokens=cached_input_tokens,
+                            cached_output_tokens=cached_output_tokens,
+                        )
+                    ),
+                )
             except ContextOverflowError:
                 logger.warning(
                     "[Summarization] ContextOverflowError caught, triggering emergency summarization"
@@ -500,20 +525,28 @@ class SummarizationMiddleware(AgentMiddleware):
         cutoff_index = self._determine_cutoff_index(truncated_messages)
         if cutoff_index <= 0:
             response = handler(request.override(messages=truncated_messages))
-            self._update_token_cache_from_response(response)
-            if state_changed:
-                return ExtendedModelResponse(
-                    model_response=response,
-                    command=Command(update=self._build_state_update()),
-                )
-            return response
+            cached_input_tokens, cached_output_tokens = self._extract_token_usage(
+                response
+            )
+            return ExtendedModelResponse(
+                model_response=response,
+                command=Command(
+                    update=self._build_state_update(
+                        offloaded_tool_call_ids=offloaded_tool_call_ids,
+                        offloaded_read_result_ids=offloaded_read_result_ids,
+                        last_truncation_msg_count=last_truncation_msg_count,
+                        cached_input_tokens=cached_input_tokens,
+                        cached_output_tokens=cached_output_tokens,
+                    )
+                ),
+            )
 
         messages_to_summarize, preserved_messages = self._partition_messages(
             truncated_messages, cutoff_index
         )
 
-        self._cached_input_tokens = 0
-        self._cached_output_tokens = 0
+        cached_input_tokens = 0
+        cached_output_tokens = 0
 
         # Sync path skips backend persistence (DaytonaBackend is async-only)
         file_path = None
@@ -532,17 +565,23 @@ class SummarizationMiddleware(AgentMiddleware):
 
         modified_messages = [summary_message, *preserved_messages]
         response = handler(request.override(messages=modified_messages))
-        self._update_token_cache_from_response(response)
+        cached_input_tokens, cached_output_tokens = self._extract_token_usage(response)
 
         # Reset batch counter after summarization
-        self._last_truncation_msg_count = 0
+        last_truncation_msg_count = 0
 
         return ExtendedModelResponse(
             model_response=response,
             command=Command(
                 update={
                     "_summarization_event": new_event,
-                    **self._build_state_update(),
+                    **self._build_state_update(
+                        offloaded_tool_call_ids=offloaded_tool_call_ids,
+                        offloaded_read_result_ids=offloaded_read_result_ids,
+                        last_truncation_msg_count=last_truncation_msg_count,
+                        cached_input_tokens=cached_input_tokens,
+                        cached_output_tokens=cached_output_tokens,
+                    ),
                 }
             ),
         )
@@ -571,14 +610,17 @@ class SummarizationMiddleware(AgentMiddleware):
     # Token cache management
     # =========================================================================
 
-    def _update_token_cache_from_response(self, response: ModelResponse) -> None:
-        """Extract and cache token usage from model response, emit to frontend.
+    def _extract_token_usage(self, response: ModelResponse) -> tuple[int, int]:
+        """Extract token usage from model response and emit to frontend.
 
         Args:
             response: The ModelResponse from handler().
+
+        Returns:
+            (input_tokens, output_tokens) tuple. Returns (0, 0) if no usage found.
         """
         if not response.result:
-            return
+            return (0, 0)
 
         for msg in reversed(response.result):
             if not isinstance(msg, AIMessage):
@@ -590,9 +632,6 @@ class SummarizationMiddleware(AgentMiddleware):
             output_tokens = usage.get("output_tokens", 0)
 
             if input_tokens > 0:
-                self._cached_input_tokens = input_tokens
-                self._cached_output_tokens = output_tokens
-
                 logger.debug(
                     f"[Summarization] Token usage: "
                     f"input={input_tokens}, output={output_tokens}"
@@ -608,14 +647,19 @@ class SummarizationMiddleware(AgentMiddleware):
                     total_tokens=input_tokens + output_tokens,
                 )
 
-                return  # Found usage, done
+                return (input_tokens, output_tokens)
+
+        return (0, 0)
 
     # =========================================================================
     # Tier 1: Tool argument truncation
     # =========================================================================
 
     def _should_truncate_args(
-        self, messages: list[AnyMessage], total_tokens: int
+        self,
+        messages: list[AnyMessage],
+        total_tokens: int,
+        last_truncation_msg_count: int = 0,
     ) -> bool:
         """Check if argument truncation should be triggered (batch gated).
 
@@ -626,6 +670,7 @@ class SummarizationMiddleware(AgentMiddleware):
         Args:
             messages: Current effective message history.
             total_tokens: Total token count of messages.
+            last_truncation_msg_count: Message count at last Tier 1 trigger.
 
         Returns:
             True if truncation should occur.
@@ -636,7 +681,7 @@ class SummarizationMiddleware(AgentMiddleware):
         trigger_type, trigger_value = self._truncate_args_trigger
 
         if trigger_type == "messages":
-            next_trigger = self._last_truncation_msg_count + trigger_value
+            next_trigger = last_truncation_msg_count + trigger_value
             return len(messages) >= next_trigger
         if trigger_type == "tokens":
             return total_tokens >= trigger_value
@@ -702,6 +747,7 @@ class SummarizationMiddleware(AgentMiddleware):
         tools: list[Any] | None,
         *,
         total_tokens: int | None = None,
+        last_truncation_msg_count: int = 0,
     ) -> tuple[list[AnyMessage], bool, dict[str, dict[str, Any]]]:
         """Truncate large tool call arguments in old messages.
 
@@ -713,6 +759,7 @@ class SummarizationMiddleware(AgentMiddleware):
             system_message: Optional system message for token counting.
             tools: Optional tools for token counting.
             total_tokens: Pre-computed token count (avoids redundant counting).
+            last_truncation_msg_count: Message count at last Tier 1 trigger.
 
         Returns:
             Tuple of (messages, modified, originals). If modified is False,
@@ -727,7 +774,9 @@ class SummarizationMiddleware(AgentMiddleware):
             )
             total_tokens = self.token_counter(counted_messages)
 
-        if not self._should_truncate_args(messages, total_tokens):
+        if not self._should_truncate_args(
+            messages, total_tokens, last_truncation_msg_count
+        ):
             return messages, False, {}
 
         cutoff_index = self._determine_truncate_cutoff_index(messages)
@@ -754,6 +803,7 @@ class SummarizationMiddleware(AgentMiddleware):
         tools: list[Any] | None,
         *,
         total_tokens: int | None = None,
+        last_truncation_msg_count: int = 0,
     ) -> tuple[list[AnyMessage], bool, set[str]]:
         """Truncate duplicate and non-critical Read tool results in old messages.
 
@@ -765,6 +815,7 @@ class SummarizationMiddleware(AgentMiddleware):
             system_message: Optional system message for token counting.
             tools: Optional tools for token counting.
             total_tokens: Pre-computed token count (avoids redundant counting).
+            last_truncation_msg_count: Message count at last Tier 1 trigger.
 
         Returns:
             Tuple of (messages, modified, offloaded_tool_call_ids).
@@ -775,7 +826,9 @@ class SummarizationMiddleware(AgentMiddleware):
             )
             total_tokens = self.token_counter(counted_messages)
 
-        if not self._should_truncate_args(messages, total_tokens):
+        if not self._should_truncate_args(
+            messages, total_tokens, last_truncation_msg_count
+        ):
             return messages, False, set()
 
         cutoff_index = self._determine_truncate_cutoff_index(messages)
@@ -986,12 +1039,21 @@ class SummarizationMiddleware(AgentMiddleware):
         except RuntimeError:
             return ""
 
-    def _build_state_update(self) -> dict[str, Any]:
-        """Build a state update dict for persisting offloaded IDs and batch counter."""
+    def _build_state_update(
+        self,
+        offloaded_tool_call_ids: set[str],
+        offloaded_read_result_ids: set[str],
+        last_truncation_msg_count: int,
+        cached_input_tokens: int,
+        cached_output_tokens: int,
+    ) -> dict[str, Any]:
+        """Build a state update dict for persisting per-invocation state."""
         return {
-            "_offloaded_tool_call_ids": self._offloaded_tool_call_ids,
-            "_offloaded_read_result_ids": self._offloaded_read_result_ids,
-            "_truncation_batch_count": self._last_truncation_msg_count,
+            "_offloaded_tool_call_ids": offloaded_tool_call_ids,
+            "_offloaded_read_result_ids": offloaded_read_result_ids,
+            "_truncation_batch_count": last_truncation_msg_count,
+            "_cached_input_tokens": cached_input_tokens,
+            "_cached_output_tokens": cached_output_tokens,
         }
 
     def _ensure_message_ids(self, messages: list[AnyMessage]) -> None:
