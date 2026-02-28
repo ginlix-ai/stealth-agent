@@ -280,14 +280,26 @@ class PTCSandbox:
                 configured=self.config.daytona.python_version,
                 pinned=self.SNAPSHOT_PYTHON_VERSION,
             )
-        base_image = Image.debian_slim(self.SNAPSHOT_PYTHON_VERSION)
+        base_image = Image.base("ubuntu:24.04").run_commands(
+            "echo 'debconf debconf/frontend select Noninteractive'"
+            " | debconf-set-selections",
+            "apt-get update && apt-get install -y"
+            " python3 python3-pip python3-venv"
+            " gcc gfortran build-essential",
+            # Symlink python/pip so bare commands work (Ubuntu only ships python3/pip3)
+            "ln -sf /usr/bin/python3 /usr/bin/python",
+            "ln -sf /usr/bin/pip3 /usr/bin/pip",
+            # Remove PEP 668 marker so pip works freely (standard for containers)
+            "rm -f /usr/lib/python*/EXTERNALLY-MANAGED",
+        )
 
         image = (
             base_image.run_commands(
                 # Install system dependencies including ripgrep for fast search
                 "apt-get update",
                 "apt-get install -y curl ripgrep jq git unzip"
-                " libreoffice gcc poppler-utils pandoc qpdf",
+                " libreoffice gcc poppler-utils pandoc qpdf"
+                " fonts-noto-cjk",
                 # Install uv for fast Python package management
                 "curl -LsSf https://astral.sh/uv/install.sh | sh",
                 "mv /root/.local/bin/uv /usr/local/bin/uv",
@@ -304,14 +316,26 @@ class PTCSandbox:
                 " && tar -xzf /tmp/gh.tar.gz -C /tmp"
                 " && mv /tmp/gh_2.87.3_linux_amd64/bin/gh /usr/local/bin/gh"
                 " && rm -rf /tmp/gh.tar.gz /tmp/gh_2.87.3_linux_amd64",
+                # Polymarket CLI (direct binary)
+                "curl -fsSL https://github.com/Polymarket/polymarket-cli/"
+                "releases/download/v0.1.4/"
+                "polymarket-v0.1.4-x86_64-unknown-linux-gnu.tar.gz"
+                " -o /tmp/polymarket.tar.gz"
+                " && tar -xzf /tmp/polymarket.tar.gz -C /tmp"
+                " && mv /tmp/polymarket /usr/local/bin/polymarket"
+                " && rm -rf /tmp/polymarket.tar.gz",
                 # Playwright CLI with Chromium browser
                 "npm install -g playwright"
                 " && npx playwright install --with-deps chromium",
-                # Clean up apt cache to reduce image size
+                # Clean up apt cache and matplotlib font cache
                 "apt-get clean",
                 "rm -rf /var/lib/apt/lists/*",
             )
             .pip_install(*dependencies)  # Unpack list as individual arguments
+            .run_commands(
+                # Rebuild matplotlib font cache so it finds Noto CJK
+                "python -c \"import matplotlib.font_manager; matplotlib.font_manager._load_fontmanager(try_read_cache=False)\"",
+            )
             .workdir("/home/daytona")
         )
 
@@ -335,6 +359,7 @@ class PTCSandbox:
 
         # Include configuration that affects the snapshot in the hash
         config_data = {
+            "base_image": "ubuntu:24.04",
             "python_version": self.SNAPSHOT_PYTHON_VERSION,
             "dependencies": self.DEFAULT_DEPENDENCIES,
             "mcp_packages": sorted(mcp_packages),  # Include MCP packages in hash
@@ -351,7 +376,9 @@ class PTCSandbox:
                 "poppler-utils",
                 "pandoc",
                 "qpdf",
+                "fonts-noto-cjk",
                 "gh",
+                "polymarket",
                 "playwright",
             ],  # Include apt/curl-installed packages in hash
         }
@@ -478,6 +505,51 @@ class PTCSandbox:
         logger.warning("Snapshot not found and auto_create disabled")
         return None
 
+    def _build_sandbox_env_vars(self) -> dict[str, str]:
+        """Build environment variables to inject at sandbox creation time.
+
+        Resolves MCP server env vars (${VAR} placeholders from host) and
+        GitHub bot credentials so they're available to all sandbox processes.
+        """
+        import os
+
+        env_vars: dict[str, str] = {}
+
+        # MCP server env vars (resolve ${VAR} placeholders from host)
+        for server in self.config.mcp.servers:
+            if not server.enabled:
+                continue
+            if hasattr(server, "env") and server.env:
+                for key, value in server.env.items():
+                    if value.startswith("${") and value.endswith("}"):
+                        var_name = value[2:-1]
+                        resolved_value = os.getenv(var_name)
+                        if resolved_value:
+                            env_vars[key] = resolved_value
+                    else:
+                        env_vars[key] = value
+
+        # GitHub bot env vars
+        from src.config.settings import get_nested_config
+
+        if get_nested_config("github.enabled", False):
+            token_env = get_nested_config("github.token_env", "GITHUB_BOT_TOKEN")
+            token = os.getenv(token_env)
+            if token:
+                env_vars["GITHUB_TOKEN"] = token
+                bot_name = get_nested_config(
+                    "github.bot_name", "langalpha-bot"
+                )
+                bot_email = get_nested_config(
+                    "github.bot_email", "bot@ginlix.ai"
+                )
+                env_vars["GIT_AUTHOR_NAME"] = bot_name
+                env_vars["GIT_AUTHOR_EMAIL"] = bot_email
+                env_vars["GIT_COMMITTER_NAME"] = bot_name
+                env_vars["GIT_COMMITTER_EMAIL"] = bot_email
+
+        return env_vars
+
     async def setup_sandbox_workspace(self) -> str | None:
         """Create sandbox and setup workspace directories.
 
@@ -488,6 +560,10 @@ class PTCSandbox:
             snapshot_name if used, None otherwise
         """
         logger.info("Setting up sandbox workspace")
+
+        # Build env vars once — injected at sandbox creation time so they're
+        # available to all processes (Python, bash, MCP servers)
+        sandbox_env = self._build_sandbox_env_vars()
 
         # Try to use snapshot if enabled
         snapshot_name = await self._ensure_snapshot()
@@ -500,6 +576,7 @@ class PTCSandbox:
                     self.daytona_client.create,
                     CreateSandboxFromSnapshotParams(
                         snapshot=snapshot_name,
+                        env_vars=sandbox_env or None,
                         auto_stop_interval=self.config.daytona.auto_stop_interval // 60,
                         auto_archive_interval=self.config.daytona.auto_archive_interval
                         // 60,
@@ -525,6 +602,7 @@ class PTCSandbox:
             self.sandbox = await self._daytona_call(
                 self.daytona_client.create,
                 CreateSandboxFromSnapshotParams(
+                    env_vars=sandbox_env or None,
                     auto_stop_interval=self.config.daytona.auto_stop_interval // 60,
                     auto_archive_interval=self.config.daytona.auto_archive_interval
                     // 60,
@@ -2063,8 +2141,8 @@ class PTCSandbox:
             # Execute code
             timeout_val = timeout or self.config.security.max_execution_time
 
-            # Set PYTHONPATH to working directory so code can import from tools/
-            # Also pass MCP server environment variables
+            # Set PYTHONPATH so code can import from tools/ and _internal/
+            # MCP + GitHub env vars are injected at sandbox creation time
             work_dir = await self._daytona_call(
                 self.sandbox.get_work_dir,
                 retry_policy=_DaytonaRetryPolicy.SAFE,
@@ -2072,38 +2150,6 @@ class PTCSandbox:
 
             internal_dir = f"{work_dir}/_internal"
             exec_env = {"PYTHONPATH": f"{work_dir}:{internal_dir}/src:{internal_dir}"}
-
-            # Add environment variables from MCP server configs (only enabled servers)
-            import os
-
-            for server in self.config.mcp.servers:
-                if not server.enabled:
-                    continue
-                if hasattr(server, "env") and server.env:
-                    for key, value in server.env.items():
-                        # Resolve ${VAR} placeholders from host environment
-                        if value.startswith("${") and value.endswith("}"):
-                            var_name = value[2:-1]
-                            resolved_value = os.getenv(var_name)
-                            if resolved_value:
-                                exec_env[key] = resolved_value
-                        else:
-                            exec_env[key] = value
-
-            # Inject GitHub bot env vars if configured
-            from src.config.settings import get_nested_config
-
-            if get_nested_config("github.enabled", False):
-                token_env = get_nested_config("github.token_env", "GITHUB_BOT_TOKEN")
-                token = os.getenv(token_env)
-                if token:
-                    exec_env["GITHUB_TOKEN"] = token
-                    bot_name = get_nested_config("github.bot_name", "langalpha-bot")
-                    bot_email = get_nested_config("github.bot_email", "bot@ginlix.ai")
-                    exec_env["GIT_AUTHOR_NAME"] = bot_name
-                    exec_env["GIT_AUTHOR_EMAIL"] = bot_email
-                    exec_env["GIT_COMMITTER_NAME"] = bot_name
-                    exec_env["GIT_COMMITTER_EMAIL"] = bot_email
 
             # Use code_run() for native artifact support (captures matplotlib charts)
             from daytona_sdk.common.process import CodeRunParams
@@ -2223,18 +2269,19 @@ class PTCSandbox:
 
         except Exception as e:
             duration = time.time() - start_time
+            error_detail = f"{type(e).__name__}: {e!s}" if str(e) else type(e).__name__
 
             logger.error(
                 "Code execution failed",
                 execution_id=execution_id,
-                error=str(e),
+                error=error_detail,
                 duration=duration,
             )
 
             return ExecutionResult(
                 success=False,
                 stdout="",
-                stderr=str(e),
+                stderr=f"Sandbox execution error: {error_detail}",
                 duration=duration,
                 files_created=[],
                 files_modified=[],
@@ -2367,10 +2414,11 @@ class PTCSandbox:
         except Exception as e:
             logger.error(f"Failed to execute bash command: {e}", exc_info=True)
             # Note: bash_id may not be defined if error occurs early
+            error_detail = f"{type(e).__name__}: {e!s}" if str(e) else type(e).__name__
             return {
                 "success": False,
                 "stdout": "",
-                "stderr": f"Exception during bash execution: {e!s}",
+                "stderr": f"Sandbox execution error: {error_detail}",
                 "exit_code": -1,
                 "bash_id": getattr(self, "_last_bash_id", None),
                 "command_hash": None,

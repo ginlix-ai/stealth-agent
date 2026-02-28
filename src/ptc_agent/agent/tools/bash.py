@@ -89,18 +89,20 @@ def create_execute_bash_tool(sandbox: Any, thread_id: str = "") -> BaseTool:
                 )
                 return "Command completed successfully"
 
-            # Command failed
-            stderr = result.get("stderr", "Command execution failed")
+            # Command failed — Daytona returns combined stdout+stderr in "stdout"
+            stdout = result.get("stdout", "")
+            stderr = result.get("stderr", "")
+            error_output = stderr or stdout or "Command execution failed (no output)"
             exit_code = result.get("exit_code", -1)
 
             logger.warning(
                 "Bash command failed",
                 command=command[:50],
                 exit_code=exit_code,
-                stderr_length=len(stderr),
+                output_length=len(error_output),
             )
 
-            return f"ERROR: Command failed (exit code {exit_code})\n{stderr}"
+            return f"ERROR: Command failed (exit code {exit_code})\n{error_output}"
 
         except Exception as e:
             error_msg = f"Failed to execute bash command: {e!s}"
