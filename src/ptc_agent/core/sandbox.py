@@ -16,7 +16,7 @@ from typing import Any
 
 import aiofiles
 import structlog
-from daytona_sdk import AsyncDaytona, DaytonaConfig
+from daytona_sdk import AsyncDaytona, DaytonaConfig, FileUpload
 from daytona_sdk.common.daytona import (
     CreateSandboxFromSnapshotParams,
     Image,
@@ -536,7 +536,7 @@ class PTCSandbox:
             assert self.sandbox is not None
 
             sandbox = self.sandbox
-            self.sandbox_id = sandbox.id if hasattr(sandbox, "id") else str(id(sandbox))
+            self.sandbox_id = self._extract_sandbox_id(sandbox)
             logger.info("Daytona sandbox created", sandbox_id=self.sandbox_id)
 
             # Set up workspace structure
@@ -548,7 +548,7 @@ class PTCSandbox:
             # Snapshot-based creation
             assert self.sandbox is not None
             sandbox = self.sandbox
-            self.sandbox_id = sandbox.id if hasattr(sandbox, "id") else str(id(sandbox))
+            self.sandbox_id = self._extract_sandbox_id(sandbox)
             logger.info(
                 "Sandbox ready from snapshot",
                 sandbox_id=self.sandbox_id,
@@ -691,7 +691,7 @@ class PTCSandbox:
                 logger.info(
                     "Sandbox already started, skipping start", sandbox_id=sandbox_id
                 )
-            elif state_value in ("stopped", "starting"):
+            elif state_value == "stopped":
                 logger.info(
                     "Starting stopped sandbox", sandbox_id=sandbox_id, state=state_value
                 )
@@ -700,6 +700,30 @@ class PTCSandbox:
                     timeout=60,
                     retry_policy=_DaytonaRetryPolicy.SAFE,
                 )
+            elif state_value == "starting":
+                # Sandbox is already transitioning — wait for it to reach 'started'.
+                logger.info(
+                    "Sandbox is starting, waiting for ready",
+                    sandbox_id=sandbox_id,
+                )
+                for _ in range(40):  # Max ~20 seconds
+                    await asyncio.sleep(0.5)
+                    sandbox = await self._daytona_call(
+                        self.daytona_client.get,
+                        sandbox_id,
+                        retry_policy=_DaytonaRetryPolicy.SAFE,
+                        allow_reconnect=False,
+                    )
+                    state = getattr(sandbox, "state", None)
+                    state_value = state.value if hasattr(state, "value") else str(state)
+                    if state_value == "started":
+                        break
+                self.sandbox = sandbox
+                if state_value != "started":
+                    raise RuntimeError(
+                        f"Sandbox still in state '{state_value}' after waiting. "
+                        f"Expected 'started'."
+                    )
             elif state_value == "stopping":
                 # Wait for sandbox to finish stopping, then start it.
                 # Re-fetch from Daytona API each iteration (cached object is stale).
@@ -780,10 +804,21 @@ class PTCSandbox:
                         f"Sandbox still in state '{state_value}' after waiting. "
                         f"Expected 'archived'."
                     )
+            elif state_value == "error":
+                # Sandbox hit an internal error — attempt recovery via start().
+                logger.warning(
+                    "Sandbox in error state, attempting recovery start",
+                    sandbox_id=sandbox_id,
+                )
+                await self._daytona_call(
+                    sandbox.start,
+                    timeout=120,
+                    retry_policy=_DaytonaRetryPolicy.SAFE,
+                )
             else:
                 raise RuntimeError(
                     f"Cannot reconnect to sandbox in state: {state_value}. "
-                    f"Expected 'stopped' or 'started'."
+                    f"Expected 'stopped', 'started', or 'error'."
                 )
         else:
             # No state attribute, assume we need to start
@@ -1190,6 +1225,7 @@ class PTCSandbox:
             "timeout",
             "service unavailable",
             "no ip address found",
+            "400",
             "502",
             "503",
             "504",
@@ -1348,11 +1384,18 @@ class PTCSandbox:
                         seen_skill_names.add(skill_name)
 
                     # Collect file stats
-                    for file_path in skill_dir.iterdir():
+                    for file_path in skill_dir.rglob("*"):
                         if not file_path.is_file():
                             continue
+                        if (
+                            "__pycache__" in file_path.parts
+                            or file_path.name == "LICENSE.txt"
+                        ):
+                            continue
 
-                        rel_path = f"{skill_dir.name}/{file_path.name}"
+                        rel_path = (
+                            f"{skill_dir.name}/{file_path.relative_to(skill_dir)}"
+                        )
                         stat = file_path.stat()
                         files[rel_path] = {
                             "size": stat.st_size,
@@ -1544,7 +1587,6 @@ class PTCSandbox:
             logger.debug("No skills found; skipping upload")
             return
 
-        semaphore = asyncio.Semaphore(4)
         upload_tasks: list[asyncio.Task[None]] = []
         uploaded_skill_names: set[str] = set()
 
@@ -1563,21 +1605,15 @@ class PTCSandbox:
 
         async def list_skill_files(skill_dir: Path) -> list[Path]:
             def _list() -> list[Path]:
-                return [p for p in skill_dir.iterdir() if p.is_file()]
+                return [
+                    p
+                    for p in skill_dir.rglob("*")
+                    if p.is_file()
+                    and "__pycache__" not in p.parts
+                    and p.name != "LICENSE.txt"
+                ]
 
             return await asyncio.to_thread(_list)
-
-        async def upload_one(local_file: Path, sandbox_path: str) -> None:
-            async with semaphore:
-                async with aiofiles.open(str(local_file), "rb") as f:
-                    content = await f.read()
-
-                await self._daytona_call(
-                    sandbox.fs.upload_file,
-                    content,
-                    sandbox_path,
-                    retry_policy=_DaytonaRetryPolicy.SAFE,
-                )
 
         # Skills eligible for sandbox upload (exposure "ptc" or "both")
         from ptc_agent.agent.middleware.skills import (
@@ -1636,10 +1672,41 @@ class PTCSandbox:
                 uploaded_skill_names.add(skill_name)
                 total_skills_uploaded += 1
 
-                for file_path in await list_skill_files(skill_dir):
-                    sandbox_file = f"{sandbox_skill_dir}/{file_path.name}"
+                skill_files = await list_skill_files(skill_dir)
+
+                # Create subdirectories for nested files
+                subdirs: set[str] = set()
+                for fp in skill_files:
+                    rel = fp.relative_to(skill_dir)
+                    if len(rel.parts) > 1:
+                        subdirs.add(f"{sandbox_skill_dir}/{rel.parent}")
+                if subdirs:
+                    mkdir_cmd = "mkdir -p " + " ".join(
+                        shlex.quote(d) for d in sorted(subdirs)
+                    )
+                    await self._daytona_call(
+                        sandbox.process.exec,
+                        mkdir_cmd,
+                        retry_policy=_DaytonaRetryPolicy.SAFE,
+                    )
+
+                # Batch upload all files for this skill in one HTTP request
+                if skill_files:
+                    batch = [
+                        FileUpload(
+                            source=str(fp),
+                            destination=f"{sandbox_skill_dir}/{fp.relative_to(skill_dir)}",
+                        )
+                        for fp in skill_files
+                    ]
                     upload_tasks.append(
-                        asyncio.create_task(upload_one(file_path, sandbox_file))
+                        asyncio.create_task(
+                            self._daytona_call(
+                                sandbox.fs.upload_files,
+                                batch,
+                                retry_policy=_DaytonaRetryPolicy.SAFE,
+                            )
+                        )
                     )
 
         if upload_tasks:
@@ -1976,12 +2043,19 @@ class PTCSandbox:
                     self._thread_dirs_created.add(thread_id)
             else:
                 code_path = f"code/{execution_id}.py"
-            await self._daytona_call(
-                self.sandbox.fs.upload_file,
-                code.encode("utf-8"),
-                code_path,
-                retry_policy=_DaytonaRetryPolicy.SAFE,
-            )
+            try:
+                await self._daytona_call(
+                    self.sandbox.fs.upload_file,
+                    code.encode("utf-8"),
+                    self.normalize_path(code_path),
+                    retry_policy=_DaytonaRetryPolicy.SAFE,
+                )
+            except Exception as upload_err:
+                logger.warning(
+                    "Failed to save code file to sandbox (non-fatal)",
+                    code_path=code_path,
+                    error=str(upload_err),
+                )
 
             # Get list of files before execution
             files_before = await self._list_result_files()
@@ -2213,7 +2287,7 @@ class PTCSandbox:
             # Use cd to change directory, then execute command
             full_command = f"cd {working_dir} && {command}"
 
-            # Create a shell script with metadata header for logging
+            # Audit: save .sh script for traceability (non-fatal)
             script_content = textwrap.dedent(f"""\
                 #!/bin/bash
                 # Bash Execution Log
@@ -2222,15 +2296,12 @@ class PTCSandbox:
                 # Timestamp: {timestamp}
                 # Command Hash: {command_hash}
 
-                set -e  # Exit on error (optional, can be removed for more lenient execution)
+                set -e
                 {full_command}
             """)
 
-            # Write script to thread dir or code/ for persistent logging
-            # Normalize path to ensure it's in the correct format for Daytona SDK
             if thread_id:
                 script_relative_path = f".agent/threads/{thread_id}/code/{bash_id}.sh"
-                # Ensure per-thread code dir exists (lazy, once per thread)
                 if thread_id not in self._thread_dirs_created:
                     await self._daytona_call(
                         self.sandbox.process.exec,
@@ -2240,63 +2311,54 @@ class PTCSandbox:
                     self._thread_dirs_created.add(thread_id)
             else:
                 script_relative_path = f"code/{bash_id}.sh"
-            script_normalized_path = self.normalize_path(script_relative_path)
+
+            try:
+                assert self.sandbox is not None
+                await self._daytona_call(
+                    self.sandbox.fs.upload_file,
+                    script_content.encode("utf-8"),
+                    self.normalize_path(script_relative_path),
+                    retry_policy=_DaytonaRetryPolicy.SAFE,
+                )
+            except Exception as upload_err:
+                logger.warning(
+                    "Failed to save bash script to sandbox (non-fatal)",
+                    bash_id=bash_id,
+                    error=str(upload_err),
+                )
+
+            # Execute directly via process.exec — no file upload dependency
             assert self.sandbox is not None
-            await self._daytona_call(
-                self.sandbox.fs.upload_file,
-                script_content.encode("utf-8"),
-                script_normalized_path,
-                retry_policy=_DaytonaRetryPolicy.SAFE,
+            exec_result = await self._daytona_call(
+                self.sandbox.process.exec,
+                full_command,
+                timeout=timeout,
+                retry_policy=_DaytonaRetryPolicy.UNSAFE,
             )
 
-            # Use normalized path for bash execution (already absolute)
-            script_absolute_path = script_normalized_path
+            exit_code = (
+                exec_result.exit_code if hasattr(exec_result, "exit_code") else 0
+            )
+            stdout = (
+                (exec_result.result or "")
+                if hasattr(exec_result, "result")
+                else str(exec_result)
+            )
 
-            # Execute the script using the sandbox's execution method
-            # Since Daytona SDK uses process.execute, we'll use Python to run bash
-            python_wrapper = textwrap.dedent(f"""\
-                import subprocess
-                import sys
-
-                try:
-                    result = subprocess.run(
-                        ['bash', '{script_absolute_path}'],
-                        capture_output=True,
-                        text=True,
-                        timeout={timeout}
-                    )
-                    print(result.stdout, end='')  # noqa: T201
-                    sys.stderr.write(result.stderr)
-                    sys.exit(result.returncode)
-                except subprocess.TimeoutExpired:
-                    sys.stderr.write(f"Command timed out after {timeout} seconds")
-                    sys.exit(124)
-                except (OSError, subprocess.SubprocessError) as e:
-                    sys.stderr.write(f"Error executing command: {{e}}")
-                    sys.exit(1)
-            """)
-
-            # Execute via Python wrapper
-            result = await self.execute(python_wrapper)
-
-            # Parse the result
-            if result.success:
+            if exit_code == 0:
                 return {
                     "success": True,
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
+                    "stdout": stdout,
+                    "stderr": "",
                     "exit_code": 0,
                     "bash_id": bash_id,
                     "command_hash": command_hash,
                 }
-            # Extract exit code from stderr if possible
-            exit_code = 1
-            stderr = result.stderr if result.stderr else result.stdout
 
             return {
                 "success": False,
-                "stdout": result.stdout,
-                "stderr": stderr,
+                "stdout": stdout,
+                "stderr": "",  # Daytona process.exec returns combined output only
                 "exit_code": exit_code,
                 "bash_id": bash_id,
                 "command_hash": command_hash,
@@ -2452,6 +2514,11 @@ class PTCSandbox:
         start = max(0, offset)
         end = start + limit
         return "\n".join(lines[start:end])
+
+    @staticmethod
+    def _extract_sandbox_id(sandbox: object) -> str:
+        """Extract a stable ID string from a sandbox object."""
+        return sandbox.id if hasattr(sandbox, "id") else str(id(sandbox))
 
     def normalize_path(self, path: str) -> str:
         """Normalize virtual path to absolute sandbox path (input normalization).
