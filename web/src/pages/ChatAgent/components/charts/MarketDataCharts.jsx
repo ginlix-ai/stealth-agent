@@ -8,6 +8,7 @@ import {
 } from 'recharts';
 import { fetchStockData } from '../../../TradingCenter/utils/api';
 import { useTheme } from '../../../../contexts/ThemeContext';
+import { useTranslation } from 'react-i18next';
 
 // ─── Shared Constants ───────────────────────────────────────────────
 
@@ -80,6 +81,7 @@ const INTERVAL_TO_API = {
 // ─── Open in Trading Center link ────────────────────────────────────
 
 function OpenInTradingLink({ symbol }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const params = useParams();
   if (!symbol) return null;
@@ -111,7 +113,7 @@ function OpenInTradingLink({ symbol }) {
       onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
       onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.85')}
     >
-      Open in Trading ↗
+      {t('toolArtifact.openInTrading')} ↗
     </button>
   );
 }
@@ -134,6 +136,7 @@ const DarkTooltip = ({ active, payload, label, formatter }) => {
 // ─── StockPriceChart ────────────────────────────────────────────────
 
 export function StockPriceChart({ data }) {
+  const { t } = useTranslation();
   const { theme } = useTheme();
   const ct = CANVAS_THEMES[theme] || CANVAS_THEMES.dark;
   const containerRef = useRef(null);
@@ -321,7 +324,7 @@ export function StockPriceChart({ data }) {
   }, [initialOhlcv, chartInterval, updateAllSeries, handleScrollLoadMore]);
 
   if (!initialOhlcv?.length) {
-    return <div style={{ color: TEXT_COLOR, padding: 16 }}>No price data available</div>;
+    return <div style={{ color: TEXT_COLOR, padding: 16 }}>{t('toolArtifact.noPriceData')}</div>;
   }
 
   const INTERVAL_LABELS = { '5min': '5m', '15min': '15m', '30min': '30m', '1hour': '1H', '4hour': '4H', daily: 'D' };
@@ -367,14 +370,15 @@ export function StockPriceChart({ data }) {
 // ─── StockStatsCard ─────────────────────────────────────────────────
 
 function StockStatsCard({ stats }) {
+  const { t } = useTranslation();
   if (!stats) return null;
 
   const items = [
-    { label: 'Period Change', value: stats.period_change_pct != null ? formatPct(stats.period_change_pct) : null, color: stats.period_change_pct >= 0 ? GREEN : RED },
-    { label: 'Period High', value: stats.period_high != null ? `$${stats.period_high.toFixed(2)}` : null },
-    { label: 'Period Low', value: stats.period_low != null ? `$${stats.period_low.toFixed(2)}` : null },
-    { label: 'Avg Volume', value: stats.avg_volume != null ? formatNumber(stats.avg_volume).replace('$', '') : null },
-    { label: 'Volatility', value: stats.volatility != null ? `${(stats.volatility * 100).toFixed(1)}%` : null },
+    { label: t('toolArtifact.periodChange'), value: stats.period_change_pct != null ? formatPct(stats.period_change_pct) : null, color: stats.period_change_pct >= 0 ? GREEN : RED },
+    { label: t('toolArtifact.periodHigh'), value: stats.period_high != null ? `$${stats.period_high.toFixed(2)}` : null },
+    { label: t('toolArtifact.periodLow'), value: stats.period_low != null ? `$${stats.period_low.toFixed(2)}` : null },
+    { label: t('toolArtifact.avgVolume'), value: stats.avg_volume != null ? formatNumber(stats.avg_volume).replace('$', '') : null },
+    { label: t('toolArtifact.volatility'), value: stats.volatility != null ? `${(stats.volatility * 100).toFixed(1)}%` : null },
     { label: 'MA 20', value: stats.ma_20 != null ? `$${stats.ma_20.toFixed(2)}` : null, labelColor: MA_BLUE },
     { label: 'MA 50', value: stats.ma_50 != null ? `$${stats.ma_50.toFixed(2)}` : null, labelColor: MA_ORANGE },
   ].filter((i) => i.value != null);
@@ -419,9 +423,10 @@ const SECTOR_ABBREVIATIONS = {
 };
 
 export function SectorPerformanceChart({ data }) {
+  const { t } = useTranslation();
   const sectors = data?.sectors;
   if (!sectors?.length) {
-    return <div style={{ color: TEXT_COLOR, padding: 16 }}>No sector data available</div>;
+    return <div style={{ color: TEXT_COLOR, padding: 16 }}>{t('toolArtifact.noSectorData')}</div>;
   }
 
   const chartData = sectors.map((s) => {
@@ -437,7 +442,7 @@ export function SectorPerformanceChart({ data }) {
   return (
     <div>
       <h4 style={{ color: 'var(--color-text-primary)', fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-        Sector Performance
+        {t('toolArtifact.sectorPerformance')}
       </h4>
       <ResponsiveContainer width="100%" height={Math.max(chartData.length * 36, 200)}>
         <BarChart data={chartData} layout="vertical" margin={{ left: 10, right: 50 }}>
@@ -475,6 +480,7 @@ export function SectorPerformanceChart({ data }) {
 // ─── PerformanceBarChart ────────────────────────────────────────────
 
 export function PerformanceBarChart({ performance }) {
+  const { t } = useTranslation();
   if (!performance || Object.keys(performance).length === 0) return null;
 
   const labels = { '1D': '1D', '5D': '5D', '1M': '1M', '3M': '3M', '6M': '6M', 'ytd': 'YTD', '1Y': '1Y', '3Y': '3Y', '5Y': '5Y' };
@@ -491,7 +497,7 @@ export function PerformanceBarChart({ performance }) {
   return (
     <div>
       <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-        Price Performance
+        {t('toolArtifact.pricePerformance')}
       </h4>
       <ResponsiveContainer width="100%" height={180}>
         <BarChart data={chartData} margin={{ left: -20, right: 10 }}>
@@ -521,6 +527,7 @@ export function PerformanceBarChart({ performance }) {
 // ─── AnalystRatingsChart ────────────────────────────────────────────
 
 export function AnalystRatingsChart({ ratings }) {
+  const { t } = useTranslation();
   if (!ratings) return null;
 
   const chartData = [
@@ -537,7 +544,7 @@ export function AnalystRatingsChart({ ratings }) {
   return (
     <div>
       <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-        Analyst Ratings
+        {t('toolArtifact.analystRatings')}
       </h4>
       <div style={{ position: 'relative' }}>
         <ResponsiveContainer width="100%" height={200}>
@@ -575,7 +582,7 @@ export function AnalystRatingsChart({ ratings }) {
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-text-primary)', textTransform: 'uppercase' }}>
             {ratings.consensus || ''}
           </div>
-          <div style={{ fontSize: 11, color: TEXT_COLOR }}>{total} ratings</div>
+          <div style={{ fontSize: 11, color: TEXT_COLOR }}>{t('toolArtifact.nRatings', { count: total })}</div>
         </div>
       </div>
     </div>
@@ -585,6 +592,7 @@ export function AnalystRatingsChart({ ratings }) {
 // ─── RevenueBreakdownChart ──────────────────────────────────────────
 
 export function RevenueBreakdownChart({ revenueByProduct, revenueByGeo }) {
+  const { t } = useTranslation();
   const hasProduct = revenueByProduct && Object.keys(revenueByProduct).length > 0;
   const hasGeo = revenueByGeo && Object.keys(revenueByGeo).length > 0;
 
@@ -634,11 +642,11 @@ export function RevenueBreakdownChart({ revenueByProduct, revenueByGeo }) {
   return (
     <div>
       <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-        Revenue Breakdown
+        {t('toolArtifact.revenueBreakdown')}
       </h4>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        {hasProduct && renderPie(buildPieData(revenueByProduct), 'By Product')}
-        {hasGeo && renderPie(buildPieData(revenueByGeo), 'By Geography')}
+        {hasProduct && renderPie(buildPieData(revenueByProduct), t('toolArtifact.byProduct'))}
+        {hasGeo && renderPie(buildPieData(revenueByGeo), t('toolArtifact.byGeography'))}
       </div>
     </div>
   );
@@ -647,12 +655,13 @@ export function RevenueBreakdownChart({ revenueByProduct, revenueByGeo }) {
 // ─── QuarterlyRevenueChart ───────────────────────────────────────────
 
 export function QuarterlyRevenueChart({ data }) {
+  const { t } = useTranslation();
   if (!data?.length) return null;
 
   return (
     <div>
       <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-        Quarterly Revenue &amp; Net Income
+        {t('toolArtifact.quarterlyRevenue')}
       </h4>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} margin={{ left: -10, right: 10 }}>
@@ -661,8 +670,8 @@ export function QuarterlyRevenueChart({ data }) {
           <YAxis tick={{ fill: TEXT_COLOR, fontSize: 11 }} axisLine={{ stroke: GRID_COLOR }} tickFormatter={(v) => formatNumber(v).replace('$', '')} />
           <Tooltip content={<DarkTooltip formatter={(v) => formatNumber(v)} />} />
           <Legend wrapperStyle={{ fontSize: 11, color: TEXT_COLOR }} formatter={(val) => <span style={{ color: TEXT_COLOR }}>{val}</span>} />
-          <Bar dataKey="revenue" name="Revenue" fill="var(--color-accent-primary)" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="netIncome" name="Net Income" fill={GREEN} radius={[4, 4, 0, 0]} />
+          <Bar dataKey="revenue" name={t('toolArtifact.revenue')} fill="var(--color-accent-primary)" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="netIncome" name={t('toolArtifact.netIncome')} fill={GREEN} radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -672,6 +681,7 @@ export function QuarterlyRevenueChart({ data }) {
 // ─── MarginsChart ───────────────────────────────────────────────────
 
 export function MarginsChart({ data }) {
+  const { t } = useTranslation();
   if (!data?.length) return null;
 
   const chartData = data.map((d) => ({
@@ -684,7 +694,7 @@ export function MarginsChart({ data }) {
   return (
     <div>
       <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-        Profit Margins
+        {t('toolArtifact.profitMargins')}
       </h4>
       <ResponsiveContainer width="100%" height={220}>
         <LineChart data={chartData} margin={{ left: -10, right: 10 }}>
@@ -693,9 +703,9 @@ export function MarginsChart({ data }) {
           <YAxis tick={{ fill: TEXT_COLOR, fontSize: 11 }} axisLine={{ stroke: GRID_COLOR }} tickFormatter={(v) => `${v.toFixed(0)}%`} />
           <Tooltip content={<DarkTooltip formatter={(v) => `${v?.toFixed(1)}%`} />} />
           <Legend wrapperStyle={{ fontSize: 11, color: TEXT_COLOR }} formatter={(val) => <span style={{ color: TEXT_COLOR }}>{val}</span>} />
-          <Line type="monotone" dataKey="grossMargin" name="Gross Margin" stroke="var(--color-accent-primary)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-          <Line type="monotone" dataKey="operatingMargin" name="Operating Margin" stroke={MA_ORANGE} strokeWidth={2} dot={{ r: 3 }} connectNulls />
-          <Line type="monotone" dataKey="netMargin" name="Net Margin" stroke={GREEN} strokeWidth={2} dot={{ r: 3 }} connectNulls />
+          <Line type="monotone" dataKey="grossMargin" name={t('toolArtifact.grossMargin')} stroke="var(--color-accent-primary)" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+          <Line type="monotone" dataKey="operatingMargin" name={t('toolArtifact.operatingMargin')} stroke={MA_ORANGE} strokeWidth={2} dot={{ r: 3 }} connectNulls />
+          <Line type="monotone" dataKey="netMargin" name={t('toolArtifact.netMargin')} stroke={GREEN} strokeWidth={2} dot={{ r: 3 }} connectNulls />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -705,12 +715,13 @@ export function MarginsChart({ data }) {
 // ─── EarningsSurpriseChart ──────────────────────────────────────────
 
 export function EarningsSurpriseChart({ data }) {
+  const { t } = useTranslation();
   if (!data?.length) return null;
 
   return (
     <div>
       <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-        EPS: Actual vs Estimate
+        {t('toolArtifact.epsActualVsEstimate')}
       </h4>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} margin={{ left: -10, right: 10 }}>
@@ -719,8 +730,8 @@ export function EarningsSurpriseChart({ data }) {
           <YAxis tick={{ fill: TEXT_COLOR, fontSize: 11 }} axisLine={{ stroke: GRID_COLOR }} tickFormatter={(v) => `$${v.toFixed(2)}`} />
           <Tooltip content={<DarkTooltip formatter={(v) => `$${v?.toFixed(2)}`} />} />
           <Legend wrapperStyle={{ fontSize: 11, color: TEXT_COLOR }} formatter={(val) => <span style={{ color: TEXT_COLOR }}>{val}</span>} />
-          <Bar dataKey="epsActual" name="EPS Actual" fill={GREEN} radius={[4, 4, 0, 0]} />
-          <Bar dataKey="epsEstimate" name="EPS Estimate" fill="var(--color-icon-muted)" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="epsActual" name={t('toolArtifact.epsActual')} fill={GREEN} radius={[4, 4, 0, 0]} />
+          <Bar dataKey="epsEstimate" name={t('toolArtifact.epsEstimate')} fill="var(--color-icon-muted)" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -730,12 +741,13 @@ export function EarningsSurpriseChart({ data }) {
 // ─── CashFlowChart ──────────────────────────────────────────────────
 
 export function CashFlowChart({ data }) {
+  const { t } = useTranslation();
   if (!data?.length) return null;
 
   return (
     <div>
       <h4 style={{ color: 'var(--color-text-primary)', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-        Cash Flow (Quarterly)
+        {t('toolArtifact.cashFlowQuarterly')}
       </h4>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} margin={{ left: -10, right: 10 }}>
@@ -745,9 +757,9 @@ export function CashFlowChart({ data }) {
           <Tooltip content={<DarkTooltip formatter={(v) => formatNumber(v)} />} />
           <Legend wrapperStyle={{ fontSize: 11, color: TEXT_COLOR }} formatter={(val) => <span style={{ color: TEXT_COLOR }}>{val}</span>} />
           <ReferenceLine y={0} stroke={GRID_COLOR} />
-          <Bar dataKey="operatingCashFlow" name="Operating CF" fill="var(--color-accent-primary)" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="capitalExpenditure" name="CapEx" fill={RED} radius={[4, 4, 0, 0]} />
-          <Bar dataKey="freeCashFlow" name="Free CF" fill={GREEN} radius={[4, 4, 0, 0]} />
+          <Bar dataKey="operatingCashFlow" name={t('toolArtifact.operatingCF')} fill="var(--color-accent-primary)" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="capitalExpenditure" name={t('toolArtifact.capEx')} fill={RED} radius={[4, 4, 0, 0]} />
+          <Bar dataKey="freeCashFlow" name={t('toolArtifact.freeCF')} fill={GREEN} radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -757,6 +769,7 @@ export function CashFlowChart({ data }) {
 // ─── CompanyOverviewCard ────────────────────────────────────────────
 
 export function CompanyOverviewCard({ data }) {
+  const { t } = useTranslation();
   const {
     symbol, name, quote, performance, analystRatings,
     revenueByProduct, revenueByGeo,
@@ -789,16 +802,16 @@ export function CompanyOverviewCard({ data }) {
             className="grid grid-cols-2 gap-x-6 gap-y-1"
             style={{ fontSize: 12, color: TEXT_COLOR }}
           >
-            {quote.open != null && <QuoteStat label="Open" value={`$${quote.open.toFixed(2)}`} />}
-            {quote.previousClose != null && <QuoteStat label="Prev Close" value={`$${quote.previousClose.toFixed(2)}`} />}
+            {quote.open != null && <QuoteStat label={t('toolArtifact.open')} value={`$${quote.open.toFixed(2)}`} />}
+            {quote.previousClose != null && <QuoteStat label={t('toolArtifact.prevClose')} value={`$${quote.previousClose.toFixed(2)}`} />}
             {quote.dayLow != null && quote.dayHigh != null && (
-              <QuoteStat label="Day Range" value={`$${quote.dayLow.toFixed(2)} - $${quote.dayHigh.toFixed(2)}`} />
+              <QuoteStat label={t('toolArtifact.dayRange')} value={`$${quote.dayLow.toFixed(2)} - $${quote.dayHigh.toFixed(2)}`} />
             )}
             {quote.yearLow != null && quote.yearHigh != null && (
-              <QuoteStat label="52W Range" value={`$${quote.yearLow.toFixed(2)} - $${quote.yearHigh.toFixed(2)}`} />
+              <QuoteStat label={t('toolArtifact.52wRange')} value={`$${quote.yearLow.toFixed(2)} - $${quote.yearHigh.toFixed(2)}`} />
             )}
-            {quote.volume != null && <QuoteStat label="Volume" value={formatNumber(quote.volume).replace('$', '')} />}
-            {quote.marketCap != null && <QuoteStat label="Market Cap" value={formatNumber(quote.marketCap)} />}
+            {quote.volume != null && <QuoteStat label={t('toolArtifact.volume')} value={formatNumber(quote.volume).replace('$', '')} />}
+            {quote.marketCap != null && <QuoteStat label={t('toolArtifact.marketCap')} value={formatNumber(quote.marketCap)} />}
           </div>
         </div>
       )}
@@ -839,9 +852,10 @@ function QuoteStat({ label, value }) {
 // ─── MarketIndicesChart ─────────────────────────────────────────────
 
 export function MarketIndicesChart({ data }) {
+  const { t } = useTranslation();
   const indices = data?.indices;
   if (!indices || Object.keys(indices).length === 0) {
-    return <div style={{ color: TEXT_COLOR, padding: 16 }}>No index data available</div>;
+    return <div style={{ color: TEXT_COLOR, padding: 16 }}>{t('toolArtifact.noIndexData')}</div>;
   }
 
   return (
@@ -905,6 +919,7 @@ export function MarketIndicesChart({ data }) {
 // ─── StockScreenerTable ──────────────────────────────────────────────
 
 export function StockScreenerTable({ data }) {
+  const { t } = useTranslation();
   const { results = [], filters = {}, count = 0 } = data || {};
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('desc');
@@ -932,24 +947,24 @@ export function StockScreenerTable({ data }) {
   }, [results, sortKey, sortDir]);
 
   if (!results.length) {
-    return <div style={{ color: TEXT_COLOR, padding: 16 }}>No screener results available</div>;
+    return <div style={{ color: TEXT_COLOR, padding: 16 }}>{t('toolArtifact.noScreenerResults')}</div>;
   }
 
   const filterTags = Object.entries(filters).map(([k, v]) => `${k}: ${v}`);
 
   const columns = [
-    { key: 'symbol', label: 'Symbol', width: 70 },
-    { key: 'companyName', label: 'Company', width: 160 },
-    { key: 'price', label: 'Price', width: 70, format: (v) => v != null ? `$${v.toFixed(2)}` : 'N/A' },
-    { key: 'marketCap', label: 'Mkt Cap', width: 80, format: formatNumber },
-    { key: 'sector', label: 'Sector', width: 110 },
-    { key: 'industry', label: 'Industry', width: 120 },
-    { key: 'beta', label: 'Beta', width: 55, format: (v) => v != null ? v.toFixed(2) : 'N/A' },
-    { key: 'volume', label: 'Volume', width: 75, format: (v) => v != null ? formatNumber(v).replace('$', '') : 'N/A' },
-    { key: 'lastAnnualDividend', label: 'Dividend', width: 65, format: (v) => v != null ? `$${v.toFixed(2)}` : 'N/A' },
-    { key: 'exchangeShortName', label: 'Exchange', width: 70 },
-    { key: 'country', label: 'Country', width: 55 },
-    { key: 'changes', label: 'Change%', width: 70, format: (v) => v != null ? formatPct(v) : 'N/A', color: (v) => v != null ? (v >= 0 ? GREEN : RED) : TEXT_COLOR },
+    { key: 'symbol', label: t('toolArtifact.symbol'), width: 70 },
+    { key: 'companyName', label: t('toolArtifact.company'), width: 160 },
+    { key: 'price', label: t('toolArtifact.price'), width: 70, format: (v) => v != null ? `$${v.toFixed(2)}` : 'N/A' },
+    { key: 'marketCap', label: t('toolArtifact.mktCap'), width: 80, format: formatNumber },
+    { key: 'sector', label: t('toolArtifact.sector'), width: 110 },
+    { key: 'industry', label: t('toolArtifact.industry'), width: 120 },
+    { key: 'beta', label: t('toolArtifact.beta'), width: 55, format: (v) => v != null ? v.toFixed(2) : 'N/A' },
+    { key: 'volume', label: t('toolArtifact.volume'), width: 75, format: (v) => v != null ? formatNumber(v).replace('$', '') : 'N/A' },
+    { key: 'lastAnnualDividend', label: t('toolArtifact.dividend'), width: 65, format: (v) => v != null ? `$${v.toFixed(2)}` : 'N/A' },
+    { key: 'exchangeShortName', label: t('toolArtifact.exchange'), width: 70 },
+    { key: 'country', label: t('toolArtifact.country'), width: 55 },
+    { key: 'changes', label: t('toolArtifact.changePct'), width: 70, format: (v) => v != null ? formatPct(v) : 'N/A', color: (v) => v != null ? (v >= 0 ? GREEN : RED) : TEXT_COLOR },
   ];
 
   const SortArrow = ({ col }) => {
@@ -960,7 +975,7 @@ export function StockScreenerTable({ data }) {
   return (
     <div>
       <h4 style={{ color: 'var(--color-text-primary)', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
-        Stock Screener — {count} result{count !== 1 ? 's' : ''}
+        {t('toolArtifact.stockScreener')} — {t('toolArtifact.nResults', { count })}
       </h4>
 
       {/* Filter summary */}

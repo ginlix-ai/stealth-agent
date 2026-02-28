@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Clock, Timer, ExternalLink } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cronToHuman } from '../../../Automations/utils/cron';
 import { formatRelativeTime, formatDateTime, formatDuration } from '../../../Automations/utils/time';
 
@@ -95,6 +96,7 @@ function scheduleLabel(auto) {
 const ACCENT = 'var(--color-accent-primary)';
 
 function AutomationsPageLink({ automationId }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const path = automationId ? `/automations?id=${automationId}` : '/automations';
   return (
@@ -104,7 +106,7 @@ function AutomationsPageLink({ automationId }) {
       style={{ color: ACCENT, border: '1px solid var(--color-accent-soft)' }}
     >
       <ExternalLink size={14} />
-      View in Automations
+      {t('toolArtifact.viewInAutomations')}
     </button>
   );
 }
@@ -129,10 +131,11 @@ export default function AutomationDetailPanel({ data }) {
 // ─── List Panel ──────────────────────────────────────────────────────
 
 function ListPanel({ automations, total }) {
+  const { t } = useTranslation();
   if (automations.length === 0) {
     return (
       <div style={{ padding: 16, color: TEXT_SECONDARY, fontSize: 14 }}>
-        No automations found.
+        {t('toolArtifact.noAutomationsFound')}
       </div>
     );
   }
@@ -140,7 +143,7 @@ function ListPanel({ automations, total }) {
   return (
     <div className="space-y-3">
       <p style={{ fontSize: 12, color: TEXT_SECONDARY }}>
-        {total} automation{total !== 1 ? 's' : ''}
+        {t('toolArtifact.nAutomations', { count: total })}
       </p>
       {automations.map((a, i) => {
         const isCron = a.trigger_type === 'cron';
@@ -167,7 +170,7 @@ function ListPanel({ automations, total }) {
             <div style={{ display: 'flex', gap: 16, fontSize: 12, color: TEXT_SECONDARY, flexWrap: 'wrap' }}>
               <span>{scheduleLabel(a)}</span>
               {a.next_run_at && (
-                <span>Next: {formatRelativeTime(a.next_run_at)}</span>
+                <span>{t('toolArtifact.next', { time: formatRelativeTime(a.next_run_at) })}</span>
               )}
               {a.agent_mode && (
                 <span
@@ -197,11 +200,12 @@ function ListPanel({ automations, total }) {
 // ─── Detail Panel ────────────────────────────────────────────────────
 
 function DetailPanel({ automation, executions, totalExecutions }) {
+  const { t } = useTranslation();
   if (!automation) return null;
 
   const isCron = automation.trigger_type === 'cron';
   const Icon = isCron ? Clock : Timer;
-  const schedule = isCron ? cronToHuman(automation.schedule) : 'One-time';
+  const schedule = isCron ? cronToHuman(automation.schedule) : t('toolArtifact.oneTime');
   const scheduleSub = isCron ? automation.schedule : null;
 
   return (
@@ -218,17 +222,17 @@ function DetailPanel({ automation, executions, totalExecutions }) {
       {/* Stat grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
         <StatCard
-          label="Schedule"
+          label={t('toolArtifact.schedule')}
           value={schedule}
           sub={scheduleSub}
         />
         <StatCard
-          label="Next Run"
+          label={t('toolArtifact.nextRun')}
           value={automation.next_run_at ? formatRelativeTime(automation.next_run_at) : '\u2014'}
           sub={automation.next_run_at ? formatDateTime(automation.next_run_at) : null}
         />
         <StatCard
-          label="Last Run"
+          label={t('toolArtifact.lastRun')}
           value={automation.last_run_at ? formatRelativeTime(automation.last_run_at) : '\u2014'}
           sub={automation.last_run_at ? formatDateTime(automation.last_run_at) : null}
         />
@@ -238,7 +242,7 @@ function DetailPanel({ automation, executions, totalExecutions }) {
       {automation.instruction && (
         <div>
           <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: TEXT_SECONDARY, marginBottom: 6 }}>
-            Instruction
+            {t('toolArtifact.instruction')}
           </p>
           <div
             style={{
@@ -259,13 +263,13 @@ function DetailPanel({ automation, executions, totalExecutions }) {
       {/* Configuration */}
       <div>
         <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: TEXT_SECONDARY, marginBottom: 6 }}>
-          Configuration
+          {t('toolArtifact.configuration')}
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 24px' }}>
           {automation.agent_mode && (
-            <ConfigRow label="Agent Mode" value={automation.agent_mode.toUpperCase()} />
+            <ConfigRow label={t('toolArtifact.agentMode')} value={automation.agent_mode.toUpperCase()} />
           )}
-          <ConfigRow label="Trigger Type" value={isCron ? 'Recurring (cron)' : 'One-time'} />
+          <ConfigRow label={t('toolArtifact.triggerType')} value={isCron ? t('toolArtifact.recurringCron') : t('toolArtifact.oneTime')} />
         </div>
       </div>
 
@@ -273,7 +277,7 @@ function DetailPanel({ automation, executions, totalExecutions }) {
       {executions.length > 0 && (
         <div>
           <p style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em', color: TEXT_SECONDARY, marginBottom: 6 }}>
-            Execution History ({totalExecutions} total)
+            {t('toolArtifact.executionHistory', { count: totalExecutions })}
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {executions.map((e, i) => (
@@ -300,7 +304,7 @@ function DetailPanel({ automation, executions, totalExecutions }) {
                   }}
                 />
                 <span style={{ color: 'var(--color-text-primary)', fontWeight: 500, flex: 1 }}>
-                  {e.scheduled_at ? formatDateTime(e.scheduled_at) : 'Manual trigger'}
+                  {e.scheduled_at ? formatDateTime(e.scheduled_at) : t('toolArtifact.manualTrigger')}
                 </span>
                 {e.started_at && e.completed_at && (
                   <span style={{ color: TEXT_SECONDARY, fontSize: 11 }}>
@@ -326,8 +330,9 @@ function DetailPanel({ automation, executions, totalExecutions }) {
 // ─── Created Panel ───────────────────────────────────────────────────
 
 function CreatedPanel({ data }) {
+  const { t } = useTranslation();
   const isCron = data.trigger_type === 'cron';
-  const schedule = isCron ? cronToHuman(data.schedule) : 'One-time';
+  const schedule = isCron ? cronToHuman(data.schedule) : t('toolArtifact.oneTime');
 
   return (
     <div className="space-y-4">
@@ -341,7 +346,7 @@ function CreatedPanel({ data }) {
         }}
       >
         <p style={{ color: GREEN, fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
-          Automation Created Successfully
+          {t('toolArtifact.automationCreatedSuccess')}
         </p>
         <p style={{ color: 'var(--color-text-primary)', fontWeight: 600, fontSize: 16 }}>
           {data.name}
@@ -350,17 +355,17 @@ function CreatedPanel({ data }) {
 
       {/* Details */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <StatCard label="Schedule" value={schedule} sub={isCron ? data.schedule : null} />
+        <StatCard label={t('toolArtifact.schedule')} value={schedule} sub={isCron ? data.schedule : null} />
         <StatCard
-          label="Next Run"
+          label={t('toolArtifact.nextRun')}
           value={data.next_run_at ? formatRelativeTime(data.next_run_at) : '\u2014'}
           sub={data.next_run_at ? formatDateTime(data.next_run_at) : null}
         />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 24px' }}>
-        <ConfigRow label="Status" value={data.status || 'active'} />
-        <ConfigRow label="Trigger Type" value={isCron ? 'Recurring' : 'One-time'} />
+        <ConfigRow label={t('toolArtifact.status')} value={data.status || 'active'} />
+        <ConfigRow label={t('toolArtifact.triggerType')} value={isCron ? t('toolArtifact.recurring') : t('toolArtifact.oneTime')} />
       </div>
 
       <AutomationsPageLink automationId={data.automation_id} />

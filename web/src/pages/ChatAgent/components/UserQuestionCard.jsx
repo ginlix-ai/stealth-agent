@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { HelpCircle, Check, SkipForward, Send, ChevronRight } from 'lucide-react';
+import Markdown from './Markdown';
 
 /**
  * Inline checkbox row adapted from PremiumCheckbox (checkbox-02).
@@ -186,11 +187,11 @@ function UserQuestionCard({ questionData, onAnswer, onSkip }) {
             >
               <div className="pt-2 pb-1 pl-6">
                 {/* Question */}
-                <div className="flex items-center gap-2 pb-2">
-                  <HelpCircle className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--color-icon-muted)' }} />
-                  <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
-                    {question}
-                  </p>
+                <div className="flex items-start gap-2 pb-2">
+                  <HelpCircle className="h-3.5 w-3.5 flex-shrink-0 mt-1" style={{ color: 'var(--color-icon-muted)' }} />
+                  <div className="text-sm min-w-0" style={{ color: 'var(--color-text-tertiary)' }}>
+                    <Markdown variant="compact" content={question} />
+                  </div>
                 </div>
 
                 {/* Options with selection state */}
@@ -257,11 +258,11 @@ function UserQuestionCard({ questionData, onAnswer, onSkip }) {
       transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
     >
       {/* Question text */}
-      <div className="flex items-center gap-2 pb-2">
-        <HelpCircle className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--color-accent-light)' }} />
-        <p className="text-[15px] font-medium" style={{ color: 'var(--color-text-primary)' }}>
-          {question}
-        </p>
+      <div className="flex items-start gap-2 pb-2">
+        <HelpCircle className="h-4 w-4 flex-shrink-0 mt-1" style={{ color: 'var(--color-accent-light)' }} />
+        <div className="text-[15px] font-medium min-w-0" style={{ color: 'var(--color-text-primary)' }}>
+          <Markdown variant="compact" content={question} />
+        </div>
       </div>
 
       {/* Vertical option list */}

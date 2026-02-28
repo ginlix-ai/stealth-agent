@@ -3,6 +3,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Cell,
   ResponsiveContainer, LabelList,
 } from 'recharts';
+import { useTranslation } from 'react-i18next';
 
 // ─── Constants ──────────────────────────────────────────────────────
 
@@ -78,6 +79,7 @@ function abbreviateSector(name) {
 // ─── InlineStockPriceCard ───────────────────────────────────────────
 
 export function InlineStockPriceCard({ artifact, onClick }) {
+  const { t } = useTranslation();
   const { symbol, ohlcv, stats } = artifact || {};
 
   const sparkData = useMemo(() => {
@@ -158,13 +160,13 @@ export function InlineStockPriceCard({ artifact, onClick }) {
           }}
         >
           {stats.period_high != null && (
-            <span>H: ${stats.period_high.toFixed(2)}</span>
+            <span>{t('toolArtifact.high')}: ${stats.period_high.toFixed(2)}</span>
           )}
           {stats.period_low != null && (
-            <span>L: ${stats.period_low.toFixed(2)}</span>
+            <span>{t('toolArtifact.low')}: ${stats.period_low.toFixed(2)}</span>
           )}
           {stats.avg_volume != null && (
-            <span>Vol: {formatCompactNumber(stats.avg_volume)}</span>
+            <span>{t('toolArtifact.vol')}: {formatCompactNumber(stats.avg_volume)}</span>
           )}
         </div>
       )}
@@ -183,6 +185,7 @@ function formatMarketCap(num) {
 }
 
 export function InlineCompanyOverviewCard({ artifact, onClick }) {
+  const { t } = useTranslation();
   const { symbol, name, quote } = artifact || {};
   if (!quote) return null;
 
@@ -230,22 +233,22 @@ export function InlineCompanyOverviewCard({ artifact, onClick }) {
         }}
       >
         {quote.open != null && (
-          <QuoteRow label="Open" value={`$${quote.open.toFixed(2)}`} />
+          <QuoteRow label={t('toolArtifact.open')} value={`$${quote.open.toFixed(2)}`} />
         )}
         {quote.previousClose != null && (
-          <QuoteRow label="Prev Close" value={`$${quote.previousClose.toFixed(2)}`} />
+          <QuoteRow label={t('toolArtifact.prevClose')} value={`$${quote.previousClose.toFixed(2)}`} />
         )}
         {quote.dayLow != null && quote.dayHigh != null && (
-          <QuoteRow label="Day Range" value={`$${quote.dayLow.toFixed(2)} - $${quote.dayHigh.toFixed(2)}`} />
+          <QuoteRow label={t('toolArtifact.dayRange')} value={`$${quote.dayLow.toFixed(2)} - $${quote.dayHigh.toFixed(2)}`} />
         )}
         {quote.yearLow != null && quote.yearHigh != null && (
-          <QuoteRow label="52W Range" value={`$${quote.yearLow.toFixed(2)} - $${quote.yearHigh.toFixed(2)}`} />
+          <QuoteRow label={t('toolArtifact.52wRange')} value={`$${quote.yearLow.toFixed(2)} - $${quote.yearHigh.toFixed(2)}`} />
         )}
         {quote.volume != null && (
-          <QuoteRow label="Volume" value={formatCompactNumber(quote.volume)} />
+          <QuoteRow label={t('toolArtifact.volume')} value={formatCompactNumber(quote.volume)} />
         )}
         {quote.marketCap != null && (
-          <QuoteRow label="Market Cap" value={formatMarketCap(quote.marketCap)} />
+          <QuoteRow label={t('toolArtifact.marketCap')} value={formatMarketCap(quote.marketCap)} />
         )}
       </div>
     </div>
@@ -264,6 +267,7 @@ function QuoteRow({ label, value }) {
 // ─── InlineMarketIndicesCard ────────────────────────────────────────
 
 export function InlineMarketIndicesCard({ artifact, onClick }) {
+  const { t } = useTranslation();
   const indices = artifact?.indices;
   if (!indices || Object.keys(indices).length === 0) return null;
 
@@ -275,7 +279,7 @@ export function InlineMarketIndicesCard({ artifact, onClick }) {
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
     >
       <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 13, marginBottom: 8 }}>
-        Market Indices
+        {t('toolArtifact.marketIndices')}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {Object.entries(indices).map(([sym, data]) => {
@@ -317,6 +321,7 @@ export function InlineMarketIndicesCard({ artifact, onClick }) {
 // ─── InlineSectorPerformanceCard ────────────────────────────────────
 
 export function InlineSectorPerformanceCard({ artifact, onClick }) {
+  const { t } = useTranslation();
   const sectors = artifact?.sectors;
   if (!sectors?.length) return null;
 
@@ -341,7 +346,7 @@ export function InlineSectorPerformanceCard({ artifact, onClick }) {
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = CARD_BORDER)}
     >
       <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 13, marginBottom: 6 }}>
-        Sector Performance
+        {t('toolArtifact.sectorPerformance')}
       </div>
       <ResponsiveContainer width="100%" height={chartHeight}>
         <BarChart
@@ -377,6 +382,7 @@ export function InlineSectorPerformanceCard({ artifact, onClick }) {
 // ─── InlineStockScreenerCard ──────────────────────────────────────
 
 export function InlineStockScreenerCard({ artifact, onClick }) {
+  const { t } = useTranslation();
   const { results = [], filters = {}, count = 0 } = artifact || {};
   if (!results.length) return null;
 
@@ -396,7 +402,7 @@ export function InlineStockScreenerCard({ artifact, onClick }) {
       {/* Header: title + count badge */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 13 }}>
-          Stock Screener
+          {t('toolArtifact.stockScreener')}
         </span>
         <span
           style={{
@@ -407,7 +413,7 @@ export function InlineStockScreenerCard({ artifact, onClick }) {
             borderRadius: 10,
           }}
         >
-          {count} result{count !== 1 ? 's' : ''}
+          {t('toolArtifact.nResults', { count })}
         </span>
       </div>
 
@@ -483,7 +489,7 @@ export function InlineStockScreenerCard({ artifact, onClick }) {
       {/* +N more */}
       {remaining > 0 && (
         <div style={{ marginTop: 4, fontSize: 11, color: TEXT_COLOR }}>
-          +{remaining} more stock{remaining > 1 ? 's' : ''}
+          {t('toolArtifact.nMoreStocks', { count: remaining })}
         </div>
       )}
     </div>
@@ -506,6 +512,7 @@ export function InlineSecFilingCard({ artifact, onClick }) {
 }
 
 function InlineAnnualQuarterlyCard({ artifact, onClick }) {
+  const { t } = useTranslation();
   const { symbol, filing_type, filing_date, period_end, cik, sections_extracted, source_url, has_earnings_call, recent_8k_count } = artifact;
 
   return (
@@ -530,7 +537,7 @@ function InlineAnnualQuarterlyCard({ artifact, onClick }) {
           {symbol}
         </span>
         <span style={{ fontWeight: 700, color: 'var(--color-text-primary)', fontSize: 14 }}>
-          {filing_type} Filing
+          {t('toolArtifact.filing', { type: filing_type })}
         </span>
       </div>
 
@@ -544,12 +551,12 @@ function InlineAnnualQuarterlyCard({ artifact, onClick }) {
           color: TEXT_COLOR,
         }}
       >
-        {filing_date && <QuoteRow label="Filing Date" value={filing_date} />}
-        {period_end && <QuoteRow label="Period End" value={period_end} />}
-        {cik && <QuoteRow label="CIK" value={cik} />}
-        {sections_extracted != null && <QuoteRow label="Sections" value={String(sections_extracted)} />}
-        {has_earnings_call && <QuoteRow label="Earnings Call" value="Included" />}
-        {recent_8k_count != null && <QuoteRow label="Recent 8-Ks" value={String(recent_8k_count)} />}
+        {filing_date && <QuoteRow label={t('toolArtifact.filingDate')} value={filing_date} />}
+        {period_end && <QuoteRow label={t('toolArtifact.periodEnd')} value={period_end} />}
+        {cik && <QuoteRow label={t('toolArtifact.cik')} value={cik} />}
+        {sections_extracted != null && <QuoteRow label={t('toolArtifact.sections')} value={String(sections_extracted)} />}
+        {has_earnings_call && <QuoteRow label={t('toolArtifact.earningsCall')} value={t('toolArtifact.included')} />}
+        {recent_8k_count != null && <QuoteRow label={t('toolArtifact.recent8Ks')} value={String(recent_8k_count)} />}
       </div>
 
       {/* EDGAR link */}
@@ -562,7 +569,7 @@ function InlineAnnualQuarterlyCard({ artifact, onClick }) {
             onClick={(e) => e.stopPropagation()}
             style={{ fontSize: 11, color: ACCENT, textDecoration: 'none' }}
           >
-            View on SEC EDGAR ↗
+            {t('toolArtifact.viewOnEdgar')}
           </a>
         </div>
       )}
@@ -571,6 +578,7 @@ function InlineAnnualQuarterlyCard({ artifact, onClick }) {
 }
 
 function Inline8KCard({ artifact, onClick }) {
+  const { t } = useTranslation();
   const { symbol, filing_count, filings = [] } = artifact;
   const shown = filings.slice(0, MAX_INLINE_8K);
   const remaining = filing_count - shown.length;
@@ -596,7 +604,7 @@ function Inline8KCard({ artifact, onClick }) {
         >
           {symbol}
         </span>
-        <span style={{ fontWeight: 700, color: 'var(--color-text-primary)', fontSize: 14 }}>8-K Filings</span>
+        <span style={{ fontWeight: 700, color: 'var(--color-text-primary)', fontSize: 14 }}>{t('toolArtifact.8kFilings')}</span>
         <span
           style={{
             fontSize: 11,
@@ -655,7 +663,7 @@ function Inline8KCard({ artifact, onClick }) {
       {/* +N more */}
       {remaining > 0 && (
         <div style={{ marginTop: 4, fontSize: 11, color: TEXT_COLOR }}>
-          +{remaining} more filing{remaining > 1 ? 's' : ''}
+          {t('toolArtifact.nMoreFilings', { count: remaining })}
         </div>
       )}
     </div>

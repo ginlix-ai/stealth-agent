@@ -6,122 +6,149 @@ import {
 
 export const TOOL_DISPLAY_CONFIG = {
   // Market Data
-  get_stock_daily_prices:   { displayName: 'Stock Prices',         icon: TrendingUp },
-  get_company_overview:     { displayName: 'Company Overview',     icon: Building2 },
-  get_market_indices:       { displayName: 'Market Indices',       icon: BarChart3 },
-  get_sector_performance:   { displayName: 'Sector Performance',   icon: PieChart },
-  screen_stocks:            { displayName: 'Stock Screener',       icon: Search },
+  get_stock_daily_prices:   { displayName: 'Stock Prices',         i18nKey: 'stockPrices',         icon: TrendingUp },
+  get_company_overview:     { displayName: 'Company Overview',     i18nKey: 'companyOverview',     icon: Building2 },
+  get_market_indices:       { displayName: 'Market Indices',       i18nKey: 'marketIndices',       icon: BarChart3 },
+  get_sector_performance:   { displayName: 'Sector Performance',   i18nKey: 'sectorPerformance',   icon: PieChart },
+  screen_stocks:            { displayName: 'Stock Screener',       i18nKey: 'stockScreener',       icon: Search },
   // SEC
-  get_sec_filing:           { displayName: 'SEC Filing',           icon: FileBarChart },
+  get_sec_filing:           { displayName: 'SEC Filing',           i18nKey: 'secFiling',           icon: FileBarChart },
   // Web search / news
-  get_entity_news:          { displayName: 'Entity News',          icon: Newspaper },
-  search_tickers:           { displayName: 'Ticker Search',        icon: Search },
+  get_entity_news:          { displayName: 'Entity News',          i18nKey: 'entityNews',          icon: Newspaper },
+  search_tickers:           { displayName: 'Ticker Search',        i18nKey: 'tickerSearch',        icon: Search },
   // Fundamentals (MCP)
-  get_financial_statements: { displayName: 'Financial Statements', icon: FileBarChart },
-  get_financial_ratios:     { displayName: 'Financial Ratios',     icon: FileBarChart },
-  get_growth_metrics:       { displayName: 'Growth Metrics',       icon: TrendingUp },
-  get_historical_valuation: { displayName: 'Valuation History',    icon: BarChart3 },
+  get_financial_statements: { displayName: 'Financial Statements', i18nKey: 'financialStatements', icon: FileBarChart },
+  get_financial_ratios:     { displayName: 'Financial Ratios',     i18nKey: 'financialRatios',     icon: FileBarChart },
+  get_growth_metrics:       { displayName: 'Growth Metrics',       i18nKey: 'growthMetrics',       icon: TrendingUp },
+  get_historical_valuation: { displayName: 'Valuation History',    i18nKey: 'valuationHistory',    icon: BarChart3 },
   // Price Data (MCP)
-  get_stock_data:           { displayName: 'Stock Data',           icon: TrendingUp },
-  get_asset_data:           { displayName: 'Asset Data',           icon: TrendingUp },
+  get_stock_data:           { displayName: 'Stock Data',           i18nKey: 'stockData',           icon: TrendingUp },
+  get_asset_data:           { displayName: 'Asset Data',           i18nKey: 'assetData',           icon: TrendingUp },
   // User Data
-  get_user_data:            { displayName: 'User Data',            icon: User },
-  update_user_data:         { displayName: 'Update Data',          icon: User },
-  remove_user_data:         { displayName: 'Remove Data',          icon: User },
+  get_user_data:            { displayName: 'User Data',            i18nKey: 'userData',            icon: User },
+  update_user_data:         { displayName: 'Update Data',          i18nKey: 'updateData',          icon: User },
+  remove_user_data:         { displayName: 'Remove Data',          i18nKey: 'removeData',          icon: User },
   // Core tools
-  Bash:                     { displayName: 'Bash',                 icon: Terminal },
-  Glob:                     { displayName: 'Glob',                 icon: FolderSearch },
-  Grep:                     { displayName: 'Grep',                 icon: Search },
-  WebSearch:                { displayName: 'Web Search',           icon: Globe },
-  WebFetch:                 { displayName: 'Web Fetch',            icon: Newspaper },
-  Write:                    { displayName: 'Write',                icon: FilePlus },
-  Read:                     { displayName: 'Read',                 icon: FileText },
-  Edit:                     { displayName: 'Edit',                 icon: FilePen },
-  ExecuteCode:              { displayName: 'Execute Code',         icon: SquareChevronRight },
-  think_tool:               { displayName: 'Thinking',             icon: Brain },
+  Bash:                     { displayName: 'Bash',                 i18nKey: 'bash',                icon: Terminal },
+  Glob:                     { displayName: 'Glob',                 i18nKey: 'glob',                icon: FolderSearch },
+  Grep:                     { displayName: 'Grep',                 i18nKey: 'grep',                icon: Search },
+  WebSearch:                { displayName: 'Web Search',           i18nKey: 'webSearch',           icon: Globe },
+  WebFetch:                 { displayName: 'Web Fetch',            i18nKey: 'webFetch',            icon: Newspaper },
+  Write:                    { displayName: 'Write',                i18nKey: 'write',               icon: FilePlus },
+  Read:                     { displayName: 'Read',                 i18nKey: 'read',                icon: FileText },
+  Edit:                     { displayName: 'Edit',                 i18nKey: 'edit',                icon: FilePen },
+  ExecuteCode:              { displayName: 'Execute Code',         i18nKey: 'executeCode',         icon: SquareChevronRight },
+  think_tool:               { displayName: 'Thinking',             i18nKey: 'thinking',            icon: Brain },
   // Background subagent management
-  Wait:                     { displayName: 'Waiting for Subagent', icon: Clock },
-  TaskOutput:               { displayName: 'Task Output',          icon: ClipboardList },
+  Wait:                     { displayName: 'Waiting for Subagent', i18nKey: 'waitingForSubagent',  icon: Clock },
+  TaskOutput:               { displayName: 'Task Output',          i18nKey: 'taskOutput',          icon: ClipboardList },
   // Automations
-  check_automations:        { displayName: 'Automations',          icon: Clock },
-  create_automation:        { displayName: 'Create Automation',    icon: Zap },
-  manage_automation:        { displayName: 'Manage Automation',    icon: Settings },
+  check_automations:        { displayName: 'Automations',          i18nKey: 'automations',         icon: Clock },
+  create_automation:        { displayName: 'Create Automation',    i18nKey: 'createAutomation',    icon: Zap },
+  manage_automation:        { displayName: 'Manage Automation',    i18nKey: 'manageAutomation',    icon: Settings },
 };
 
-export function getDisplayName(rawToolName) {
-  return TOOL_DISPLAY_CONFIG[rawToolName]?.displayName || rawToolName;
+export function getDisplayName(rawToolName, t) {
+  const config = TOOL_DISPLAY_CONFIG[rawToolName];
+  if (t && config?.i18nKey) return t(`toolArtifact.tool.${config.i18nKey}`);
+  return config?.displayName || rawToolName;
 }
 
 export function getToolIcon(rawToolName) {
   return TOOL_DISPLAY_CONFIG[rawToolName]?.icon || Wrench;
 }
 
-export function getInProgressText(rawToolName, toolCall) {
+export function getInProgressText(rawToolName, toolCall, t) {
   const args = toolCall?.args;
+  const tr = t ? (key, opts) => t(`toolArtifact.inProgress.${key}`, opts) : null;
   switch (rawToolName) {
     case 'get_stock_daily_prices':
-      return args?.symbol ? `fetching ${args.symbol} prices...` : 'fetching prices...';
+      return args?.symbol
+        ? (tr?.('fetchingSymbolPrices', { symbol: args.symbol }) ?? `fetching ${args.symbol} prices...`)
+        : (tr?.('fetchingPrices') ?? 'fetching prices...');
     case 'get_company_overview':
-      return args?.symbol ? `analyzing ${args.symbol}...` : 'analyzing...';
+      return args?.symbol
+        ? (tr?.('analyzingSymbol', { symbol: args.symbol }) ?? `analyzing ${args.symbol}...`)
+        : (tr?.('analyzing') ?? 'analyzing...');
     case 'get_market_indices':
-      return 'fetching market indices...';
+      return tr?.('fetchingMarketIndices') ?? 'fetching market indices...';
     case 'get_sector_performance':
-      return 'fetching sector data...';
+      return tr?.('fetchingSectorData') ?? 'fetching sector data...';
     case 'screen_stocks':
-      return 'screening stocks...';
+      return tr?.('screeningStocks') ?? 'screening stocks...';
     case 'get_sec_filing':
-      return args?.symbol ? `fetching ${args.symbol} filing...` : 'fetching filing...';
+      return args?.symbol
+        ? (tr?.('fetchingSymbolFiling', { symbol: args.symbol }) ?? `fetching ${args.symbol} filing...`)
+        : (tr?.('fetchingFiling') ?? 'fetching filing...');
     case 'Glob': {
       const pattern = args?.pattern;
-      return pattern ? `searching '${pattern}'...` : 'searching...';
+      return pattern
+        ? (tr?.('searchingPattern', { pattern }) ?? `searching '${pattern}'...`)
+        : (tr?.('searching') ?? 'searching...');
     }
     case 'Grep': {
       const pattern = args?.pattern;
-      return pattern ? `searching for '${pattern}'...` : 'searching...';
+      return pattern
+        ? (tr?.('searchingForPattern', { pattern }) ?? `searching for '${pattern}'...`)
+        : (tr?.('searching') ?? 'searching...');
     }
     case 'WebSearch': {
       const query = args?.query;
-      return query ? `searching '${query}'...` : 'searching...';
+      return query
+        ? (tr?.('searchingQuery', { query }) ?? `searching '${query}'...`)
+        : (tr?.('searching') ?? 'searching...');
     }
     case 'WebFetch': {
       try {
         const domain = args?.url ? new URL(args.url).hostname : null;
-        return domain ? `fetching ${domain}...` : 'fetching...';
+        return domain
+          ? (tr?.('fetchingDomain', { domain }) ?? `fetching ${domain}...`)
+          : (tr?.('fetching') ?? 'fetching...');
       } catch {
-        return 'fetching...';
+        return tr?.('fetching') ?? 'fetching...';
       }
     }
     case 'Write': {
       const fp = args?.file_path || args?.filePath || '';
       const name = fp.split('/').pop();
-      return name ? `writing ${name}...` : 'writing...';
+      return name
+        ? (tr?.('writingFile', { name }) ?? `writing ${name}...`)
+        : (tr?.('writing') ?? 'writing...');
     }
     case 'Read': {
       const fp = args?.file_path || args?.filePath || '';
       const name = fp.split('/').pop();
-      return name ? `reading ${name}...` : 'reading...';
+      return name
+        ? (tr?.('readingFile', { name }) ?? `reading ${name}...`)
+        : (tr?.('reading') ?? 'reading...');
     }
     case 'Edit': {
       const fp = args?.file_path || args?.filePath || '';
       const name = fp.split('/').pop();
-      return name ? `editing ${name}...` : 'editing...';
+      return name
+        ? (tr?.('editingFile', { name }) ?? `editing ${name}...`)
+        : (tr?.('editing') ?? 'editing...');
     }
     case 'Bash':
-      return args?.description ? `${args.description}...` : 'running command...';
+      return args?.description ? `${args.description}...` : (tr?.('runningCommand') ?? 'running command...');
     case 'ExecuteCode':
-      return args?.description ? `${args.description}...` : 'executing...';
+      return args?.description ? `${args.description}...` : (tr?.('executing') ?? 'executing...');
     case 'Wait':
-      return 'waiting for subagent...';
+      return tr?.('waitingForSubagent') ?? 'waiting for subagent...';
     case 'TaskOutput':
-      return 'fetching task output...';
+      return tr?.('fetchingTaskOutput') ?? 'fetching task output...';
     case 'check_automations':
-      return 'checking automations...';
+      return tr?.('checkingAutomations') ?? 'checking automations...';
     case 'create_automation':
-      return args?.name ? `creating ${args.name}...` : 'creating automation...';
+      return args?.name
+        ? (tr?.('creatingName', { name: args.name }) ?? `creating ${args.name}...`)
+        : (tr?.('creatingAutomation') ?? 'creating automation...');
     case 'manage_automation':
-      return args?.action ? `${args.action} automation...` : 'managing automation...';
+      return args?.action
+        ? (tr?.('actionAutomation', { action: args.action }) ?? `${args.action} automation...`)
+        : (tr?.('managingAutomation') ?? 'managing automation...');
     default:
-      return 'processing...';
+      return tr?.('processing') ?? 'processing...';
   }
 }
 
@@ -150,33 +177,37 @@ export function getCompletedSummary(toolName, toolCall) {
   return null;
 }
 
-function formatByteSize(bytes) {
+function formatByteSize(bytes, t) {
   if (bytes < 100) return null;
-  if (bytes < 1000) return `~${bytes} chars`;
-  return `~${(bytes / 1000).toFixed(1)} KB`;
+  if (bytes < 1000) {
+    return t ? t('toolArtifact.nChars', { count: bytes }) : `~${bytes} chars`;
+  }
+  const size = (bytes / 1000).toFixed(1);
+  return t ? t('toolArtifact.nKB', { size }) : `~${size} KB`;
 }
 
-export function getPreparingText(toolName, argsLength) {
-  const size = formatByteSize(argsLength);
+export function getPreparingText(toolName, argsLength, t) {
+  const size = formatByteSize(argsLength, t);
   const sizeLabel = size ? ` (${size})` : '';
+  const tr = t ? (key, opts) => t(`toolArtifact.preparing.${key}`, opts) : null;
 
   switch (toolName) {
     case 'Write':
-      return `writing code${sizeLabel}...`;
+      return tr?.('writingCode', { size: sizeLabel }) ?? `writing code${sizeLabel}...`;
     case 'Edit':
-      return `composing edits${sizeLabel}...`;
+      return tr?.('composingEdits', { size: sizeLabel }) ?? `composing edits${sizeLabel}...`;
     case 'Bash':
-      return `preparing command${sizeLabel}...`;
+      return tr?.('preparingCommand', { size: sizeLabel }) ?? `preparing command${sizeLabel}...`;
     case 'ExecuteCode':
-      return `composing code${sizeLabel}...`;
+      return tr?.('composingCode', { size: sizeLabel }) ?? `composing code${sizeLabel}...`;
     case 'WebSearch':
-      return 'crafting search...';
+      return tr?.('craftingSearch') ?? 'crafting search...';
     case 'WebFetch':
-      return 'preparing request...';
+      return tr?.('preparingRequest') ?? 'preparing request...';
     case 'Grep':
-      return 'building search pattern...';
+      return tr?.('buildingSearchPattern') ?? 'building search pattern...';
     default:
-      return `generating${sizeLabel}...`;
+      return tr?.('generating', { size: sizeLabel }) ?? `generating${sizeLabel}...`;
   }
 }
 

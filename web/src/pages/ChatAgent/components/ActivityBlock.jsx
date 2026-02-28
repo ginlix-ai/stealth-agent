@@ -16,6 +16,7 @@ import {
   InlineStockScreenerCard,
 } from './charts/InlineMarketCharts';
 import { InlineAutomationCard } from './charts/InlineAutomationCards';
+import { useTranslation } from 'react-i18next';
 
 /** Tool names where clicking should open the file in the FilePanel */
 const FILE_NAV_TOOLS = new Set(['Read', 'Write', 'Save', 'read_file', 'write_file', 'save_file']);
@@ -51,6 +52,7 @@ const SPRING_SNAPPY = { type: 'spring', stiffness: 200, damping: 22 };
  * item entrance/exit, and chevron rotation.
  */
 function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick, onOpenFile }) {
+  const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
   const prevCompletedIdsRef = useRef(new Set());
 
@@ -100,11 +102,11 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
   let summaryLabel;
   if (reasoningCount > 0 && toolCallCount > 0) {
     const parts = [];
-    if (reasoningCount > 0) parts.push(`${reasoningCount} reasoning`);
-    if (toolCallCount > 0) parts.push(`${toolCallCount} tool call${toolCallCount > 1 ? 's' : ''}`);
+    if (reasoningCount > 0) parts.push(t('toolArtifact.nReasoning', { count: reasoningCount }));
+    if (toolCallCount > 0) parts.push(t('toolArtifact.nToolCalls', { count: toolCallCount }));
     summaryLabel = parts.join(' · ');
   } else if (completedItems.length > 0) {
-    summaryLabel = `${completedItems.length} step${completedItems.length > 1 ? 's' : ''} completed`;
+    summaryLabel = t('toolArtifact.nStepsCompleted', { count: completedItems.length });
   }
 
   return (
@@ -244,11 +246,11 @@ function ActivityBlock({ items, preparingToolCall, isStreaming, onToolCallClick,
                             duration={1.5}
                           >
                             {item.reasoningTitle
-                              ? `Reasoning: ${item.reasoningTitle}`
-                              : 'Reasoning...'}
+                              ? t('toolArtifact.reasoningLabel', { title: item.reasoningTitle })
+                              : t('toolArtifact.reasoningPending')}
                           </TextShimmer>
                         ) : (
-                          <span className="font-medium truncate">Reasoning complete</span>
+                          <span className="font-medium truncate">{t('toolArtifact.reasoningComplete')}</span>
                         )}
                       </div>
 
@@ -352,11 +354,12 @@ function AnimatedReasoningContent({ content, isStreaming }) {
 
 /** Live tool call row — shows active or completing state */
 function ToolCallLiveRow({ tc, liveState }) {
+  const { t } = useTranslation();
   const toolName = tc.toolName || '';
-  const displayName = getDisplayName(toolName);
+  const displayName = getDisplayName(toolName, t);
   const IconComponent = getToolIcon(toolName);
   const isInProgress = liveState === 'active' && !tc.isComplete && !tc._recentlyCompleted;
-  const progressText = isInProgress ? getInProgressText(toolName, tc.toolCall) : null;
+  const progressText = isInProgress ? getInProgressText(toolName, tc.toolCall, t) : null;
 
   return (
     <motion.div
@@ -408,7 +411,7 @@ function ToolCallLiveRow({ tc, liveState }) {
             const summary = getCompletedSummary(toolName, tc.toolCall);
             return summary
               ? <span className="truncate min-w-0" style={{ opacity: 0.55 }}>— {summary}</span>
-              : <span style={{ opacity: 0.55 }}>done</span>;
+              : <span style={{ opacity: 0.55 }}>{t('toolArtifact.done')}</span>;
           })()}
         </>
       )}
@@ -418,10 +421,11 @@ function ToolCallLiveRow({ tc, liveState }) {
 
 /** Preparing row — shown while tool_call_chunks are still streaming */
 function PreparingToolCallRow({ tc }) {
+  const { t } = useTranslation();
   const toolName = tc.toolName || '';
-  const displayName = toolName ? getDisplayName(toolName) : 'Tool Call';
+  const displayName = toolName ? getDisplayName(toolName, t) : t('toolArtifact.toolCall');
   const IconComponent = toolName ? getToolIcon(toolName) : Wrench;
-  const prepText = getPreparingText(toolName, tc.argsLength);
+  const prepText = getPreparingText(toolName, tc.argsLength, t);
 
   return (
     <div
@@ -447,8 +451,9 @@ function PreparingToolCallRow({ tc }) {
 /* --- Accordion sub-components --- */
 
 function ReasoningRow({ item }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
-  const title = item.reasoningTitle || 'Reasoning';
+  const title = item.reasoningTitle ? t('toolArtifact.reasoningLabel', { title: item.reasoningTitle }) : t('toolArtifact.reasoning');
   const hasContent = !!item.content;
 
   return (
@@ -497,8 +502,9 @@ function ReasoningRow({ item }) {
 }
 
 function ToolCallRow({ item, onClick }) {
+  const { t } = useTranslation();
   const toolName = item.toolName || '';
-  const displayName = getDisplayName(toolName);
+  const displayName = getDisplayName(toolName, t);
   const IconComponent = getToolIcon(toolName);
 
   const summary = getCompletedSummary(toolName, item.toolCall) || '';
@@ -523,8 +529,9 @@ function ToolCallRow({ item, onClick }) {
 }
 
 function EditToolRow({ item, onOpenFile }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const displayName = getDisplayName(item.toolName || 'Edit');
+  const displayName = getDisplayName(item.toolName || 'Edit', t);
   const IconComponent = getToolIcon(item.toolName || 'Edit');
 
   const args = item.toolCall?.args || {};

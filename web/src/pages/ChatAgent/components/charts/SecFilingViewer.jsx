@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ExternalLink, FileText, Calendar, Building2, Layers, Newspaper } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../../../../api/client';
 
 const TEXT_COLOR = 'var(--color-text-tertiary)';
@@ -36,6 +37,7 @@ function ItemChip({ label }) {
  * 10-K / 10-Q filing viewer with metadata header and embedded SEC document.
  */
 function AnnualQuarterlyView({ data }) {
+  const { t } = useTranslation();
   const [iframeLoading, setIframeLoading] = useState(true);
 
   const proxyUrl = data.source_url
@@ -54,7 +56,7 @@ function AnnualQuarterlyView({ data }) {
             {data.symbol}
           </span>
           <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-            {data.filing_type} Filing
+            {t('toolArtifact.filing', { type: data.filing_type })}
           </span>
         </div>
 
@@ -63,15 +65,15 @@ function AnnualQuarterlyView({ data }) {
           className="rounded-lg px-3 py-2"
           style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border-muted)' }}
         >
-          <InfoRow icon={Calendar} label="Filing Date" value={data.filing_date} />
-          <InfoRow icon={Calendar} label="Period End" value={data.period_end} />
-          <InfoRow icon={Building2} label="CIK" value={data.cik} />
-          <InfoRow icon={Layers} label="Sections Extracted" value={data.sections_extracted} />
+          <InfoRow icon={Calendar} label={t('toolArtifact.filingDate')} value={data.filing_date} />
+          <InfoRow icon={Calendar} label={t('toolArtifact.periodEnd')} value={data.period_end} />
+          <InfoRow icon={Building2} label={t('toolArtifact.cik')} value={data.cik} />
+          <InfoRow icon={Layers} label={t('toolArtifact.sectionsExtracted')} value={data.sections_extracted} />
           {data.has_earnings_call && (
-            <InfoRow icon={FileText} label="Earnings Call" value="Included" />
+            <InfoRow icon={FileText} label={t('toolArtifact.earningsCall')} value={t('toolArtifact.included')} />
           )}
           {data.recent_8k_count != null && (
-            <InfoRow icon={Newspaper} label="Recent 8-K Filings" value={`${data.recent_8k_count} (last 90 days)`} />
+            <InfoRow icon={Newspaper} label={t('toolArtifact.recent8KFilings')} value={t('toolArtifact.nLast90Days', { count: data.recent_8k_count })} />
           )}
         </div>
       </div>
@@ -81,7 +83,7 @@ function AnnualQuarterlyView({ data }) {
         <div className="flex flex-col flex-1 min-h-0">
           <div className="flex items-center justify-between mb-2 flex-shrink-0">
             <span className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--color-text-tertiary)' }}>
-              SEC Filing Document
+              {t('toolArtifact.secFilingDocument')}
             </span>
             <a
               href={data.source_url}
@@ -90,7 +92,7 @@ function AnnualQuarterlyView({ data }) {
               className="flex items-center gap-1.5 text-xs transition-colors hover:brightness-125"
               style={{ color: ACCENT, textDecoration: 'none' }}
             >
-              Open on SEC EDGAR
+              {t('toolArtifact.openOnEdgar')}
               <ExternalLink className="h-3 w-3" />
             </a>
           </div>
@@ -105,7 +107,7 @@ function AnnualQuarterlyView({ data }) {
               >
                 <div className="flex items-center gap-2">
                   <div className="h-4 w-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: `${ACCENT} transparent ${ACCENT} ${ACCENT}` }} />
-                  <span className="text-xs" style={{ color: TEXT_COLOR }}>Loading SEC document...</span>
+                  <span className="text-xs" style={{ color: TEXT_COLOR }}>{t('toolArtifact.loadingSecDocument')}</span>
                 </div>
               </div>
             )}
@@ -131,6 +133,7 @@ function AnnualQuarterlyView({ data }) {
  * 8-K filing list viewer with expandable filing cards.
  */
 function EightKListView({ data }) {
+  const { t } = useTranslation();
   const filings = data.filings || [];
 
   return (
@@ -145,11 +148,11 @@ function EightKListView({ data }) {
             {data.symbol}
           </span>
           <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary)' }}>
-            8-K Filings
+            {t('toolArtifact.8kFilings')}
           </span>
         </div>
         <span className="text-xs" style={{ color: TEXT_COLOR }}>
-          {data.filing_count} filing{data.filing_count !== 1 ? 's' : ''} in the last {data.days_range} days
+          {t('toolArtifact.nFilings', { count: data.filing_count, days: data.days_range })}
         </span>
       </div>
 
@@ -175,7 +178,7 @@ function EightKListView({ data }) {
                   className="text-xs px-1.5 py-0.5 rounded"
                   style={{ backgroundColor: 'var(--color-profit-soft)', color: 'var(--color-profit)', fontSize: 10 }}
                 >
-                  Press Release
+                  {t('toolArtifact.pressRelease')}
                 </span>
               )}
             </div>
@@ -187,7 +190,7 @@ function EightKListView({ data }) {
                 className="flex items-center gap-1 text-xs transition-colors hover:brightness-125"
                 style={{ color: ACCENT, textDecoration: 'none' }}
               >
-                View
+                {t('toolArtifact.view')}
                 <ExternalLink className="h-3 w-3" />
               </a>
             )}
@@ -207,7 +210,7 @@ function EightKListView({ data }) {
 
       {filings.length === 0 && (
         <div className="text-sm py-4 text-center" style={{ color: TEXT_COLOR }}>
-          No 8-K filings found in the last {data.days_range} days.
+          {t('toolArtifact.no8KFilings', { days: data.days_range })}
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@ import React from 'react';
 import { Clock, Timer, CheckCircle2 } from 'lucide-react';
 import { cronToHuman } from '../../../Automations/utils/cron';
 import { formatRelativeTime } from '../../../Automations/utils/time';
+import { useTranslation } from 'react-i18next';
 
 // ─── Constants (matching InlineMarketCharts) ─────────────────────────
 
@@ -93,6 +94,7 @@ export function InlineAutomationCard({ artifact, onClick }) {
 const MAX_INLINE = 4;
 
 function InlineAutomationListCard({ artifact, onClick }) {
+  const { t } = useTranslation();
   const { automations = [], total = 0 } = artifact;
   if (automations.length === 0) return null;
 
@@ -108,7 +110,7 @@ function InlineAutomationListCard({ artifact, onClick }) {
     >
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 13 }}>Automations</span>
+        <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: 13 }}>{t('toolArtifact.automations')}</span>
         <span
           style={{
             fontSize: 11,
@@ -149,7 +151,7 @@ function InlineAutomationListCard({ artifact, onClick }) {
       {/* +N more */}
       {remaining > 0 && (
         <div style={{ marginTop: 4, fontSize: 11, color: TEXT_COLOR }}>
-          +{remaining} more
+          {t('toolArtifact.nMoreAutomations', { count: remaining })}
         </div>
       )}
     </div>
@@ -159,6 +161,7 @@ function InlineAutomationListCard({ artifact, onClick }) {
 // ─── Detail Card ─────────────────────────────────────────────────────
 
 function InlineAutomationDetailCard({ artifact, onClick }) {
+  const { t } = useTranslation();
   const { automation, executions = [], total_executions = 0 } = artifact;
   if (!automation) return null;
 
@@ -185,13 +188,13 @@ function InlineAutomationDetailCard({ artifact, onClick }) {
 
       {/* Key-value rows */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 20px', fontSize: 12, color: TEXT_COLOR }}>
-        <QuoteRow label="Schedule" value={scheduleLabel(automation)} />
-        <QuoteRow label="Next Run" value={automation.next_run_at ? formatRelativeTime(automation.next_run_at) : '\u2014'} />
+        <QuoteRow label={t('toolArtifact.schedule')} value={scheduleLabel(automation)} />
+        <QuoteRow label={t('toolArtifact.nextRun')} value={automation.next_run_at ? formatRelativeTime(automation.next_run_at) : '\u2014'} />
         {automation.last_run_at && (
-          <QuoteRow label="Last Run" value={formatRelativeTime(automation.last_run_at)} />
+          <QuoteRow label={t('toolArtifact.lastRun')} value={formatRelativeTime(automation.last_run_at)} />
         )}
         {total_executions > 0 && (
-          <QuoteRow label="Executions" value={`${total_executions} total`} />
+          <QuoteRow label={t('toolArtifact.executions')} value={t('toolArtifact.nTotal', { count: total_executions })} />
         )}
       </div>
     </div>
@@ -201,6 +204,7 @@ function InlineAutomationDetailCard({ artifact, onClick }) {
 // ─── Created Card ────────────────────────────────────────────────────
 
 function InlineAutomationCreatedCard({ artifact, onClick }) {
+  const { t } = useTranslation();
   if (!artifact) return null;
 
   return (
@@ -216,7 +220,7 @@ function InlineAutomationCreatedCard({ artifact, onClick }) {
       {/* Header: checkmark + "Automation Created" */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
         <CheckCircle2 size={14} style={{ color: GREEN }} />
-        <span style={{ fontWeight: 600, color: GREEN, fontSize: 13 }}>Automation Created</span>
+        <span style={{ fontWeight: 600, color: GREEN, fontSize: 13 }}>{t('toolArtifact.automationCreated')}</span>
       </div>
 
       {/* Name */}
@@ -226,9 +230,9 @@ function InlineAutomationCreatedCard({ artifact, onClick }) {
 
       {/* Details */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 20px', fontSize: 12, color: TEXT_COLOR }}>
-        <QuoteRow label="Schedule" value={scheduleLabel(artifact)} />
+        <QuoteRow label={t('toolArtifact.schedule')} value={scheduleLabel(artifact)} />
         {artifact.next_run_at && (
-          <QuoteRow label="Next Run" value={formatRelativeTime(artifact.next_run_at)} />
+          <QuoteRow label={t('toolArtifact.nextRun')} value={formatRelativeTime(artifact.next_run_at)} />
         )}
       </div>
     </div>

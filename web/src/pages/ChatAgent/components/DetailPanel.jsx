@@ -1,4 +1,5 @@
-import { X, FileText, ArrowRight, Zap, Loader2, ExternalLink } from 'lucide-react';
+import { useState } from 'react';
+import { X, FileText, ArrowRight, Zap, Loader2, ExternalLink, ChevronRight } from 'lucide-react';
 import { getDisplayName, getToolIcon, stripLineNumbers, parseTruncatedResult } from './toolDisplayConfig';
 import {
   StockPriceChart,
@@ -9,9 +10,10 @@ import {
 } from './charts/MarketDataCharts';
 import SecFilingViewer from './charts/SecFilingViewer';
 import AutomationDetailPanel from './charts/AutomationDetailPanel';
-import Markdown from './Markdown';
+import Markdown, { CodeBlock } from './Markdown';
 import iconRobo from '../../../assets/img/icon-robo.png';
 import iconRoboSing from '../../../assets/img/icon-robo-sing.png';
+import { useTranslation } from 'react-i18next';
 
 /**
  * DetailPanel Component
@@ -24,6 +26,8 @@ import iconRoboSing from '../../../assets/img/icon-robo-sing.png';
  * @param {Function} onClose - close handler
  */
 function DetailPanel({ toolCallProcess, planData, onClose, onOpenFile, onOpenSubagentTask }) {
+  const { t } = useTranslation();
+
   // Plan detail view
   if (planData) {
     return (
@@ -44,7 +48,7 @@ function DetailPanel({ toolCallProcess, planData, onClose, onOpenFile, onOpenSub
               className="font-semibold truncate"
               style={{ color: 'var(--color-text-primary)', fontSize: 14 }}
             >
-              Plan Details
+              {t('toolArtifact.planDetails')}
             </span>
           </div>
           <button
@@ -59,7 +63,7 @@ function DetailPanel({ toolCallProcess, planData, onClose, onOpenFile, onOpenSub
           className="flex-1 overflow-y-auto px-4 py-4"
           style={{ minHeight: 0 }}
         >
-          <Markdown variant="panel" content={planData.description || 'No plan description.'} className="text-sm" />
+          <Markdown variant="panel" content={planData.description || t('toolArtifact.noPlanDescription')} className="text-sm" />
         </div>
       </div>
     );
@@ -69,7 +73,7 @@ function DetailPanel({ toolCallProcess, planData, onClose, onOpenFile, onOpenSub
 
   const toolName = toolCallProcess.toolName || '';
   const isTaskTool = toolName === 'Task' || toolName === 'task';
-  const displayName = isTaskTool ? 'Subagent Task' : getDisplayName(toolName);
+  const displayName = isTaskTool ? t('toolArtifact.subagentTask') : getDisplayName(toolName, t);
   const IconComponent = getToolIcon(toolName);
   const artifact = toolCallProcess.toolCallResult?.artifact;
   const content = toolCallProcess.toolCallResult?.content;
@@ -172,6 +176,8 @@ function DetailPanel({ toolCallProcess, planData, onClose, onOpenFile, onOpenSub
 }
 
 function TaskToolContent({ description, type, subagentId, subagentResult, subagentStatus, onOpenSubagentTask }) {
+  const { t } = useTranslation();
+
   const handleGoToSubagent = () => {
     if (onOpenSubagentTask && subagentId) {
       onOpenSubagentTask({
@@ -194,7 +200,7 @@ function TaskToolContent({ description, type, subagentId, subagentResult, subage
             className="text-xs font-medium uppercase tracking-wider mb-2 px-1"
             style={{ color: 'var(--color-text-tertiary)' }}
           >
-            Instructions
+            {t('toolArtifact.instructions')}
           </div>
           <div
             className="rounded-lg px-3 py-3"
@@ -211,7 +217,7 @@ function TaskToolContent({ description, type, subagentId, subagentResult, subage
           className="text-xs font-medium uppercase tracking-wider mb-2 px-1"
           style={{ color: 'var(--color-text-tertiary)' }}
         >
-          Result
+          {t('toolArtifact.result')}
         </div>
         {subagentResult ? (
           <div
@@ -227,7 +233,7 @@ function TaskToolContent({ description, type, subagentId, subagentResult, subage
           >
             <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />
             <span className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
-              Subagent is still running...
+              {t('toolArtifact.subagentStillRunning')}
             </span>
           </div>
         ) : (
@@ -235,7 +241,7 @@ function TaskToolContent({ description, type, subagentId, subagentResult, subage
             className="px-3 py-3 rounded-lg text-sm"
             style={{ backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border-muted)', color: 'var(--color-text-tertiary)' }}
           >
-            No result available
+            {t('toolArtifact.noResultAvailable')}
           </div>
         )}
       </div>
@@ -253,7 +259,7 @@ function TaskToolContent({ description, type, subagentId, subagentResult, subage
           <img src={isRunning ? iconRoboSing : iconRobo} alt="Subagent" className="w-5 h-5 flex-shrink-0" />
           <div className="flex flex-col gap-0.5 min-w-0 flex-1 text-left">
             <span className="text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
-              Go to subagent tab
+              {t('toolArtifact.goToSubagentTab')}
             </span>
             {description && (
               <span className="text-xs truncate" style={{ color: 'var(--color-text-tertiary)' }}>
@@ -268,7 +274,91 @@ function TaskToolContent({ description, type, subagentId, subagentResult, subage
   );
 }
 
+function formatToolInput(toolName, args) {
+  if (!args) return null;
+  if (toolName === 'ExecuteCode') {
+    return args.code ? { code: args.code, language: args.language || 'python' } : null;
+  }
+  if (toolName === 'Bash') {
+    return args.command ? { code: args.command, language: 'bash' } : null;
+  }
+  if (toolName === 'Grep') {
+    const parts = ['grep'];
+    if (args.pattern) parts.push(`"${args.pattern}"`);
+    if (args.path) parts.push(args.path);
+    if (args.glob) parts.push(`--glob="${args.glob}"`);
+    if (args.type) parts.push(`--type=${args.type}`);
+    if (args.output_mode) parts.push(`--output=${args.output_mode}`);
+    if (args.context) parts.push(`-C ${args.context}`);
+    if (args['-A']) parts.push(`-A ${args['-A']}`);
+    if (args['-B']) parts.push(`-B ${args['-B']}`);
+    if (args['-C']) parts.push(`-C ${args['-C']}`);
+    if (args['-i']) parts.push('-i');
+    if (args.head_limit) parts.push(`--head=${args.head_limit}`);
+    return parts.length > 1 ? { code: parts.join(' '), language: 'bash' } : null;
+  }
+  if (toolName === 'Glob') {
+    const parts = ['glob'];
+    if (args.pattern) parts.push(`"${args.pattern}"`);
+    if (args.path) parts.push(args.path);
+    return parts.length > 1 ? { code: parts.join(' '), language: 'bash' } : null;
+  }
+  return null;
+}
+
+function CodeToolDisplay({ toolName, toolCallProcess, rawContent }) {
+  const { t } = useTranslation();
+  const [inputExpanded, setInputExpanded] = useState(false);
+  const input = formatToolInput(toolName, toolCallProcess.toolCall?.args);
+
+  let displayContent = rawContent || t('toolArtifact.noResultContent');
+  if (toolName === 'ExecuteCode') displayContent = displayContent.replace(/^SUCCESS\n?/, '');
+
+  return (
+    <div className="space-y-4">
+      {/* Input section */}
+      {input && (
+        <div>
+          <button
+            onClick={() => setInputExpanded(!inputExpanded)}
+            className="flex items-center gap-1.5 mb-2 px-1 group"
+          >
+            <ChevronRight
+              className="h-3 w-3 flex-shrink-0 transition-transform duration-200"
+              style={{
+                color: 'var(--color-text-tertiary)',
+                transform: inputExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              }}
+            />
+            <span
+              className="text-xs font-medium uppercase tracking-wider"
+              style={{ color: 'var(--color-text-tertiary)' }}
+            >
+              {t('toolArtifact.input')}
+            </span>
+          </button>
+          {inputExpanded && (
+            <CodeBlock language={input.language} code={input.code} />
+          )}
+        </div>
+      )}
+
+      {/* Output section */}
+      <div>
+        <div
+          className="text-xs font-medium uppercase tracking-wider mb-2 px-1"
+          style={{ color: 'var(--color-text-tertiary)' }}
+        >
+          {t('toolArtifact.output')}
+        </div>
+        <Markdown variant="panel" content={`\`\`\`\n${displayContent}\n\`\`\``} className="text-sm" />
+      </div>
+    </div>
+  );
+}
+
 function ArtifactOrMarkdown({ artifact, content, toolName, toolCallProcess, onOpenFile }) {
+  const { t } = useTranslation();
   // Route by artifact type first (takes priority over truncation display)
   if (artifact?.type) {
     switch (artifact.type) {
@@ -304,26 +394,30 @@ function ArtifactOrMarkdown({ artifact, content, toolName, toolCallProcess, onOp
 
   // WebSearch: bubble card display
   if (toolName === 'WebSearch' || toolName === 'web_search') {
-    const parsed = parseWebSearchResults(toolCallProcess);
+    const parsed = parseWebSearchResults(toolCallProcess, t);
     if (parsed) {
       return <WebSearchCards data={parsed} />;
     }
   }
 
-  // ExecuteCode / Bash: wrap output in code block for readability
+  // ExecuteCode / Bash / Glob / Grep: input + output display
   if (toolName === 'ExecuteCode' || toolName === 'Bash' || toolName === 'Glob' || toolName === 'Grep') {
-    let displayContent = rawContent || 'No result content';
-    if (toolName === 'ExecuteCode') displayContent = displayContent.replace(/^SUCCESS\n?/, '');
-    return <Markdown variant="panel" content={`\`\`\`code\n${displayContent}\n\`\`\``} className="text-sm" />;
+    return (
+      <CodeToolDisplay
+        toolName={toolName}
+        toolCallProcess={toolCallProcess}
+        rawContent={rawContent}
+      />
+    );
   }
 
   // Fallback: render content as markdown (strip line numbers from Read/SEC filing results)
-  const displayContent = stripLineNumbers(rawContent || 'No result content');
+  const displayContent = stripLineNumbers(rawContent || t('toolArtifact.noResultContent'));
 
   return <Markdown variant="panel" content={displayContent} className="text-sm" />;
 }
 
-function parseWebSearchResults(proc) {
+function parseWebSearchResults(proc, t) {
   const raw = proc.toolCallResult?.content;
   if (!raw) return null;
 
@@ -342,7 +436,7 @@ function parseWebSearchResults(proc) {
     answer: artifact?.answer || artifact?.answer_box?.answer || artifact?.answer_box?.snippet || artifact?.knowledge_graph?.description || null,
     query: artifact?.query || proc.toolCall?.args?.query || '',
     results: results.map((item, i) => ({
-      title: item.title || 'Untitled',
+      title: item.title || t('toolArtifact.untitled'),
       url: item.url || '',
       snippet: richResults?.[i]?.snippet || item.content || '',
       date: item.date || '',
@@ -354,6 +448,7 @@ function parseWebSearchResults(proc) {
 }
 
 function WebSearchCards({ data }) {
+  const { t } = useTranslation();
   const { answer, query, results } = data;
 
   return (
@@ -379,7 +474,7 @@ function WebSearchCards({ data }) {
           className="text-xs font-medium uppercase tracking-wider px-1"
           style={{ color: 'var(--color-text-tertiary)' }}
         >
-          {results.length} result{results.length !== 1 ? 's' : ''} for &ldquo;{query}&rdquo;
+          {t('toolArtifact.nSearchResults', { count: results.length, query })}
         </div>
       )}
 
@@ -460,6 +555,7 @@ function WebSearchCards({ data }) {
 }
 
 function TruncatedResultMessage({ filePath, preview, onOpenFile }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-4">
       {/* Info card */}
@@ -474,10 +570,10 @@ function TruncatedResultMessage({ filePath, preview, onOpenFile }) {
           <FileText className="h-5 w-5 flex-shrink-0 mt-0.5" style={{ color: 'var(--color-accent-primary)' }} />
           <div className="space-y-2 min-w-0">
             <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-              Result too large to display inline
+              {t('toolArtifact.resultTooLarge')}
             </p>
             <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-              The full result has been saved to the workspace filesystem.
+              {t('toolArtifact.resultSavedToFilesystem')}
             </p>
             {filePath && onOpenFile && (
               <button
@@ -489,7 +585,7 @@ function TruncatedResultMessage({ filePath, preview, onOpenFile }) {
                 }}
               >
                 <FileText className="h-3.5 w-3.5" />
-                Open full result
+                {t('toolArtifact.openFullResult')}
               </button>
             )}
             {filePath && (
@@ -505,7 +601,7 @@ function TruncatedResultMessage({ filePath, preview, onOpenFile }) {
       {preview && (
         <div className="space-y-2">
           <p className="text-xs font-medium" style={{ color: 'var(--color-text-tertiary)' }}>
-            Preview
+            {t('toolArtifact.preview')}
           </p>
           <Markdown variant="panel" content={stripLineNumbers(preview)} className="text-sm" />
         </div>
