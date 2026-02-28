@@ -3,16 +3,7 @@
  * Handles events from the SSE stream during active message sending
  */
 
-/**
- * Normalize old action values to new ones for backward compatibility.
- * Old persisted events may use 'spawned', 'message_queued', 'resumed'.
- */
-function normalizeAction(raw) {
-  if (raw === 'spawned') return 'init';
-  if (raw === 'message_queued') return 'update';
-  if (raw === 'resumed') return 'resume';
-  return raw || 'init';
-}
+import { normalizeAction } from './eventUtils';
 
 /**
  * Extracts the last markdown bold title (**...**) from reasoning content for the icon label.
@@ -58,15 +49,14 @@ export function getOrCreateTaskRefs(refs, taskId) {
  * @param {Function} params.setMessages - State setter for messages
  * @returns {boolean} True if event was handled
  */
-export function handleReasoningSignal({ assistantMessageId, signalContent, refs, setMessages }) {
+export function handleReasoningSignal({ assistantMessageId, signalContent, refs, setMessages, eventId }) {
   const { contentOrderCounterRef, currentReasoningIdRef } = refs;
 
   if (signalContent === 'start') {
     // Reasoning process has started - create new reasoning process
     const reasoningId = `reasoning-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     currentReasoningIdRef.current = reasoningId;
-    contentOrderCounterRef.current++;
-    const currentOrder = contentOrderCounterRef.current;
+    const currentOrder = eventId != null ? eventId : ++contentOrderCounterRef.current;
 
     setMessages((prev) =>
       prev.map((msg) => {
@@ -114,7 +104,7 @@ export function handleReasoningSignal({ assistantMessageId, signalContent, refs,
               isReasoning: false,
               reasoningComplete: true,
               reasoningTitle: null,
-              _completedAt: refs.isReconnect ? 0 : Date.now(),
+              _completedAt: refs.isReconnect ? 1 : Date.now(),
             };
           }
 
@@ -182,7 +172,7 @@ export function handleReasoningContent({ assistantMessageId, content, refs, setM
  * @param {Function} params.setMessages - State setter for messages
  * @returns {boolean} True if event was handled
  */
-export function handleTextContent({ assistantMessageId, content, finishReason, refs, setMessages }) {
+export function handleTextContent({ assistantMessageId, content, finishReason, refs, setMessages, eventId }) {
   const { contentOrderCounterRef } = refs;
 
   // Handle finish_reason
@@ -206,8 +196,7 @@ export function handleTextContent({ assistantMessageId, content, finishReason, r
 
   // Process text content chunks
   if (content) {
-    contentOrderCounterRef.current++;
-    const currentOrder = contentOrderCounterRef.current;
+    const currentOrder = eventId != null ? eventId : ++contentOrderCounterRef.current;
 
     setMessages((prev) =>
       prev.map((msg) => {
@@ -258,7 +247,7 @@ export function handleTextContent({ assistantMessageId, content, finishReason, r
  * @param {Function} params.setMessages - State setter for messages
  * @returns {boolean} True if event was handled
  */
-export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, refs, setMessages }) {
+export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, refs, setMessages, eventId }) {
   const { contentOrderCounterRef } = refs;
 
   if (!toolCalls || !Array.isArray(toolCalls)) {
@@ -268,7 +257,7 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
   // Track creation times outside React state so handleToolCallResult can read them synchronously
   if (!refs._toolCreatedAt) refs._toolCreatedAt = {};
 
-  toolCalls.forEach((toolCall) => {
+  toolCalls.forEach((toolCall, toolIndex) => {
     const toolCallId = toolCall.id;
 
     if (toolCallId) {
@@ -285,8 +274,9 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
           let currentOrder;
 
           if (!toolCallProcesses[toolCallId]) {
-            contentOrderCounterRef.current++;
-            currentOrder = contentOrderCounterRef.current;
+            currentOrder = eventId != null
+              ? eventId + toolIndex * 0.01
+              : ++contentOrderCounterRef.current;
 
             contentSegments.push({
               type: 'tool_call',
@@ -300,7 +290,7 @@ export function handleToolCalls({ assistantMessageId, toolCalls, finishReason, r
               toolCallResult: null,
               isInProgress: true,
               isComplete: false,
-              _createdAt: refs.isReconnect ? 0 : Date.now(),
+              _createdAt: refs.isReconnect ? 1 : Date.now(),
               order: currentOrder,
             };
           } else {
@@ -463,7 +453,7 @@ export function handleToolCallResult({ assistantMessageId, toolCallId, result, r
  * @param {Function} params.setMessages - State setter for messages
  * @returns {boolean} True if event was handled
  */
-export function handleTodoUpdate({ assistantMessageId, artifactType, artifactId, payload, refs, setMessages }) {
+export function handleTodoUpdate({ assistantMessageId, artifactType, artifactId, payload, refs, setMessages, eventId }) {
   const { contentOrderCounterRef, updateTodoListCard, isNewConversation } = refs;
 
   if (process.env.NODE_ENV === 'development') {
@@ -526,9 +516,7 @@ export function handleTodoUpdate({ assistantMessageId, artifactType, artifactId,
       const contentSegments = [...(msg.contentSegments || [])];
 
       // Always create a new segment for each todo_update event to preserve chronological order
-      // Increment order counter to get the current position in the stream
-      contentOrderCounterRef.current++;
-      const currentOrder = contentOrderCounterRef.current;
+      const currentOrder = eventId != null ? eventId : ++contentOrderCounterRef.current;
       if (process.env.NODE_ENV === 'development') {
         console.log('[handleTodoUpdate] Creating new todo list segment with order:', currentOrder, 'segmentId:', segmentId);
       }
@@ -743,7 +731,7 @@ export function handleSubagentMessageChunk({
               isReasoning: false,
               reasoningComplete: true,
               reasoningTitle: null,
-              _completedAt: refs.isReconnect ? 0 : Date.now(),
+              _completedAt: refs.isReconnect ? 1 : Date.now(),
             };
           }
           msg.reasoningProcesses = reasoningProcesses;

@@ -83,7 +83,7 @@ function isOnboardingRelatedToolSuccess(resultContent) {
  * @param {Function} callbacks.setMessages - React state setter for messages
  * @param {Function} callbacks.setTokenUsage - React state setter for token usage
  * @param {Function|null} callbacks.setIsCompacting - React state setter (null for history)
- * @param {Function} callbacks.insertNotification - Inserts standalone notification message
+ * @param {Function} callbacks.insertNotification - Fallback: inserts standalone notification message
  * @param {Function} callbacks.t - i18n translation function
  * @param {React.MutableRefObject} callbacks.offloadBatch - Mutable ref for batching offload events
  */
@@ -171,7 +171,7 @@ function handleContextWindowEvent(event, { getMsgId, nextOrder, setMessages, set
         }
 
         // Reset batch
-        batch.current = { args: 0, reads: 0, timer: null };
+        batch.current = { args: 0, reads: 0, timer: null, msgId: undefined };
       }, 100);
     }
     return;
@@ -369,6 +369,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             getMsgId: () => currentActivePairIndex !== null
               ? assistantMessagesByPair.get(currentActivePairIndex) : null,
             nextOrder: () => {
+              const eventId = event._eventId;
+              if (eventId != null) return eventId;
               if (currentActivePairState) {
                 currentActivePairState.contentOrderCounter++;
                 return currentActivePairState.contentOrderCounter;
@@ -510,6 +512,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               pairIndex,
               pairState,
               setMessages,
+              eventId: event._eventId,
             });
             return;
           }
@@ -533,6 +536,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               finishReason: event.finish_reason,
               pairState,
               setMessages,
+              eventId: event._eventId,
             });
             return;
           }
@@ -596,6 +600,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 payload,
                 pairState: pairState,
                 setMessages,
+                eventId: event._eventId,
               });
             } else {
               // Fallback: artifacts without turn_index (shouldn't happen in history, but handle gracefully)
@@ -621,6 +626,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                   payload,
                   pairState: targetPairState,
                   setMessages,
+                  eventId: event._eventId,
                 });
               }
             }
@@ -718,6 +724,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             toolCalls: event.tool_calls,
             pairState,
             setMessages,
+            eventId: event._eventId,
           });
           return;
         }
@@ -1403,9 +1410,31 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         }))
       );
 
-      // Now open per-task SSE streams for active subagents. The buffered replay above
-      // has already created cards with descriptions; per-task endpoints replay from
-      // their own Redis buffer so no events are lost.
+      // Pre-seed subagent cards from history for tasks whose artifact events were
+      // cleared from the Redis buffer after the spawning turn persisted to DB.
+      // This mirrors the Scenario B pre-seed at lines 1611-1626.
+      if (activeTasks.length > 0 && updateSubagentCard && subagentHistoryRef.current) {
+        for (const taskId of activeTasks) {
+          const agentId = `task:${taskId}`;
+          const historyData = subagentHistoryRef.current[agentId];
+          if (historyData) {
+            updateSubagentCard(agentId, {
+              agentId,
+              displayId: `Task-${taskId}`,
+              taskId: agentId,
+              description: historyData.description || '',
+              prompt: historyData.prompt || historyData.description || '',
+              type: historyData.type || 'general-purpose',
+              status: 'active',
+              isActive: true,
+              isReconnect: true,
+            });
+          }
+        }
+      }
+
+      // Now open per-task SSE streams for active subagents. Per-task endpoints
+      // replay from their own Redis buffer so no events are lost.
       if (activeTasks.length > 0) {
         console.log('[Reconnect] Opening per-task streams for active tasks:', activeTasks);
         for (const taskId of activeTasks) {
@@ -1927,12 +1956,30 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         );
         queuedAtOrder = null;
 
-        // 2. Mark queued user messages as delivered
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.queued ? { ...msg, queued: false, queueDelivered: true } : msg
-          )
-        );
+        // 2. Mark queued user messages as delivered, OR create them from event
+        //    data if none exist (reconnect scenario — in-memory state was lost).
+        setMessages((prev) => {
+          const hasQueuedMessages = prev.some((msg) => msg.queued);
+          if (hasQueuedMessages) {
+            // Live path: mark existing queued messages as delivered
+            return prev.map((msg) =>
+              msg.queued ? { ...msg, queued: false, queueDelivered: true } : msg
+            );
+          }
+          // Reconnect path: create user bubbles from event payload
+          const queuedMsgs = (event.messages || []).filter((qMsg) => qMsg.content);
+          if (queuedMsgs.length === 0) return prev;
+          const newUserMessages = queuedMsgs.map((qMsg) => ({
+            id: `queued-user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            role: 'user',
+            content: qMsg.content,
+            contentType: 'text',
+            timestamp: qMsg.timestamp ? new Date(qMsg.timestamp * 1000) : new Date(),
+            isStreaming: false,
+            queueDelivered: true,
+          }));
+          return [...prev, ...newUserMessages];
+        });
 
         // 3. Create new assistant message placeholder
         const newAssistantId = `assistant-${Date.now()}`;
@@ -1952,9 +1999,40 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
       // Handle unified context_window events (token_usage, summarize, offload)
       if (eventType === 'context_window') {
+        if (isSubagent) {
+          // For subagent context_window events, add notification to subagent messages
+          const taskId = getTaskIdFromEvent(event);
+          if (taskId && event.action !== 'token_usage') {
+            const action = event.action;
+            let text;
+            if (action === 'summarize' && event.signal === 'complete') {
+              text = t('chat.summarizedNotification', { from: event.original_message_count });
+            } else if (action === 'offload' && event.signal === 'complete') {
+              const args = event.offloaded_args || 0;
+              const reads = event.offloaded_reads || 0;
+              if (args > 0 && reads > 0) text = t('chat.offloadedNotification', { args, reads });
+              else if (reads > 0) text = t('chat.offloadedReadsNotification', { count: reads });
+              else if (args > 0) text = t('chat.offloadedArgsNotification', { count: args });
+            }
+            if (text && updateSubagentCard) {
+              const taskRefs = getOrCreateTaskRefs(refs, taskId);
+              const updatedMessages = [...taskRefs.messages, {
+                id: `notification-${taskId}-${Date.now()}`,
+                role: 'notification',
+                content: text,
+              }];
+              taskRefs.messages = updatedMessages;
+              updateSubagentCard(taskId, { messages: updatedMessages });
+            }
+          }
+          return;
+        }
         handleContextWindowEvent(event, {
           getMsgId: () => currentMessageRef.current,
-          nextOrder: () => refs.contentOrderCounterRef.current++,
+          nextOrder: () => {
+            const eventId = event._eventId;
+            return eventId != null ? eventId : ++refs.contentOrderCounterRef.current;
+          },
           setMessages,
           setTokenUsage,
           setIsCompacting,
@@ -2060,6 +2138,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
 
       if (eventType === 'message_chunk') {
         const contentType = event.content_type || 'text';
+        const eventId = event._eventId;
 
         // Handle reasoning_signal events
         if (contentType === 'reasoning_signal') {
@@ -2069,6 +2148,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             signalContent,
             refs,
             setMessages,
+            eventId,
           })) {
             return;
           }
@@ -2094,6 +2174,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             finishReason: event.finish_reason,
             refs,
             setMessages,
+            eventId,
           })) {
             return;
           }
@@ -2132,6 +2213,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             payload: event.payload || {},
             refs,
             setMessages,
+            eventId: event._eventId,
           });
           console.log('[Stream] handleTodoUpdate result:', result);
         } else if (artifactType === 'file_operation' && onFileArtifact) {
@@ -2252,6 +2334,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           finishReason: event.finish_reason,
           refs,
           setMessages,
+          eventId: event._eventId,
         });
         // Queue new Task tool call IDs for matching with upcoming artifact 'spawned' events
         if (event.tool_calls) {

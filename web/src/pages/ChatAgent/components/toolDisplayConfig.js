@@ -14,8 +14,6 @@ export const TOOL_DISPLAY_CONFIG = {
   // SEC
   get_sec_filing:           { displayName: 'SEC Filing',           icon: FileBarChart },
   // Web search / news
-  WebSearch:                { displayName: 'Web Search',           icon: Search },
-  WebFetch:                 { displayName: 'Web Fetch',            icon: Newspaper },
   get_entity_news:          { displayName: 'Entity News',          icon: Newspaper },
   search_tickers:           { displayName: 'Ticker Search',        icon: Search },
   // Fundamentals (MCP)
@@ -35,7 +33,7 @@ export const TOOL_DISPLAY_CONFIG = {
   Glob:                     { displayName: 'Glob',                 icon: FolderSearch },
   Grep:                     { displayName: 'Grep',                 icon: Search },
   WebSearch:                { displayName: 'Web Search',           icon: Globe },
-  WebFetch:                 { displayName: 'Web Fetch',            icon: Globe },
+  WebFetch:                 { displayName: 'Web Fetch',            icon: Newspaper },
   Write:                    { displayName: 'Write',                icon: FilePlus },
   Read:                     { displayName: 'Read',                 icon: FileText },
   Edit:                     { displayName: 'Edit',                 icon: FilePen },
@@ -133,6 +131,14 @@ export function getCompletedSummary(toolName, toolCall) {
   if (args.description) return args.description;
   if (args.symbol) return args.symbol;
   if (args.query) return args.query;
+  if (args.url) {
+    try {
+      const u = new URL(args.url);
+      return u.hostname + (u.pathname !== '/' ? u.pathname : '');
+    } catch {
+      return args.url;
+    }
+  }
   if (args.file_path || args.filePath) {
     const fp = args.file_path || args.filePath;
     return fp.split('/').pop() || null;

@@ -259,13 +259,13 @@ function IndentGuides({ depth }) {
 /** Recursive directory node renderer for the file tree */
 function DirectoryNode({
   node, depth, showHeader,
-  collapsedDirs, toggleDir,
+  expandedDirs, toggleDir,
   selectMode, selectedPaths, toggleSelect, toggleDirSelect,
   handleFileClick, readOnly, backedUpSet, modifiedSet,
   onAddContext, setContextMenu,
 }) {
   const isRoot = node.name === '/';
-  const isCollapsed = collapsedDirs.has(node.fullPath);
+  const isCollapsed = !expandedDirs.has(node.fullPath);
   const allFiles = collectTreeFiles(node);
   const totalCount = allFiles.length;
   const indent = (depth + 1) * 16 + 8; // base 8px + 16px per depth level
@@ -305,7 +305,7 @@ function DirectoryNode({
               node={child}
               depth={showHeader ? depth + 1 : depth}
               showHeader={true}
-              collapsedDirs={collapsedDirs}
+              expandedDirs={expandedDirs}
               toggleDir={toggleDir}
               selectMode={selectMode}
               selectedPaths={selectedPaths}
@@ -746,29 +746,23 @@ function FilePanel({
     return sortFiles(result, sortBy);
   }, [files, filterType, sortBy, targetDirectory]);
 
-  // Directory collapse state
-  const [collapsedDirs, setCollapsedDirs] = useState(new Set());
+  // Directory expand state — persisted per workspace in localStorage
+  const storageKey = `filePanel.expandedDirs.${workspaceId}`;
+  const [expandedDirs, setExpandedDirs] = useState(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch { return new Set(); }
+  });
   const fileTree = useMemo(() => buildFileTree(filteredSortedFiles), [filteredSortedFiles]);
 
-  // Auto-collapse system directories when they appear in the tree
+  // Persist expand state to localStorage
   useEffect(() => {
-    if (!showSystemFiles) return;
-    const sysDirs = fileTree
-      .filter((node) => SYSTEM_DIR_PREFIXES.includes(node.name))
-      .map((node) => node.fullPath);
-    if (sysDirs.length === 0) return;
-    setCollapsedDirs((prev) => {
-      const next = new Set(prev);
-      let changed = false;
-      for (const d of sysDirs) {
-        if (!next.has(d)) { next.add(d); changed = true; }
-      }
-      return changed ? next : prev;
-    });
-  }, [fileTree, showSystemFiles]);
+    localStorage.setItem(storageKey, JSON.stringify([...expandedDirs]));
+  }, [expandedDirs, storageKey]);
 
   const toggleDir = useCallback((dir) => {
-    setCollapsedDirs((prev) => {
+    setExpandedDirs((prev) => {
       const next = new Set(prev);
       if (next.has(dir)) next.delete(dir);
       else next.add(dir);
@@ -1716,8 +1710,8 @@ function FilePanel({
                     key={node.fullPath}
                     node={node}
                     depth={0}
-                    showHeader={node.name !== '/' || fileTree.length > 1}
-                    collapsedDirs={collapsedDirs}
+                    showHeader={node.name !== '/'}
+                    expandedDirs={expandedDirs}
                     toggleDir={toggleDir}
                     selectMode={selectMode}
                     selectedPaths={selectedPaths}

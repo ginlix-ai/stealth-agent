@@ -3,16 +3,7 @@
  * Handles events from history replay (SSE stream of past conversations)
  */
 
-/**
- * Normalize old action values to new ones for backward compatibility.
- * Old persisted events may use 'spawned', 'message_queued', 'resumed'.
- */
-function normalizeAction(raw) {
-  if (raw === 'spawned') return 'init';
-  if (raw === 'message_queued') return 'update';
-  if (raw === 'resumed') return 'resume';
-  return raw || 'init';
-}
+import { normalizeAction } from './eventUtils';
 
 /**
  * Helper to check if an event is from a subagent.
@@ -174,12 +165,11 @@ export function handleHistoryUserMessage({
  * @param {Function} params.setMessages - State setter for messages
  * @returns {boolean} True if event was handled
  */
-export function handleHistoryReasoningSignal({ assistantMessageId, signalContent, pairIndex, pairState, setMessages }) {
+export function handleHistoryReasoningSignal({ assistantMessageId, signalContent, pairIndex, pairState, setMessages, eventId }) {
   if (signalContent === 'start') {
     const reasoningId = `history-reasoning-${pairIndex}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     pairState.reasoningId = reasoningId;
-    pairState.contentOrderCounter++;
-    const currentOrder = pairState.contentOrderCounter;
+    const currentOrder = eventId != null ? eventId : ++pairState.contentOrderCounter;
 
     setMessages((prev) =>
       prev.map((msg) => {
@@ -201,7 +191,7 @@ export function handleHistoryReasoningSignal({ assistantMessageId, signalContent
             isReasoning: false, // History: already complete
             reasoningComplete: true,
             order: currentOrder,
-            _completedAt: 0,
+            _completedAt: 1,
           },
         };
 
@@ -226,7 +216,7 @@ export function handleHistoryReasoningSignal({ assistantMessageId, signalContent
               ...reasoningProcesses[reasoningId],
               isReasoning: false,
               reasoningComplete: true,
-              _completedAt: 0,
+              _completedAt: 1,
             };
           }
 
@@ -266,7 +256,7 @@ export function handleHistoryReasoningContent({ assistantMessageId, content, pai
             content: (reasoningProcesses[reasoningId].content || '') + content,
             isReasoning: false,
             reasoningComplete: true,
-            _completedAt: 0,
+            _completedAt: 1,
           };
         }
 
@@ -291,10 +281,9 @@ export function handleHistoryReasoningContent({ assistantMessageId, content, pai
  * @param {Function} params.setMessages - State setter for messages
  * @returns {boolean} True if event was handled
  */
-export function handleHistoryTextContent({ assistantMessageId, content, finishReason, pairState, setMessages }) {
+export function handleHistoryTextContent({ assistantMessageId, content, finishReason, pairState, setMessages, eventId }) {
   if (content) {
-    pairState.contentOrderCounter++;
-    const currentOrder = pairState.contentOrderCounter;
+    const currentOrder = eventId != null ? eventId : ++pairState.contentOrderCounter;
 
     setMessages((prev) =>
       prev.map((msg) => {
@@ -342,17 +331,16 @@ export function handleHistoryTextContent({ assistantMessageId, content, finishRe
  * @param {Function} params.setMessages - State setter for messages
  * @returns {boolean} True if event was handled
  */
-export function handleHistoryToolCalls({ assistantMessageId, toolCalls, pairState, setMessages }) {
+export function handleHistoryToolCalls({ assistantMessageId, toolCalls, pairState, setMessages, eventId }) {
   if (!toolCalls || !Array.isArray(toolCalls)) {
     return false;
   }
 
-  toolCalls.forEach((toolCall) => {
+  toolCalls.forEach((toolCall, toolIndex) => {
     const toolCallId = toolCall.id;
 
     if (toolCallId) {
-      pairState.contentOrderCounter++;
-      const currentOrder = pairState.contentOrderCounter;
+      const currentOrder = eventId != null ? eventId + toolIndex * 0.01 : ++pairState.contentOrderCounter;
 
       setMessages((prev) =>
         prev.map((msg) => {
@@ -609,7 +597,7 @@ export function handleHistoryQueuedMessageInjected({
  * @param {Function} params.setMessages - State setter for messages
  * @returns {boolean} True if event was handled
  */
-export function handleHistoryTodoUpdate({ assistantMessageId, artifactType, artifactId, payload, pairState, setMessages }) {
+export function handleHistoryTodoUpdate({ assistantMessageId, artifactType, artifactId, payload, pairState, setMessages, eventId }) {
   // Only handle todo_update artifacts
   if (artifactType !== 'todo_update' || !payload) {
     return false;
@@ -630,11 +618,8 @@ export function handleHistoryTodoUpdate({ assistantMessageId, artifactType, arti
     currentCounter: pairState.contentOrderCounter,
   });
 
-  // Capture the order BEFORE incrementing to ensure correct chronological position
-  // This is critical because setMessages is asynchronous, and if we increment before,
-  // other events might increment the counter further before the state updater runs
-  const currentOrder = pairState.contentOrderCounter + 1;
-  pairState.contentOrderCounter = currentOrder; // Update the counter for next events
+  // Use backend event ID when available for consistent ordering across live/reconnect/replay
+  const currentOrder = eventId != null ? eventId : ++pairState.contentOrderCounter;
   
   console.log('[handleHistoryTodoUpdate] Creating segment with order:', currentOrder, 'for message:', assistantMessageId);
 
