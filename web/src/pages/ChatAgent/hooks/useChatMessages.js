@@ -2493,7 +2493,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           // --- User question interrupt ---
           const questionId = event.interrupt_id || `question-${Date.now()}`;
           const questionData = event.action_requests[0];
-          const order = refs.contentOrderCounterRef.current++;
+          const order = event._eventId != null ? event._eventId : ++refs.contentOrderCounterRef.current;
 
           setMessages((prev) =>
             updateMessage(prev, assistantMessageId, (msg) => ({
@@ -2528,7 +2528,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           // --- Create workspace interrupt ---
           const proposalId = event.interrupt_id || `workspace-${Date.now()}`;
           const proposalData = event.action_requests[0];
-          const order = refs.contentOrderCounterRef.current++;
+          const order = event._eventId != null ? event._eventId : ++refs.contentOrderCounterRef.current;
 
           setMessages((prev) =>
             updateMessage(prev, assistantMessageId, (msg) => ({
@@ -2561,7 +2561,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           // --- Start question interrupt ---
           const proposalId = event.interrupt_id || `question-start-${Date.now()}`;
           const proposalData = event.action_requests[0];
-          const order = refs.contentOrderCounterRef.current++;
+          const order = event._eventId != null ? event._eventId : ++refs.contentOrderCounterRef.current;
 
           setMessages((prev) =>
             updateMessage(prev, assistantMessageId, (msg) => ({
@@ -2598,7 +2598,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             event.action_requests?.[0]?.args?.plan ||
             'No plan description provided.';
 
-          const order = refs.contentOrderCounterRef.current++;
+          const order = event._eventId != null ? event._eventId : ++refs.contentOrderCounterRef.current;
 
           setMessages((prev) =>
             updateMessage(prev, assistantMessageId, (msg) => ({

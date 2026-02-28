@@ -403,11 +403,11 @@ function ToolCallLiveRow({ tc, liveState }) {
         </TextShimmer>
       ) : (
         <>
-          <span className="font-medium">{displayName}</span>
+          <span className="font-medium flex-shrink-0 whitespace-nowrap">{displayName}</span>
           {(() => {
             const summary = getCompletedSummary(toolName, tc.toolCall);
             return summary
-              ? <span className="truncate" style={{ opacity: 0.55 }}>— {summary}</span>
+              ? <span className="truncate min-w-0" style={{ opacity: 0.55 }}>— {summary}</span>
               : <span style={{ opacity: 0.55 }}>done</span>;
           })()}
         </>
@@ -510,11 +510,11 @@ function ToolCallRow({ item, onClick }) {
       style={{ fontSize: '13px', color: 'var(--Labels-Tertiary)' }}
     >
       <IconComponent className="h-3.5 w-3.5 flex-shrink-0" style={{ opacity: 0.7 }} />
-      <span className="font-medium" style={{ color: 'var(--Labels-Secondary)' }}>
+      <span className="font-medium flex-shrink-0 whitespace-nowrap" style={{ color: 'var(--Labels-Secondary)' }}>
         {displayName}
       </span>
       {summary && (
-        <span className="truncate" style={{ opacity: 0.6 }}>
+        <span className="truncate min-w-0" style={{ opacity: 0.6 }}>
           — {summary}
         </span>
       )}

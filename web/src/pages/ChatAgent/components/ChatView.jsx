@@ -383,7 +383,7 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
     // Skill contexts from slash commands
     for (const cmd of slashCommands) {
       if (cmd.type === 'skill') {
-        contexts.push({ type: 'skills', name: cmd.name });
+        contexts.push({ type: 'skills', name: cmd.skillName });
       } else if (cmd.type === 'subagent') {
         contexts.push({ type: 'directive', content: 'User wishes you to complete this task using subagents.' });
       }
@@ -667,13 +667,9 @@ function ChatView({ workspaceId, threadId, onBack, workspaceName: initialWorkspa
       const areaRect = area?.getBoundingClientRect();
       if (!areaRect) return;
 
-      // The actual scroll container is the inner div of ScrollArea (overflow: auto)
-      const scrollContainer = area.querySelector('[class*="overflow-auto"]') || area;
-      const scrollTop = scrollContainer.scrollTop || 0;
-
       setMsgSelectionTooltip({
         x: rect.left - areaRect.left + rect.width / 2,
-        y: rect.top - areaRect.top + scrollTop - 8,
+        y: rect.top - areaRect.top - 8,
         text,
       });
     }, 10);

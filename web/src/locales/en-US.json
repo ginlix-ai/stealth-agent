@@ -250,7 +250,8 @@
       "earnings-analysisDesc": "Post-earnings analysis report: beat/miss breakdown, estimate revisions, thesis impact, charts",
       "sector-overviewDesc": "Industry landscape report: market size, competitive dynamics, company profiles, valuation context",
       "competitive-analysisDesc": "Competitive landscape analysis: positioning, scorecards, moat assessment, market share trends",
-      "initiating-coverageDesc": "Full equity research initiation: company research, financial model, valuation, charts, 30-50 page report"
+      "initiating-coverageDesc": "Full equity research initiation: company research, financial model, valuation, charts, 30-50 page report",
+      "report-issueDesc": "Report issues and propose fixes to improve agent capabilities"
     },
     "summarizedNotification": "Context compacted · {{from}} messages → summary",
     "offloadedArgsNotification": "Tool arguments offloaded · {{count}} tools",

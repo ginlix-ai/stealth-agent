@@ -71,6 +71,10 @@ export function getInProgressText(rawToolName, toolCall) {
       return 'screening stocks...';
     case 'get_sec_filing':
       return args?.symbol ? `fetching ${args.symbol} filing...` : 'fetching filing...';
+    case 'Glob': {
+      const pattern = args?.pattern;
+      return pattern ? `searching '${pattern}'...` : 'searching...';
+    }
     case 'Grep': {
       const pattern = args?.pattern;
       return pattern ? `searching for '${pattern}'...` : 'searching...';
@@ -131,10 +135,10 @@ export function getCompletedSummary(toolName, toolCall) {
   if (args.description) return args.description;
   if (args.symbol) return args.symbol;
   if (args.query) return args.query;
+  if (args.pattern) return args.pattern;
   if (args.url) {
     try {
-      const u = new URL(args.url);
-      return u.hostname + (u.pathname !== '/' ? u.pathname : '');
+      return new URL(args.url).hostname;
     } catch {
       return args.url;
     }

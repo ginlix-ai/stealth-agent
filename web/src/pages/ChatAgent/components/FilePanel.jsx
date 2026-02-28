@@ -265,7 +265,7 @@ function DirectoryNode({
   onAddContext, setContextMenu,
 }) {
   const isRoot = node.name === '/';
-  const isCollapsed = !expandedDirs.has(node.fullPath);
+  const isCollapsed = isRoot ? false : !expandedDirs.has(node.fullPath);
   const allFiles = collectTreeFiles(node);
   const totalCount = allFiles.length;
   const indent = (depth + 1) * 16 + 8; // base 8px + 16px per depth level

@@ -250,7 +250,8 @@
       "earnings-analysisDesc": "盈利分析报告：超预期/不及预期分解、预估修正、论题影响、图表",
       "sector-overviewDesc": "行业全景报告：市场规模、竞争格局、公司概览、估值背景",
       "competitive-analysisDesc": "竞争格局分析：市场定位、评分卡、护城河评估、份额趋势",
-      "initiating-coverageDesc": "全面研究启动：公司研究、财务模型、估值、图表、30-50 页报告"
+      "initiating-coverageDesc": "全面研究启动：公司研究、财务模型、估值、图表、30-50 页报告",
+      "report-issueDesc": "报告问题并提出改进建议以提升代理能力"
     },
     "summarizedNotification": "上下文已压缩 · {{from}} 条消息 → 摘要",
     "offloadedArgsNotification": "工具参数已转存 · {{count}} 个工具",

@@ -125,6 +125,23 @@ function DetailPanel({ toolCallProcess, planData, onClose, onOpenFile, onOpenSub
         </button>
       </div>
 
+      {/* URL bar for WebFetch */}
+      {(toolName === 'WebFetch' || toolName === 'web_fetch') && toolCallProcess.toolCall?.args?.url && (
+        <a
+          href={toolCallProcess.toolCall.args.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-4 py-2 text-xs truncate flex-shrink-0 transition-colors hover:bg-foreground/5"
+          style={{
+            color: 'var(--color-accent-primary)',
+            borderBottom: '1px solid var(--color-border-muted)',
+          }}
+        >
+          <ExternalLink className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">{toolCallProcess.toolCall.args.url}</span>
+        </a>
+      )}
+
       {/* Content */}
       <div
         className={`flex-1 px-4 py-4 ${artifact?.type === 'sec_filing' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`}
@@ -294,7 +311,7 @@ function ArtifactOrMarkdown({ artifact, content, toolName, toolCallProcess, onOp
   }
 
   // ExecuteCode / Bash: wrap output in code block for readability
-  if (toolName === 'ExecuteCode' || toolName === 'Bash') {
+  if (toolName === 'ExecuteCode' || toolName === 'Bash' || toolName === 'Glob' || toolName === 'Grep') {
     let displayContent = rawContent || 'No result content';
     if (toolName === 'ExecuteCode') displayContent = displayContent.replace(/^SUCCESS\n?/, '');
     return <Markdown variant="panel" content={`\`\`\`code\n${displayContent}\n\`\`\``} className="text-sm" />;

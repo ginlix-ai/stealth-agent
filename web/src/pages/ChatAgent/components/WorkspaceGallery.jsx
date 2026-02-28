@@ -213,7 +213,7 @@ function WorkspaceCard({ workspace, onSelect, onTogglePin, onDelete, prefetchThr
                 {workspace.name}
               </div>
             </div>
-            <div className="text-sm line-clamp-3 flex-grow" style={{ color: 'var(--color-text-tertiary)' }}>
+            <div className="text-sm line-clamp-2 flex-grow" style={{ color: 'var(--color-text-tertiary)' }}>
               {workspace.description || ''}
             </div>
             <div className="text-xs mt-auto pt-3 flex justify-between" style={{ color: 'var(--color-text-tertiary)' }}>
