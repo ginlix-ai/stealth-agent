@@ -8,7 +8,7 @@ Use src.config.loaders for file-based loading.
 
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -74,6 +74,34 @@ class SkillsConfig(BaseModel):
         return sources
 
 
+class SubagentConfig(BaseModel):
+    """Configuration for a single subagent definition (built-in override or user-defined)."""
+
+    description: str
+    mode: Literal["ptc", "flash"] = "ptc"
+    model: str | None = None
+    role_prompt: str = ""
+    role_prompt_template: str | None = None
+    custom_prompt_template: str | None = None
+    custom_prompt: str | None = None
+    tools: list[str] = Field(default_factory=lambda: ["execute_code", "filesystem"])
+    skills: list[str] = Field(default_factory=list)
+    preload_skills: list[str] = Field(default_factory=list)
+    max_iterations: int = 15
+    sections: dict[str, bool] = Field(default_factory=dict)
+
+
+class SubagentsConfig(BaseModel):
+    """Subagents configuration block.
+
+    ``enabled`` lists which subagents are active.
+    ``definitions`` holds user-defined (or overridden) subagent configs.
+    """
+
+    enabled: list[str] = Field(default_factory=lambda: ["general-purpose"])
+    definitions: dict[str, SubagentConfig] = Field(default_factory=dict)
+
+
 class LLMDefinition(BaseModel):
     """Definition of an LLM for inline configuration in agent_config.yaml.
 
@@ -129,8 +157,7 @@ class AgentConfig(BaseModel):
     enable_view_image: bool = True
 
     # Subagent configuration
-    # List of enabled subagent names (available: research, general-purpose)
-    subagents_enabled: list[str] = Field(default_factory=lambda: ["general-purpose"])
+    subagents: SubagentsConfig = Field(default_factory=SubagentsConfig)
 
     # Background task configuration
     # If True, wait for background tasks to complete before returning to CLI
@@ -185,7 +212,7 @@ class AgentConfig(BaseModel):
         Optional - Other:
             log_level: Logging level (default: "INFO")
             allowed_directories: Sandbox paths (default: ["/home/daytona", "/tmp"])
-            subagents_enabled: Subagent names (default: ["general-purpose"])
+            subagents: SubagentsConfig or use subagents_enabled for backward compat
             enable_view_image: Enable image viewing (default: True)
             background_auto_wait: Wait for background tasks (default: False)
 
@@ -296,7 +323,10 @@ class AgentConfig(BaseModel):
             filesystem=filesystem_config,
             skills=skills_config,
             enable_view_image=kwargs.pop("enable_view_image", True),
-            subagents_enabled=kwargs.pop("subagents_enabled", ["general-purpose"]),
+            subagents=SubagentsConfig(
+                enabled=kwargs.pop("subagents_enabled", ["general-purpose"]),
+                definitions=kwargs.pop("subagents_definitions", {}),
+            ),
             background_auto_wait=kwargs.pop("background_auto_wait", False),
         )
 

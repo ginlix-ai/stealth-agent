@@ -26,7 +26,14 @@ from pathlib import Path
 from typing import Any
 
 from ptc_agent.agent.backends.daytona import create_default_security_config
-from ptc_agent.config.agent import AgentConfig, FlashConfig, LLMConfig, SkillsConfig
+from ptc_agent.config.agent import (
+    AgentConfig,
+    FlashConfig,
+    LLMConfig,
+    SkillsConfig,
+    SubagentConfig,
+    SubagentsConfig,
+)
 from ptc_agent.config.core import CoreConfig
 from ptc_agent.config.utils import (
     configure_logging,
@@ -280,6 +287,29 @@ def load_from_dict(
     # Load Subagent configuration (optional section)
     subagents_data = config_data.get("subagents") or {}
     subagents_enabled = subagents_data.get("enabled", ["general-purpose"])
+    subagent_definitions: dict[str, SubagentConfig] = {}
+    for name, defn_data in (subagents_data.get("definitions") or {}).items():
+        try:
+            subagent_definitions[name] = SubagentConfig(**defn_data)
+        except Exception as e:
+            raise ValueError(f"Invalid subagent definition '{name}': {e}") from e
+
+    # Validate enabled subagent names exist in builtins or user definitions
+    from ptc_agent.agent.subagents.builtins import BUILTIN_SUBAGENTS
+
+    known_names = set(BUILTIN_SUBAGENTS) | set(subagent_definitions)
+    for name in subagents_enabled:
+        if name not in known_names:
+            available = ", ".join(sorted(known_names))
+            raise ValueError(
+                f"Subagent '{name}' in 'enabled' list but not defined. "
+                f"Available: [{available}]"
+            )
+
+    subagents_config = SubagentsConfig(
+        enabled=subagents_enabled,
+        definitions=subagent_definitions,
+    )
 
     # Load Skills configuration (optional section)
     skills_data = config_data.get("skills") or {}
@@ -310,7 +340,7 @@ def load_from_dict(
         skills=skills_config,
         flash=flash_config,
         enable_view_image=enable_view_image,
-        subagents_enabled=subagents_enabled,
+        subagents=subagents_config,
         background_auto_wait=background_auto_wait,
     )
 

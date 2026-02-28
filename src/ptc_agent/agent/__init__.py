@@ -44,7 +44,7 @@ from ptc_agent.config import (
 from .agent import PTCAgent
 from .backends import DaytonaBackend
 from .graph import SessionProvider, build_ptc_graph, build_ptc_graph_with_session
-from .subagents import create_research_subagent
+from .subagents import SubagentCompiler, SubagentDefinition, SubagentRegistry
 
 __all__ = [
     # Config classes (pure data)
@@ -60,7 +60,9 @@ __all__ = [
     "build_ptc_graph_with_session",
     # Utilities
     "configure_logging",
-    "create_research_subagent",
+    "SubagentCompiler",
+    "SubagentDefinition",
+    "SubagentRegistry",
     "ensure_config_dir",
     "find_config_file",
     "find_project_root",

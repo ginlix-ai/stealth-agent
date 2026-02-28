@@ -53,12 +53,16 @@ from ptc_agent.agent.middleware.background_subagent.registry import (
 )
 from ptc_agent.agent.middleware.skills.discovery import SkillMetadata
 from ptc_agent.agent.prompts import (
+    build_tool_summary_from_registry,
     format_current_time,
     format_subagent_summary,
-    format_tool_summary,
     get_loader,
 )
-from ptc_agent.agent.subagents import create_subagents_from_names
+from ptc_agent.agent.subagents import (
+    SubagentCompiler,
+    SubagentRegistry,
+    create_subagents,
+)
 from ptc_agent.agent.tools import (
     create_execute_bash_tool,
     create_execute_code_tool,
@@ -231,28 +235,10 @@ class PTCAgent:
         return middleware
 
     def _get_tool_summary(self, mcp_registry: MCPRegistry) -> str:
-        """Get formatted tool summary for prompts.
-
-        Args:
-            mcp_registry: MCP registry
-
-        Returns:
-            Formatted tool summary string
-        """
-        tools_by_server = mcp_registry.get_all_tools()
-
-        # Convert to format expected by formatter
-        tools_dict = {}
-        for server_name, tools in tools_by_server.items():
-            tools_dict[server_name] = [tool.to_dict() for tool in tools]
-
-        # Build server configs dict for formatter (only enabled servers)
-        server_configs = {s.name: s for s in self.config.mcp.servers if s.enabled}
-
-        # Get tool exposure mode from config
-        mode = self.config.mcp.tool_exposure_mode
-
-        return format_tool_summary(tools_dict, mode=mode, server_configs=server_configs)
+        """Get formatted tool summary for prompts."""
+        return build_tool_summary_from_registry(
+            mcp_registry, mode=self.config.mcp.tool_exposure_mode
+        )
 
     def create_agent(
         self,
@@ -277,8 +263,8 @@ class PTCAgent:
         Args:
             sandbox: PTCSandbox instance for code execution
             mcp_registry: MCPRegistry with available MCP tools
-            subagent_names: List of subagent names to include from SUBAGENT_REGISTRY
-                (default: config.subagents_enabled)
+            subagent_names: List of subagent names to include from registry
+                (default: config.subagents.enabled)
             additional_subagents: Custom subagent dicts that bypass the registry
             background_timeout: Timeout for waiting on background tasks (seconds)
             checkpointer: Optional LangGraph checkpointer for state persistence.
@@ -363,7 +349,7 @@ class PTCAgent:
 
         # Default to subagents from config if none specified
         if subagent_names is None:
-            subagent_names = self.config.subagents_enabled
+            subagent_names = self.config.subagents.enabled
 
         # --- Build shared middleware (for both main agent and subagents) ---
         shared_middleware: list[Any] = []
@@ -459,19 +445,39 @@ class PTCAgent:
         main_only_middleware.append(ask_user_middleware)
         tools.extend(ask_user_middleware.tools)
 
-        # Create subagents from names using the registry
+        # Build subagent registry and compiler
         # Note: Subagents get vision capability through VisionMiddleware in shared_middleware
-        subagents = create_subagents_from_names(
-            names=subagent_names,
+        from ptc_agent.agent.tools import think_tool
+
+        subagent_registry = SubagentRegistry(
+            user_definitions=(
+                self.config.subagents.definitions
+                if self.config.subagents.definitions
+                else None
+            ),
+        )
+        subagent_tool_sets: dict[str, list[Any]] = {
+            "execute_code": [execute_code_tool],
+            "bash": [bash_tool],
+            "filesystem": list(filesystem_tools) if filesystem_tools else [],
+            "web_search": [web_search_tool, web_fetch_tool],
+            "finance": finance_tools,
+            "think": [think_tool],
+            "todo": [TodoWrite],
+        }
+        subagent_compiler = SubagentCompiler(
             sandbox=sandbox,
             mcp_registry=mcp_registry,
-            counter_middleware=counter_middleware,
-            max_researcher_iterations=DEFAULT_MAX_TASK_ITERATIONS,
-            max_iterations=DEFAULT_MAX_GENERAL_ITERATIONS,
-            filesystem_tools=filesystem_tools,  # Pass custom tools to subagents
-            additional_tools=finance_tools,  # Pass finance tools to general-purpose subagent
+            tool_sets=subagent_tool_sets,
+            user_profile=user_profile,
             current_time=current_time,
-            thread_id=short_thread_id,  # Thread-scoped code storage for subagents
+            thread_id=short_thread_id,
+        )
+        subagents = create_subagents(
+            registry=subagent_registry,
+            enabled_names=subagent_names,
+            compiler=subagent_compiler,
+            counter_middleware=counter_middleware,
         )
 
         if additional_subagents:

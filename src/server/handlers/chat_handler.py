@@ -1067,7 +1067,7 @@ async def astream_ptc_workflow(
                 setup.agent_config, user_id, request.llm_model, byok_active, mode="ptc"
             )
 
-        subagents = request.subagents_enabled or config.subagents_enabled
+        subagents = request.subagents_enabled or config.subagents.enabled
         sandbox_id = None
 
         # Use WorkspaceManager for workspace-based sessions

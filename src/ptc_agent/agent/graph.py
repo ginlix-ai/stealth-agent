@@ -146,7 +146,7 @@ async def build_ptc_graph(
     inner_agent = ptc_agent.create_agent(
         sandbox=session.sandbox,
         mcp_registry=session.mcp_registry,
-        subagent_names=subagent_names or config.subagents_enabled,
+        subagent_names=subagent_names or config.subagents.enabled,
         operation_callback=operation_callback,
         checkpointer=checkpointer,
         background_registry=background_registry,
@@ -155,7 +155,7 @@ async def build_ptc_graph(
 
     logger.info(
         f"Created PTC agent for {conversation_id} with "
-        f"subagents: {subagent_names or config.subagents_enabled} "
+        f"subagents: {subagent_names or config.subagents.enabled} "
         f"(checkpointer={'enabled' if checkpointer else 'disabled'})"
     )
 
@@ -229,7 +229,7 @@ async def build_ptc_graph_with_session(
     inner_agent = ptc_agent.create_agent(
         sandbox=session.sandbox,
         mcp_registry=session.mcp_registry,
-        subagent_names=subagent_names or config.subagents_enabled,
+        subagent_names=subagent_names or config.subagents.enabled,
         operation_callback=operation_callback,
         checkpointer=checkpointer,
         background_registry=background_registry,
@@ -243,7 +243,7 @@ async def build_ptc_graph_with_session(
 
     logger.info(
         f"Created PTC agent for workspace {workspace_id} with "
-        f"subagents: {subagent_names or config.subagents_enabled} "
+        f"subagents: {subagent_names or config.subagents.enabled} "
         f"(checkpointer={'enabled' if checkpointer else 'disabled'})"
     )
 

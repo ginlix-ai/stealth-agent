@@ -12,11 +12,11 @@ Usage examples:
   # PTC with plan mode + storage enabled
   python scripts/utils/render_prompt.py --plan-mode --storage
 
-  # General subagent prompt
-  python scripts/utils/render_prompt.py --subagent general
+  # General-purpose subagent prompt
+  python scripts/utils/render_prompt.py --subagent general-purpose
 
-  # Researcher subagent prompt
-  python scripts/utils/render_prompt.py --subagent researcher
+  # Research subagent prompt
+  python scripts/utils/render_prompt.py --subagent research
 
   # Write to file instead of stdout
   python scripts/utils/render_prompt.py -o rendered_prompt.md
@@ -42,6 +42,8 @@ from ptc_agent.agent.prompts import (
     format_subagent_summary,
     init_loader,
 )
+from ptc_agent.agent.subagents import SubagentCompiler, SubagentRegistry
+from ptc_agent.agent.subagents.builtins import BUILTIN_SUBAGENTS
 
 
 # ---------------------------------------------------------------------------
@@ -60,19 +62,8 @@ Yahoo Finance data — quotes, options, earnings, holders.
 - Docs: `tools/docs/yfinance/`"""
 
 STUB_SUBAGENTS = [
-    {
-        "name": "general-purpose",
-        "description": (
-            "Delegate complex tasks to the general-purpose sub-agent. "
-            "This agent has access to all filesystem tools and can execute Python code with MCP tools."
-        ),
-        "tools": ["execute_code", "read_file", "write_file", "edit_file", "glob", "grep", "bash"],
-    },
-    {
-        "name": "researcher",
-        "description": "Web research sub-agent with tavily_search and think_tool.",
-        "tools": ["tavily_search", "think_tool"],
-    },
+    {"name": defn.name, "description": defn.description, "tools": defn.tools}
+    for defn in BUILTIN_SUBAGENTS.values()
 ]
 
 STUB_USER_PROFILE = {
@@ -111,21 +102,38 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--subagent",
-        choices=["general", "researcher"],
         default=None,
-        help="Render a subagent prompt instead of the system prompt.",
+        help="Render a subagent prompt (e.g., general-purpose, research). Lists available if invalid.",
     )
 
     # Feature flags
     p.add_argument("--plan-mode", action="store_true", help="Enable plan mode section.")
-    p.add_argument("--storage", action="store_true", help="Enable cloud storage (affects visualizations).")
-    p.add_argument("--no-ask-user", action="store_true", help="Disable ask-user guidelines.")
-    p.add_argument("--no-user-profile", action="store_true", help="Omit user profile section.")
+    p.add_argument(
+        "--storage",
+        action="store_true",
+        help="Enable cloud storage (affects visualizations).",
+    )
+    p.add_argument(
+        "--no-ask-user", action="store_true", help="Disable ask-user guidelines."
+    )
+    p.add_argument(
+        "--no-user-profile", action="store_true", help="Omit user profile section."
+    )
 
     # Variable overrides
-    p.add_argument("--thread-id", default="a1b2c3d4", help="Thread ID (first 8 chars). Default: a1b2c3d4")
-    p.add_argument("--timezone", default="America/New_York", help="User timezone. Default: America/New_York")
-    p.add_argument("--tool-summary", default=None, help="Custom tool summary text (default: stub).")
+    p.add_argument(
+        "--thread-id",
+        default="a1b2c3d4",
+        help="Thread ID (first 8 chars). Default: a1b2c3d4",
+    )
+    p.add_argument(
+        "--timezone",
+        default="America/New_York",
+        help="User timezone. Default: America/New_York",
+    )
+    p.add_argument(
+        "--tool-summary", default=None, help="Custom tool summary text (default: stub)."
+    )
     p.add_argument(
         "--max-concurrent-tasks",
         type=int,
@@ -146,9 +154,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # Output
-    p.add_argument("-o", "--output", default=None, help="Write to file instead of stdout.")
-    p.add_argument("--count-tokens", action="store_true", help="Print approximate token count.")
-    p.add_argument("--no-color", action="store_true", help="Suppress ANSI header/footer coloring.")
+    p.add_argument(
+        "-o", "--output", default=None, help="Write to file instead of stdout."
+    )
+    p.add_argument(
+        "--count-tokens", action="store_true", help="Print approximate token count."
+    )
+    p.add_argument(
+        "--no-color", action="store_true", help="Suppress ANSI header/footer coloring."
+    )
 
     return p
 
@@ -166,15 +180,37 @@ def render(args: argparse.Namespace) -> str:
     user_profile = None if args.no_user_profile else STUB_USER_PROFILE
 
     if args.subagent:
-        # Subagent prompt
-        kwargs: dict = {
-            "current_time": current_time,
-            "tool_summary": tool_summary,
-            "storage_enabled": args.storage,
-            "max_iterations": args.max_iterations,
-            "thread_id": args.thread_id,
+        # Subagent prompt via new registry/compiler system
+        registry = SubagentRegistry()
+        defn = registry.get(args.subagent)
+        if defn is None:
+            available = ", ".join(sorted(registry.list_all()))
+            raise SystemExit(
+                f"Unknown subagent '{args.subagent}'. Available: {available}"
+            )
+        # Build stub tool_sets so rendered prompts include tool lists
+        from types import SimpleNamespace
+
+        stub_tool_sets = {
+            name: [SimpleNamespace(name=name)]
+            for name in [
+                "execute_code",
+                "bash",
+                "filesystem",
+                "web_search",
+                "finance",
+                "think",
+                "todo",
+            ]
         }
-        return loader.get_subagent_prompt(args.subagent, **kwargs)
+        compiler = SubagentCompiler(
+            current_time=current_time,
+            thread_id=args.thread_id,
+            tool_sets=stub_tool_sets,
+            user_profile=user_profile,
+        )
+        result = compiler.compile(defn)
+        return result["system_prompt"]
 
     if args.mode == "flash":
         # Flash system prompt

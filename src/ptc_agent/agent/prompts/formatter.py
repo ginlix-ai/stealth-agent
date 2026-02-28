@@ -4,7 +4,10 @@ These functions generate dynamic content based on runtime data
 and are kept in Python rather than templates.
 """
 
+import structlog
 from typing import Any
+
+logger = structlog.get_logger(__name__)
 
 TOOL_SUMMARY_TEMPLATE = """
 {server_name}:
@@ -297,6 +300,44 @@ def _format_tool_summary_detailed(
         return "\nNo MCP servers configured."
 
     return "\n".join(lines)
+
+
+def build_tool_summary_from_registry(
+    mcp_registry: Any,
+    *,
+    mode: str = "full",
+) -> str:
+    """Build a formatted MCP tool summary from a registry instance.
+
+    Shared by PTCAgent and SubagentCompiler to avoid duplicating
+    the registry-to-string conversion logic.
+
+    Args:
+        mcp_registry: MCP registry instance (or None/falsy).
+        mode: Tool exposure mode ("summary", "detailed", or "full").
+
+    Returns:
+        Formatted tool summary string, or "" on failure.
+    """
+    if not mcp_registry:
+        return ""
+    try:
+        tools_by_server = mcp_registry.get_all_tools()
+        if not tools_by_server:
+            return ""
+        tools_dict = {
+            server_name: [tool.to_dict() for tool in tools]
+            for server_name, tools in tools_by_server.items()
+        }
+        server_configs: dict[str, Any] = {}
+        if hasattr(mcp_registry, "config") and hasattr(mcp_registry.config, "mcp"):
+            server_configs = {
+                s.name: s for s in mcp_registry.config.mcp.servers if s.enabled
+            }
+        return format_tool_summary(tools_dict, mode=mode, server_configs=server_configs)
+    except Exception:
+        logger.warning("failed to build MCP tool summary", exc_info=True)
+        return ""
 
 
 def format_subagent_summary(subagents: list[dict]) -> str:

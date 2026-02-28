@@ -24,6 +24,7 @@ Usage:
 """
 
 from .formatter import (
+    build_tool_summary_from_registry,
     format_subagent_summary,
     format_tool_summary,
 )
@@ -37,6 +38,7 @@ from .loader import (
 
 __all__ = [
     "PromptLoader",
+    "build_tool_summary_from_registry",
     "format_current_time",
     "format_subagent_summary",
     "format_tool_summary",

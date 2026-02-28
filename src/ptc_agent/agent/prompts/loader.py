@@ -111,6 +111,49 @@ class PromptLoader:
         """
         return self.render(f"subagents/{subagent_type}.md.j2", **kwargs)
 
+    def get_subagent_base_prompt(
+        self,
+        *,
+        identity_line: str = "",
+        role_prompt: str = "",
+        role_prompt_template: str | None = None,
+        preloaded_skills_content: str = "",
+        sections: dict[str, bool] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Render a subagent prompt using the unified ``subagent_base.md.j2``.
+
+        Args:
+            identity_line: First line of the prompt (agent identity).
+            role_prompt: Inline role-specific instructions.
+            role_prompt_template: Path to role template (relative to
+                ``templates/subagents/``).  Rendered and used as ``role_prompt``
+                if ``role_prompt`` is empty.
+            preloaded_skills_content: Pre-loaded SKILL.md content to inject.
+            sections: Section toggle overrides (``section_<name>`` vars).
+            **kwargs: Additional template variables.
+
+        Returns:
+            Rendered subagent prompt string.
+        """
+        # Render role template if specified and no inline role_prompt provided
+        if role_prompt_template and not role_prompt:
+            role_prompt = self.render(f"subagents/{role_prompt_template}", **kwargs)
+
+        # Convert sections dict to section_* template variables
+        section_vars: dict[str, bool] = {}
+        for key, value in (sections or {}).items():
+            section_vars[f"section_{key}"] = value
+
+        return self.render(
+            "subagent_base.md.j2",
+            identity_line=identity_line,
+            role_prompt=role_prompt,
+            preloaded_skills_content=preloaded_skills_content,
+            **section_vars,
+            **kwargs,
+        )
+
     def get_component(self, component_name: str, **kwargs: Any) -> str:
         """Get a single component template.
 
@@ -122,6 +165,7 @@ class PromptLoader:
             Rendered component string
         """
         return self.render(f"components/{component_name}.md.j2", **kwargs)
+
 
 # Singleton instance
 _loader: PromptLoader | None = None
