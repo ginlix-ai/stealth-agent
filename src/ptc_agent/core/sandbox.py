@@ -333,8 +333,16 @@ class PTCSandbox:
             )
             .pip_install(*dependencies)  # Unpack list as individual arguments
             .run_commands(
-                # Rebuild matplotlib font cache so it finds Noto CJK
-                "python -c \"import matplotlib.font_manager; matplotlib.font_manager._load_fontmanager(try_read_cache=False)\"",
+                # Set Noto Sans CJK as matplotlib fallback font and rebuild cache
+                'python -c "'
+                "import matplotlib as mpl; "
+                "mpl_dir = mpl.get_configdir(); "
+                "import os; os.makedirs(mpl_dir, exist_ok=True); "
+                "open(os.path.join(mpl_dir, 'matplotlibrc'), 'w').write("
+                "'font.sans-serif: Noto Sans CJK SC, DejaVu Sans\\n'); "
+                "import matplotlib.font_manager; "
+                "matplotlib.font_manager._load_fontmanager(try_read_cache=False)"
+                '"',
             )
             .workdir("/home/daytona")
         )
@@ -537,12 +545,8 @@ class PTCSandbox:
             token = os.getenv(token_env)
             if token:
                 env_vars["GITHUB_TOKEN"] = token
-                bot_name = get_nested_config(
-                    "github.bot_name", "langalpha-bot"
-                )
-                bot_email = get_nested_config(
-                    "github.bot_email", "bot@ginlix.ai"
-                )
+                bot_name = get_nested_config("github.bot_name", "langalpha-bot")
+                bot_email = get_nested_config("github.bot_email", "bot@ginlix.ai")
                 env_vars["GIT_AUTHOR_NAME"] = bot_name
                 env_vars["GIT_AUTHOR_EMAIL"] = bot_email
                 env_vars["GIT_COMMITTER_NAME"] = bot_name
@@ -1293,6 +1297,12 @@ class PTCSandbox:
 
     def _is_transient_daytona_error(self, e: Exception) -> bool:
         message = str(e).lower()
+        # Execution errors are not transient — the command ran and the server
+        # responded. Don't let "timeout" in the server message trigger
+        # transient handling, which would produce a misleading
+        # "Sandbox disconnected" error.
+        if message.startswith("failed to execute command"):
+            return False
         transient_markers = (
             "remote end closed connection",
             "remotedisconnected",
@@ -1309,6 +1319,31 @@ class PTCSandbox:
             "504",
         )
         return any(marker in message for marker in transient_markers)
+
+    @staticmethod
+    def _classify_execution_error(
+        e: Exception,
+        duration: float,
+        timeout_limit: float,
+        timeout_message: str,
+    ) -> tuple[bool, str, str]:
+        """Classify a sandbox execution exception as timeout or generic error.
+
+        Returns:
+            (is_timeout, error_detail, stderr_msg)
+        """
+        error_detail = f"{type(e).__name__}: {e!s}" if str(e) else type(e).__name__
+        error_lower = str(e).lower()
+        is_timeout = (
+            duration >= timeout_limit * 0.95
+            or "timed out" in error_lower
+            or "timeout" in error_lower
+        )
+        if is_timeout:
+            stderr_msg = timeout_message
+        else:
+            stderr_msg = f"Sandbox execution error: {error_detail}"
+        return is_timeout, error_detail, stderr_msg
 
     async def _ensure_sandbox_connected(self) -> None:
         if self.sandbox_id is None:
@@ -2105,6 +2140,7 @@ class PTCSandbox:
             thread_id=thread_id,
         )
 
+        timeout_val = timeout or self.config.security.max_execution_time
         start_time = time.time()
 
         try:
@@ -2139,8 +2175,6 @@ class PTCSandbox:
             files_before = await self._list_result_files()
 
             # Execute code
-            timeout_val = timeout or self.config.security.max_execution_time
-
             # Set PYTHONPATH so code can import from tools/ and _internal/
             # MCP + GitHub env vars are injected at sandbox creation time
             work_dir = await self._daytona_call(
@@ -2160,6 +2194,7 @@ class PTCSandbox:
                 params=CodeRunParams(env=exec_env),
                 timeout=timeout_val,
                 retry_policy=_DaytonaRetryPolicy.UNSAFE,
+                total_timeout=timeout_val + 30,
             )
 
             # Get stdout/stderr and exit code from Daytona ExecuteResponse
@@ -2269,19 +2304,27 @@ class PTCSandbox:
 
         except Exception as e:
             duration = time.time() - start_time
-            error_detail = f"{type(e).__name__}: {e!s}" if str(e) else type(e).__name__
+            is_timeout, error_detail, stderr_msg = self._classify_execution_error(
+                e,
+                duration,
+                timeout_val,
+                f"Execution timed out after {duration:.0f}s (limit: {timeout_val}s). "
+                "The script was killed before completion — no output was captured. "
+                "Split into smaller steps or optimize the script to run faster.",
+            )
 
             logger.error(
                 "Code execution failed",
                 execution_id=execution_id,
                 error=error_detail,
                 duration=duration,
+                is_timeout=is_timeout,
             )
 
             return ExecutionResult(
                 success=False,
                 stdout="",
-                stderr=f"Sandbox execution error: {error_detail}",
+                stderr=stderr_msg,
                 duration=duration,
                 files_created=[],
                 files_modified=[],
@@ -2312,6 +2355,7 @@ class PTCSandbox:
             Dictionary with success, stdout, stderr, exit_code, bash_id, command_hash
         """
         await self._wait_ready()
+        start_time = time.time()
 
         try:
             # Generate bash execution ID for tracking
@@ -2381,6 +2425,7 @@ class PTCSandbox:
                 full_command,
                 timeout=timeout,
                 retry_policy=_DaytonaRetryPolicy.UNSAFE,
+                total_timeout=timeout + 30,
             )
 
             exit_code = (
@@ -2412,13 +2457,25 @@ class PTCSandbox:
             }
 
         except Exception as e:
-            logger.error(f"Failed to execute bash command: {e}", exc_info=True)
-            # Note: bash_id may not be defined if error occurs early
-            error_detail = f"{type(e).__name__}: {e!s}" if str(e) else type(e).__name__
+            duration = time.time() - start_time
+            is_timeout, error_detail, stderr_msg = self._classify_execution_error(
+                e,
+                duration,
+                timeout,
+                f"Command timed out after {duration:.0f}s (limit: {timeout}s). "
+                "The command was killed before completion. "
+                "Split into smaller steps or increase the timeout.",
+            )
+
+            logger.error(
+                f"Failed to execute bash command: {e}",
+                exc_info=True,
+                extra={"is_timeout": is_timeout},
+            )
             return {
                 "success": False,
                 "stdout": "",
-                "stderr": f"Sandbox execution error: {error_detail}",
+                "stderr": stderr_msg,
                 "exit_code": -1,
                 "bash_id": getattr(self, "_last_bash_id", None),
                 "command_hash": None,

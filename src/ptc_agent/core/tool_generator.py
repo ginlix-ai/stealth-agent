@@ -15,9 +15,7 @@ logger = structlog.get_logger(__name__)
 class ToolFunctionGenerator:
     """Generates Python function code from MCP tool schemas."""
 
-    def generate_tool_module(
-        self, server_name: str, tools: list[MCPToolInfo]
-    ) -> str:
+    def generate_tool_module(self, server_name: str, tools: list[MCPToolInfo]) -> str:
         """Generate a complete Python module for a server's tools.
 
         Args:
@@ -104,7 +102,9 @@ except ImportError:
         docstring = self._generate_docstring(tool, params)
 
         # Generate function body
-        arg_dict_entries = [f'        "{param_name}": {param_name},' for param_name in params]
+        arg_dict_entries = [
+            f'        "{param_name}": {param_name},' for param_name in params
+        ]
 
         args_dict = "\n".join(arg_dict_entries)
 
@@ -122,10 +122,7 @@ except ImportError:
 
     return _call_mcp_tool("{server_name}", "{tool.name}", arguments)'''
 
-
-    def _generate_docstring(
-        self, tool: MCPToolInfo, params: dict[str, Any]
-    ) -> str:
+    def _generate_docstring(self, tool: MCPToolInfo, params: dict[str, Any]) -> str:
         """Generate docstring for a tool function.
 
         Args:
@@ -153,7 +150,9 @@ except ImportError:
                 escaped_desc = param_desc.replace("\\", "\\\\")
                 param_type = param_info["type"]
                 required = " (required)" if param_info["required"] else ""
-                lines.append(f"    {param_name} ({param_type}){required}: {escaped_desc}")
+                lines.append(
+                    f"    {param_name} ({param_type}){required}: {escaped_desc}"
+                )
             lines.append("")
 
         # Add returns - extract from description if available
@@ -182,7 +181,9 @@ except ImportError:
 
         if example_args:
             func_name = tool.name.replace("-", "_").replace(".", "_")
-            example_call = f"{func_name}({', '.join(example_args[:2])})"  # Limit to 2 args
+            example_call = (
+                f"{func_name}({', '.join(example_args[:2])})"  # Limit to 2 args
+            )
             lines.append("Example:")
             lines.append(f"    result = {example_call}")
 
@@ -319,7 +320,9 @@ except ImportError:
         doc += "## Parameters\n\n"
         if params:
             for param_name, param_info in params.items():
-                required_marker = "**Required**" if param_info["required"] else "Optional"
+                required_marker = (
+                    "**Required**" if param_info["required"] else "Optional"
+                )
                 param_type = param_info["type"]
                 param_desc = param_info.get("description", "")
                 doc += f"- `{param_name}` ({param_type}) - {required_marker}\n"
@@ -355,9 +358,7 @@ except ImportError:
 
         return doc
 
-    def generate_mcp_client_code(
-        self, server_configs: list[MCPServerConfig]
-    ) -> str:
+    def generate_mcp_client_code(self, server_configs: list[MCPServerConfig]) -> str:
         """Generate standalone MCP client code for sandbox.
 
         This generates a complete MCP client that can run inside the sandbox,
@@ -399,13 +400,17 @@ except ImportError:
                     safe_env = {k: str(v) for k, v in server.env.items()}
                     env_dict = repr(safe_env)
 
-
                 # Transform Python MCP servers for sandbox execution
                 # uv run python mcp_servers/xxx.py -> uv run python /home/daytona/mcp_servers/xxx.py
                 command = server.command
                 args = list(server.args)
 
-                if command == "uv" and len(args) >= 3 and args[0] == "run" and args[1] == "python":
+                if (
+                    command == "uv"
+                    and len(args) >= 3
+                    and args[0] == "run"
+                    and args[1] == "python"
+                ):
                     # Extract the Python file path (e.g., "mcp_servers/yfinance_mcp_server.py")
                     local_path = args[2]
                     filename = Path(local_path).name
@@ -418,7 +423,7 @@ except ImportError:
                         original_command=server.command,
                         original_args=server.args,
                         sandbox_command=command,
-                        sandbox_args=args
+                        sandbox_args=args,
                     )
 
                 args_list = ", ".join([repr(str(arg)) for arg in args])
@@ -440,6 +445,7 @@ It supports both stdio (subprocess) and SSE (HTTP) transports.
 
 import json
 import os
+import select
 import subprocess
 import sys
 import threading
@@ -525,6 +531,11 @@ def _start_mcp_server(server_name: str) -> subprocess.Popen:
         bufsize=1,  # Line buffered
     )
 
+    # Drain stderr in background to prevent pipe buffer deadlock.
+    # FastMCP logs INFO to stderr via RichHandler; if the 64KB pipe buffer
+    # fills, the server blocks on write(stderr) and can't respond on stdout.
+    threading.Thread(target=lambda: proc.stderr.read(), daemon=True).start()
+
     # Store process
     if server_name not in _server_locks:
         _server_locks[server_name] = threading.Lock()
@@ -548,7 +559,12 @@ def _start_mcp_server(server_name: str) -> subprocess.Popen:
     proc.stdin.write(json.dumps(init_request) + "\\n")
     proc.stdin.flush()
 
-    # Read initialize response
+    # Read initialize response (with timeout to avoid hanging on broken servers)
+    ready, _, _ = select.select([proc.stdout], [], [], 30)
+    if not ready:
+        proc.kill()
+        _server_processes.pop(server_name, None)
+        raise RuntimeError(f"MCP server {{server_name}} timed out during initialization (30s)")
     response_line = proc.stdout.readline()
     if response_line:
         response = json.loads(response_line)
@@ -745,12 +761,18 @@ def _call_mcp_tool_stdio(server_name: str, tool_name: str, arguments: dict[str, 
     import traceback
 
     try:
-        # Ensure server is running
-        proc = _start_mcp_server(server_name)
+        # Ensure server is running (initial start outside lock to avoid holding
+        # the lock during slow server startup)
+        _start_mcp_server(server_name)
 
         # Use lock to ensure thread-safe communication
         lock = _server_locks[server_name]
         with lock:
+            # Re-fetch proc inside lock to avoid TOCTOU race: another thread
+            # may have killed the process while we were waiting for the lock.
+            proc = _server_processes.get(server_name)
+            if proc is None or proc.poll() is not None:
+                proc = _start_mcp_server(server_name)
             # Build JSON-RPC request
             request = {{
                 "jsonrpc": "2.0",
@@ -772,8 +794,15 @@ def _call_mcp_tool_stdio(server_name: str, tool_name: str, arguments: dict[str, 
                 print(f"ERROR: {{error_msg}}", file=sys.stderr)  # noqa: T201
                 raise RuntimeError(error_msg)
 
-            # Read response
+            # Read response (with timeout to detect stalled servers)
             try:
+                ready, _, _ = select.select([proc.stdout], [], [], 120)
+                if not ready:
+                    error_msg = f"MCP server {{server_name}} timed out after 120s on tool {{tool_name}}"
+                    print(f"ERROR: {{error_msg}}", file=sys.stderr)  # noqa: T201
+                    proc.kill()
+                    _server_processes.pop(server_name, None)
+                    raise RuntimeError(error_msg)
                 response_line = proc.stdout.readline()
                 if not response_line:
                     error_msg = f"MCP server {{server_name}} closed connection"
@@ -881,4 +910,3 @@ def cleanup_mcp_servers():
             print(f"Error cleaning up MCP server {{server_name}}: {{e}}", file=sys.stderr)  # noqa: T201
     _server_processes.clear()
 '''
-

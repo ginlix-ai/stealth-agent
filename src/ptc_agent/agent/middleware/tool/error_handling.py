@@ -18,7 +18,7 @@ def simplify_tool_error(error: Exception) -> str:
         error: The exception raised during tool execution
 
     Returns:
-        Simplified error message string (max 200 chars)
+        Simplified error message string (max 800 chars)
 
     Example:
         ValidationError with missing field -> "Field 'file_path': field required"
@@ -36,8 +36,8 @@ def simplify_tool_error(error: Exception) -> str:
 
     # Generic error - truncate if too long
     error_str = str(error)
-    if len(error_str) > 200:
-        return error_str[:200] + "..."
+    if len(error_str) > 800:
+        return error_str[:800] + "..."
     return error_str
 
 
@@ -50,7 +50,7 @@ class ToolErrorHandlingMiddleware(AgentMiddleware):
 
     Error simplification:
     - Pydantic ValidationErrors: Shows only field name and error message
-    - Generic errors: Truncated to 200 characters max
+    - Generic errors: Truncated to 800 characters max
     - Removes verbose input arguments that make errors unreadable
     """
 
