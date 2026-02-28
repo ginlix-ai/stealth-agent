@@ -364,7 +364,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         }
 
         // Handle context_window events from history (token_usage, summarize, offload)
-        if (eventType === 'context_window') {
+        // Subagent context_window events are routed through the isSubagent block below.
+        if (eventType === 'context_window' && !isSubagent) {
           handleContextWindowEvent(event, {
             getMsgId: () => currentActivePairIndex !== null
               ? assistantMessagesByPair.get(currentActivePairIndex) : null,
@@ -1217,6 +1218,34 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                   // Sync local run index — handleTaskMessageQueued bumps runIndex
                   currentRunIndex = tempSubagentStateRefs[taskId].runIndex;
                 }
+              } else if (eventType === 'context_window') {
+                // Embed notification as content segment in the assistant message
+                const action = event.action;
+                if (action === 'token_usage') {
+                  // Skip — no per-subagent token display
+                } else {
+                  let text;
+                  if (action === 'summarize' && event.signal === 'complete') {
+                    text = t('chat.summarizedNotification', { from: event.original_message_count });
+                  } else if (action === 'offload' && event.signal === 'complete') {
+                    const args = event.offloaded_args || 0;
+                    const reads = event.offloaded_reads || 0;
+                    if (args > 0 && reads > 0) text = t('chat.offloadedNotification', { args, reads });
+                    else if (reads > 0) text = t('chat.offloadedReadsNotification', { count: reads });
+                    else if (args > 0) text = t('chat.offloadedArgsNotification', { count: args });
+                  }
+                  if (text) {
+                    const taskRefsLocal = tempSubagentStateRefs[taskId];
+                    const order = ++taskRefsLocal.contentOrderCounterRef.current;
+                    // Find the last assistant message and append notification segment
+                    const msgIdx = taskRefsLocal.messages.findLastIndex(m => m.role === 'assistant');
+                    if (msgIdx !== -1) {
+                      const msg = { ...taskRefsLocal.messages[msgIdx] };
+                      msg.contentSegments = [...(msg.contentSegments || []), { type: 'notification', content: text, order }];
+                      taskRefsLocal.messages[msgIdx] = msg;
+                    }
+                  }
+                }
               } else {
                 console.warn('[History] Unhandled subagent event type:', eventType);
               }
@@ -2000,7 +2029,9 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       // Handle unified context_window events (token_usage, summarize, offload)
       if (eventType === 'context_window') {
         if (isSubagent) {
-          // For subagent context_window events, add notification to subagent messages
+          // For subagent context_window events, embed notification as a content
+          // segment inside the current assistant message (same as main chat) so
+          // it appears at the correct chronological position.
           const taskId = getTaskIdFromEvent(event);
           if (taskId && event.action !== 'token_usage') {
             const action = event.action;
@@ -2016,11 +2047,15 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             }
             if (text && updateSubagentCard) {
               const taskRefs = getOrCreateTaskRefs(refs, taskId);
-              const updatedMessages = [...taskRefs.messages, {
-                id: `notification-${taskId}-${Date.now()}`,
-                role: 'notification',
-                content: text,
-              }];
+              const order = ++taskRefs.contentOrderCounterRef.current;
+              // Find the last assistant message and append the notification segment
+              const updatedMessages = [...taskRefs.messages];
+              const msgIdx = updatedMessages.findLastIndex(m => m.role === 'assistant');
+              if (msgIdx !== -1) {
+                const msg = { ...updatedMessages[msgIdx] };
+                msg.contentSegments = [...(msg.contentSegments || []), { type: 'notification', content: text, order }];
+                updatedMessages[msgIdx] = msg;
+              }
               taskRefs.messages = updatedMessages;
               updateSubagentCard(taskId, { messages: updatedMessages });
             }
