@@ -213,6 +213,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
   const contentOrderCounterRef = useRef(0);
   const currentReasoningIdRef = useRef(null);
   const currentToolCallIdRef = useRef(null);
+  const queuedAtOrderRef = useRef(null); // Shared across streams for queued message rollback
 
   // Refs for history loading state
   const historyLoadingRef = useRef(false);
@@ -302,6 +303,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         contentOrderCounterRef.current = 0;
         currentReasoningIdRef.current = null;
         currentToolCallIdRef.current = null;
+        queuedAtOrderRef.current = null;
         historyLoadingRef.current = false;
         historyMessagesRef.current.clear();
         newMessagesStartIndexRef.current = 0;
@@ -351,7 +353,12 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         const contentType = event.content_type;
         const hasRole = event.role !== undefined;
         const hasPairIndex = event.turn_index !== undefined;
-        
+
+        // Track last event ID so reconnectToStream can deduplicate
+        if (event._eventId != null) {
+          lastEventIdRef.current = event._eventId;
+        }
+
         // Check if this is a subagent event - filter it out from main chat view
         const isSubagent = isSubagentHistoryEvent(event);
         
@@ -1409,6 +1416,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       contentOrderCounterRef,
       currentReasoningIdRef,
       currentToolCallIdRef,
+      queuedAtOrderRef,
       updateTodoListCard,
       isNewConversation: false,
       subagentStateRefs: subagentStateRefsRef.current,
@@ -1426,7 +1434,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       // Replay buffered events first — this processes artifact{task,spawned} events
       // which create subagent cards with the correct description/type. Per-task streams
       // are opened AFTER so they merge into existing cards instead of creating empty ones.
-      const result = await reconnectToWorkflowStream(threadId, null, processEvent);
+      const result = await reconnectToWorkflowStream(threadId, lastEventIdRef.current, processEvent);
       if (result?.disconnected) {
         throw new Error('Reconnection stream disconnected');
       }
@@ -1651,6 +1659,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           contentOrderCounterRef,
           currentReasoningIdRef,
           currentToolCallIdRef,
+          queuedAtOrderRef,
           updateTodoListCard,
           isNewConversation: false,
           subagentStateRefs: subagentStateRefsRef.current,
@@ -1918,6 +1927,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         // Record the content order counter so we can roll back leaked content
         // when queued_message_injected arrives (see handler below).
         queuedAtOrder = refs.contentOrderCounterRef.current;
+        if (refs.queuedAtOrderRef) refs.queuedAtOrderRef.current = refs.contentOrderCounterRef.current;
         return;
       }
 
@@ -1932,14 +1942,20 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           prev.map((msg) => {
             if (msg.id !== oldAssistantId) return msg;
 
+            // Use closure-local snapshot or fall back to the shared ref
+            // (message_queued only arrives on the secondary POST stream, so
+            // the closure-local queuedAtOrder is typically null — the shared
+            // ref is set by handleSendQueuedMessage on the secondary stream).
+            const effectiveQueuedAtOrder = queuedAtOrder ?? refs.queuedAtOrderRef?.current ?? null;
+
             // If no snapshot, just finalize
-            if (queuedAtOrder === null) {
+            if (effectiveQueuedAtOrder === null) {
               return { ...msg, isStreaming: false };
             }
 
             // Keep only segments at or before the queue point
             const keptSegments = (msg.contentSegments || []).filter(
-              (s) => s.order <= queuedAtOrder
+              (s) => s.order <= effectiveQueuedAtOrder
             );
 
             // Rebuild plain-text content from kept text segments
@@ -1984,6 +2000,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           })
         );
         queuedAtOrder = null;
+        if (refs.queuedAtOrderRef) refs.queuedAtOrderRef.current = null;
 
         // 2. Mark queued user messages as delivered, OR create them from event
         //    data if none exist (reconnect scenario — in-memory state was lost).
@@ -2662,6 +2679,9 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         (event) => {
           const eventType = event.event || 'message_chunk';
           if (eventType === 'message_queued') {
+            // Snapshot the content order counter so the primary stream's
+            // queued_message_injected handler can roll back leaked content.
+            queuedAtOrderRef.current = contentOrderCounterRef.current;
             // Update the user message to reflect queued status
             setMessages((prev) =>
               updateMessage(prev, userMessage.id, (msg) => ({
@@ -2786,6 +2806,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         contentOrderCounterRef,
         currentReasoningIdRef,
         currentToolCallIdRef,
+        queuedAtOrderRef,
         updateTodoListCard,
         isNewConversation: isNewConversationRef.current,
         subagentStateRefs: subagentStateRefsRef.current,
@@ -2813,13 +2834,16 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         return;
       }
 
-      // Mark message as complete
-      setMessages((prev) =>
-        updateMessage(prev, assistantMessageId, (msg) => ({
-          ...msg,
-          isStreaming: false,
-        }))
-      );
+      // Mark message as complete (use live ref in case queued_message_injected switched it)
+      {
+        const finalId = currentMessageRef.current || assistantMessageId;
+        setMessages((prev) =>
+          updateMessage(prev, finalId, (msg) => ({
+            ...msg,
+            isStreaming: false,
+          }))
+        );
+      }
     } catch (err) {
           // Handle rate limit (429) — show limit message and remove optimistic assistant message
           if (err.status === 429) {
@@ -2845,15 +2869,16 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
           }
         } finally {
           if (!wasDisconnected && !wasInterruptedRef.current) {
-            // Mark message as complete (in case the try-block didn't reach it)
+            // Mark message as complete (use live ref in case queued_message_injected switched it)
+            const finalId = currentMessageRef.current || assistantMessageId;
             setMessages((prev) =>
-              updateMessage(prev, assistantMessageId, (msg) => ({
+              updateMessage(prev, finalId, (msg) => ({
                 ...msg,
                 isStreaming: false,
               }))
             );
 
-            cleanupAfterStreamEnd(assistantMessageId);
+            cleanupAfterStreamEnd(finalId);
           }
         }
       };
@@ -2886,6 +2911,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       contentOrderCounterRef,
       currentReasoningIdRef,
       currentToolCallIdRef,
+      queuedAtOrderRef,
       updateTodoListCard,
       isNewConversation: false,
       subagentStateRefs: subagentStateRefsRef.current,
@@ -2912,13 +2938,16 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         return;
       }
 
-      // Mark message as complete
-      setMessages((prev) =>
-        updateMessage(prev, assistantMessageId, (msg) => ({
-          ...msg,
-          isStreaming: false,
-        }))
-      );
+      // Mark message as complete (use live ref in case queued_message_injected switched it)
+      {
+        const finalId = currentMessageRef.current || assistantMessageId;
+        setMessages((prev) =>
+          updateMessage(prev, finalId, (msg) => ({
+            ...msg,
+            isStreaming: false,
+          }))
+        );
+      }
     } catch (err) {
       console.error('[HITL] Error resuming workflow:', err);
       setMessageError(err.message || 'Failed to resume workflow');
@@ -2932,7 +2961,8 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
       );
     } finally {
       if (!wasDisconnected && !wasInterruptedRef.current) {
-        cleanupAfterStreamEnd(assistantMessageId);
+        const finalId = currentMessageRef.current || assistantMessageId;
+        cleanupAfterStreamEnd(finalId);
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
