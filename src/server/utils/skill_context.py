@@ -7,11 +7,12 @@ messages for the LLM.
 """
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
 from src.server.models.additional_context import SkillContext
-from ptc_agent.agent.middleware.skills import get_skill, SkillMode
+from ptc_agent.agent.middleware.skills import get_command_to_skill_map, get_skill, SkillMode
 from ptc_agent.agent.middleware.skills.content import (
     load_skill_content,  # noqa: F401 — re-exported for backwards compatibility
 )
@@ -187,3 +188,57 @@ def build_skill_content(
         content=combined_content,
         loaded_skill_names=loaded_skills,
     )
+
+
+def detect_slash_commands(
+    message_text: str,
+    mode: SkillMode | None = None,
+) -> tuple[str, list[SkillContext]]:
+    """Detect slash command prefixes in user message text.
+
+    Scans the message for ``/<command>`` tokens that match registered skills.
+    Returns the cleaned message (with the command prefix stripped) and a list
+    of SkillContext objects for the matched commands.
+
+    This provides a server-side fallback for skill activation — skills are
+    activated even if the frontend fails to send ``additional_context``.
+
+    Args:
+        message_text: Raw user message text
+        mode: Optional agent mode filter
+
+    Returns:
+        Tuple of (cleaned_message, detected_skill_contexts)
+    """
+    if not message_text or not message_text.startswith("/"):
+        return message_text, []
+
+    command_map = get_command_to_skill_map(mode)
+    if not command_map:
+        return message_text, []
+
+    # Build regex: match /<command> at start of message, followed by whitespace or end
+    # Sort by length descending to prefer longer matches (e.g. "/3-statement-model" over "/3")
+    sorted_commands = sorted(command_map.keys(), key=len, reverse=True)
+    escaped = [re.escape(cmd) for cmd in sorted_commands]
+    pattern = re.compile(r"^/(" + "|".join(escaped) + r")(?:\s+|$)")
+
+    match = pattern.match(message_text)
+    if not match:
+        return message_text, []
+
+    command_name = match.group(1)
+    skill_name = command_map[command_name]
+
+    # Strip the /command prefix from the message
+    cleaned = message_text[match.end():].strip()
+    if not cleaned:
+        # Message was just the command with no body — keep original text as-is
+        # so the agent at least knows what the user asked for
+        cleaned = message_text
+
+    detected = [SkillContext(type="skills", name=skill_name)]
+    logger.info(
+        f"Detected slash command '/{command_name}' -> skill '{skill_name}'"
+    )
+    return cleaned, detected

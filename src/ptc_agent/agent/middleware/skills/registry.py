@@ -345,6 +345,26 @@ def get_all_skill_tool_names(mode: SkillMode | None = None) -> set[str]:
     return names
 
 
+def get_command_to_skill_map(mode: SkillMode | None = None) -> dict[str, str]:
+    """Map slash command names to skill names, filtered by mode.
+
+    Returns a dict where keys are command strings (e.g. "3-statement-model")
+    and values are skill names (e.g. "3-statements"). Only includes skills
+    that have a non-None command field.
+
+    Args:
+        mode: Optional agent mode filter. None returns all skills with commands.
+
+    Returns:
+        Dict mapping command name to skill name
+    """
+    return {
+        skill.command: name
+        for name, skill in SKILL_REGISTRY.items()
+        if skill.command and _matches_mode(skill, mode)
+    }
+
+
 def list_skills(mode: SkillMode | None = None) -> list[dict[str, Any]]:
     """List available skills with their metadata, optionally filtered by mode.
 

@@ -380,10 +380,7 @@ const ChatInput = forwardRef(function ChatInput({
     setMessage(val);
 
     // Remove pills whose /{command} or @mention text was deleted from the textarea
-    setSlashCommands((prev) => prev.filter((cmd) => {
-      const pattern = new RegExp(`(^|\\s)/${cmd.name}(\\s|$)`);
-      return pattern.test(val);
-    }));
+    setSlashCommands((prev) => prev.filter((cmd) => val.includes(`/${cmd.name}`)));
     setMentionedFiles((prev) => prev.filter((f) => val.includes(`@${f.path}`)));
 
     const cursorPos = e.target.selectionStart;

@@ -49,6 +49,7 @@ from src.utils.tracking import (
 from src.tools.decorators import ToolUsageTracker
 
 from src.server.utils.skill_context import (
+    detect_slash_commands,
     parse_skill_contexts,
     build_skill_content,
 )
@@ -430,7 +431,7 @@ async def astream_flash_workflow(
             thread_id=thread_id, workspace_id=workspace_id, user_id=user_id
         )
 
-        # Persist query start (with attachment metadata for display in history)
+        # Persist query start (with attachment and context metadata for display in history)
         query_metadata = {"msg_type": "flash"}
         if request.additional_context:
             multimodal_ctxs = parse_multimodal_contexts(request.additional_context)
@@ -448,6 +449,25 @@ async def astream_flash_workflow(
                     for ctx in multimodal_ctxs
                 ]
                 query_metadata["attachments"] = att_meta
+
+            # Persist lightweight additional_context (skip heavy multimodal data)
+            serialized_ctx = []
+            for ctx in request.additional_context:
+                ctx_type = getattr(ctx, "type", None)
+                if ctx_type == "skills":
+                    serialized_ctx.append({"type": "skills", "name": ctx.name})
+                elif ctx_type == "directive":
+                    serialized_ctx.append({"type": "directive", "content": ctx.content})
+            if serialized_ctx:
+                query_metadata["additional_context"] = serialized_ctx
+
+        # Also detect slash commands from message text for persistence
+        if "additional_context" not in query_metadata:
+            _, early_detected = detect_slash_commands(user_input, mode="flash")
+            if early_detected:
+                query_metadata["additional_context"] = [
+                    {"type": "skills", "name": s.name} for s in early_detected
+                ]
 
         await persistence_service.persist_query_start(
             content=user_input,
@@ -527,6 +547,27 @@ async def astream_flash_workflow(
         # Skill Context Injection (Flash mode) — inline with last user message
         loaded_skill_names: list[str] = []
         skill_contexts = parse_skill_contexts(request.additional_context)
+
+        # Detect slash commands from message text (fallback for missing additional_context)
+        if not skill_contexts and not request.hitl_response and messages:
+            last_msg = messages[-1]
+            msg_text = last_msg.get("content", "") if isinstance(last_msg.get("content"), str) else ""
+            if msg_text:
+                cleaned_text, detected = detect_slash_commands(msg_text, mode="flash")
+                if detected:
+                    skill_contexts = detected
+                    if cleaned_text != msg_text:
+                        last_msg["content"] = cleaned_text
+                    logger.info(
+                        f"[FLASH_CHAT] Slash command detected from message text: "
+                        f"{[s.name for s in detected]}"
+                    )
+
+        logger.debug(
+            f"[FLASH_CHAT] additional_context={request.additional_context}, "
+            f"skill_contexts={[s.name for s in skill_contexts] if skill_contexts else []}"
+        )
+
         if skill_contexts:
             skill_dirs = [
                 local_dir
@@ -975,7 +1016,7 @@ async def astream_ptc_workflow(
             "msg_type": "ptc",
         }
 
-        # Extract attachment metadata for display in history
+        # Extract attachment and context metadata for display in history
         if request.additional_context and not request.hitl_response:
             multimodal_ctxs = parse_multimodal_contexts(request.additional_context)
             if multimodal_ctxs:
@@ -992,6 +1033,26 @@ async def astream_ptc_workflow(
                     for ctx in multimodal_ctxs
                 ]
                 query_metadata["attachments"] = att_meta
+
+            # Persist lightweight additional_context (skip heavy multimodal data)
+            serialized_ctx = []
+            for ctx in request.additional_context:
+                ctx_type = getattr(ctx, "type", None)
+                if ctx_type == "skills":
+                    serialized_ctx.append({"type": "skills", "name": ctx.name})
+                elif ctx_type == "directive":
+                    serialized_ctx.append({"type": "directive", "content": ctx.content})
+            if serialized_ctx:
+                query_metadata["additional_context"] = serialized_ctx
+
+        # Also detect slash commands from message text for persistence
+        # (covers the case where frontend didn't send additional_context)
+        if not request.hitl_response and "additional_context" not in query_metadata:
+            _, early_detected = detect_slash_commands(user_input, mode="ptc")
+            if early_detected:
+                query_metadata["additional_context"] = [
+                    {"type": "skills", "name": s.name} for s in early_detected
+                ]
 
         if request.hitl_response:
             # HITL resume payloads typically have empty user_input (CLI sends message="").
@@ -1155,8 +1216,33 @@ async def astream_ptc_workflow(
         # When skills are requested via additional_context, load SKILL.md content
         # and append inline to the last user message using <loaded-skill> tags.
         # The original user_input is preserved for database persistence.
+        #
+        # Server-side slash command detection: also scan the last user message
+        # for /<command> prefixes as a fallback when additional_context is missing.
         loaded_skill_names: list[str] = []
         skill_contexts = parse_skill_contexts(request.additional_context)
+
+        # Detect slash commands from message text (fallback for missing additional_context)
+        if not skill_contexts and not request.hitl_response and messages:
+            last_msg = messages[-1]
+            msg_text = last_msg.get("content", "") if isinstance(last_msg.get("content"), str) else ""
+            if msg_text:
+                cleaned_text, detected = detect_slash_commands(msg_text, mode="ptc")
+                if detected:
+                    skill_contexts = detected
+                    # Update message text: strip the /command prefix
+                    if cleaned_text != msg_text:
+                        last_msg["content"] = cleaned_text
+                    logger.info(
+                        f"[PTC_CHAT] Slash command detected from message text: "
+                        f"{[s.name for s in detected]}"
+                    )
+
+        logger.info(
+            f"[PTC_CHAT] additional_context={request.additional_context}, "
+            f"skill_contexts={[s.name for s in skill_contexts] if skill_contexts else []}"
+        )
+
         if skill_contexts and not request.hitl_response:
             # Get skill directories from config
             skill_dirs = [
