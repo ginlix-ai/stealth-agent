@@ -454,10 +454,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         // Handle user_message events from history
         // Note: event.content may be empty for HITL resume pairs (plan approval/rejection)
         if (eventType === 'user_message' && hasPairIndex) {
-          // Resolve pending HITL interrupt status based on this user message.
-          // Note: ask_user_question is NOT resolved here — the answer text lives in
-          // the tool_call_result that comes AFTER this user_message in the resume pair.
-          // It gets resolved in the tool_call_result handler below instead.
+          // Resolve pending plan_approval interrupt from content (empty = approved, non-empty = rejected).
           {
             const idx = pendingHistoryInterrupts.findIndex((p) => p.type === 'plan_approval');
             if (idx !== -1) {
@@ -477,6 +474,37 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 }))
               );
               pendingHistoryInterrupts.splice(idx, 1);
+            }
+          }
+
+          // Resolve ask_user_question interrupts from resume query metadata (hitl_answers).
+          // Persisted immediately by persist_query_start(), keyed by interrupt_id.
+          {
+            const hitlAnswers = event.metadata?.hitl_answers;
+            if (hitlAnswers && pendingHistoryInterrupts.length > 0) {
+              for (const [interruptId, answerValue] of Object.entries(hitlAnswers)) {
+                const idx = pendingHistoryInterrupts.findIndex(
+                  (p) => p.type === 'ask_user_question' && p.interruptId === interruptId
+                );
+                if (idx !== -1) {
+                  const matched = pendingHistoryInterrupts[idx];
+                  const resolvedStatus = answerValue !== null ? 'answered' : 'skipped';
+                  setMessages((prev) =>
+                    updateMessage(prev, matched.assistantMessageId, (msg) => ({
+                      ...msg,
+                      userQuestions: {
+                        ...(msg.userQuestions || {}),
+                        [matched.questionId]: {
+                          ...(msg.userQuestions?.[matched.questionId] || {}),
+                          status: resolvedStatus,
+                          answer: answerValue,
+                        },
+                      },
+                    }))
+                  );
+                  pendingHistoryInterrupts.splice(idx, 1);
+                }
+              }
             }
           }
 
@@ -824,56 +852,6 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
             }
           }
 
-          // Resolve pending user question interrupt from the tool_call_result content.
-          // This is where the answer text lives (e.g. "User answered: Redis").
-          {
-            const idx = pendingHistoryInterrupts.findIndex((p) => p.type === 'ask_user_question');
-            if (idx !== -1 && typeof event.content === 'string') {
-              const matched = pendingHistoryInterrupts[idx];
-              const content = event.content;
-              let resolvedStatus = null;
-              let answer = null;
-
-              if (content.startsWith('User answered: ')) {
-                resolvedStatus = 'answered';
-                answer = content.slice('User answered: '.length);
-              } else if (content.startsWith('User skipped the question')) {
-                resolvedStatus = 'skipped';
-              }
-
-              if (resolvedStatus) {
-                setMessages((prev) =>
-                  updateMessage(prev, matched.assistantMessageId, (msg) => ({
-                    ...msg,
-                    userQuestions: {
-                      ...(msg.userQuestions || {}),
-                      [matched.questionId]: {
-                        ...(msg.userQuestions?.[matched.questionId] || {}),
-                        status: resolvedStatus,
-                        answer,
-                      },
-                    },
-                  }))
-                );
-              } else {
-                // Fallback: content didn't match known patterns but this IS from the resumed interrupt
-                setMessages((prev) =>
-                  updateMessage(prev, matched.assistantMessageId, (msg) => ({
-                    ...msg,
-                    userQuestions: {
-                      ...(msg.userQuestions || {}),
-                      [matched.questionId]: {
-                        ...(msg.userQuestions?.[matched.questionId] || {}),
-                        status: 'answered',
-                        answer: content,
-                      },
-                    },
-                  }))
-                );
-              }
-              pendingHistoryInterrupts.splice(idx, 1);
-            }
-          }
           return;
         }
 
@@ -890,8 +868,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               // --- User question interrupt (history) ---
               const questionId = event.interrupt_id || `question-history-${Date.now()}`;
               const questionData = event.action_requests[0];
-              pairState.contentOrderCounter++;
-              const order = pairState.contentOrderCounter;
+              const order = event._eventId != null ? event._eventId : ++pairState.contentOrderCounter;
 
               setMessages((prev) =>
                 updateMessage(prev, interruptAssistantId, (msg) => ({
@@ -925,8 +902,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               // --- Create workspace interrupt (history) ---
               const proposalId = event.interrupt_id || `workspace-history-${Date.now()}`;
               const proposalData = event.action_requests[0];
-              pairState.contentOrderCounter++;
-              const order = pairState.contentOrderCounter;
+              const order = event._eventId != null ? event._eventId : ++pairState.contentOrderCounter;
 
               setMessages((prev) =>
                 updateMessage(prev, interruptAssistantId, (msg) => ({
@@ -957,8 +933,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
               // --- Start question interrupt (history) ---
               const proposalId = event.interrupt_id || `question-start-history-${Date.now()}`;
               const proposalData = event.action_requests[0];
-              pairState.contentOrderCounter++;
-              const order = pairState.contentOrderCounter;
+              const order = event._eventId != null ? event._eventId : ++pairState.contentOrderCounter;
 
               setMessages((prev) =>
                 updateMessage(prev, interruptAssistantId, (msg) => ({
@@ -992,8 +967,7 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
                 event.action_requests?.[0]?.description ||
                 event.action_requests?.[0]?.args?.plan ||
                 'No plan description provided.';
-              pairState.contentOrderCounter++;
-              const order = pairState.contentOrderCounter;
+              const order = event._eventId != null ? event._eventId : ++pairState.contentOrderCounter;
 
               setMessages((prev) =>
                 updateMessage(prev, interruptAssistantId, (msg) => ({
@@ -2402,62 +2376,30 @@ export function useChatMessages(workspaceId, initialThreadId = null, updateTodoL
         if (unresolvedList?.length > 0 && typeof event.content === 'string') {
           const content = event.content;
 
-          // Try to match ask_user_question first
-          let matchIdx = unresolvedList.findIndex((u) => u.type === 'ask_user_question');
-          if (matchIdx !== -1 && (content.startsWith('User answered: ') || content.startsWith('User skipped'))) {
-            const matched = unresolvedList[matchIdx];
-            let resolvedStatus = null;
-            let answer = null;
-            if (content.startsWith('User answered: ')) {
-              resolvedStatus = 'answered';
-              answer = content.slice('User answered: '.length);
-            } else if (content.startsWith('User skipped')) {
-              resolvedStatus = 'skipped';
-            }
-            if (resolvedStatus) {
-              setMessages((prev) =>
-                updateMessage(prev, matched.assistantMessageId, (msg) => ({
-                  ...msg,
-                  userQuestions: {
-                    ...(msg.userQuestions || {}),
-                    [matched.questionId]: {
-                      ...(msg.userQuestions?.[matched.questionId] || {}),
-                      status: resolvedStatus,
-                      answer,
-                    },
-                  },
-                }))
-              );
-              unresolvedList.splice(matchIdx, 1);
-            }
-          }
-
           // Try create_workspace / start_question
-          if (unresolvedList.length > 0) {
-            matchIdx = unresolvedList.findIndex((u) => u.type === 'create_workspace' || u.type === 'start_question');
-            if (matchIdx !== -1) {
-              const matched = unresolvedList[matchIdx];
-              const dataKey = matched.type === 'create_workspace' ? 'workspaceProposals' : 'questionProposals';
-              let resolvedStatus = 'approved';
-              if (content === 'User declined workspace creation.' || content === 'User declined starting the question.') {
-                resolvedStatus = 'rejected';
-              } else {
-                try { if (JSON.parse(content)?.success === false) resolvedStatus = 'rejected'; } catch { /* not JSON */ }
-              }
-              setMessages((prev) =>
-                updateMessage(prev, matched.assistantMessageId, (msg) => ({
-                  ...msg,
-                  [dataKey]: {
-                    ...(msg[dataKey] || {}),
-                    [matched.proposalId]: {
-                      ...(msg[dataKey]?.[matched.proposalId] || {}),
-                      status: resolvedStatus,
-                    },
-                  },
-                }))
-              );
-              unresolvedList.splice(matchIdx, 1);
+          const matchIdx = unresolvedList.findIndex((u) => u.type === 'create_workspace' || u.type === 'start_question');
+          if (matchIdx !== -1) {
+            const matched = unresolvedList[matchIdx];
+            const dataKey = matched.type === 'create_workspace' ? 'workspaceProposals' : 'questionProposals';
+            let resolvedStatus = 'approved';
+            if (content === 'User declined workspace creation.' || content === 'User declined starting the question.') {
+              resolvedStatus = 'rejected';
+            } else {
+              try { if (JSON.parse(content)?.success === false) resolvedStatus = 'rejected'; } catch { /* not JSON */ }
             }
+            setMessages((prev) =>
+              updateMessage(prev, matched.assistantMessageId, (msg) => ({
+                ...msg,
+                [dataKey]: {
+                  ...(msg[dataKey] || {}),
+                  [matched.proposalId]: {
+                    ...(msg[dataKey]?.[matched.proposalId] || {}),
+                    status: resolvedStatus,
+                  },
+                },
+              }))
+            );
+            unresolvedList.splice(matchIdx, 1);
           }
         }
 

@@ -1061,6 +1061,31 @@ async def astream_ptc_workflow(
             query_content = summary["content"]
             query_metadata["hitl_interrupt_ids"] = summary["interrupt_ids"]
 
+            # Store per-interrupt answers for replay reconstruction.
+            # Format: { interrupt_id: "answer" | null (skipped) }
+            hitl_answers = {}
+            for interrupt_id, response in request.hitl_response.items():
+                decisions = (
+                    response.decisions
+                    if hasattr(response, "decisions")
+                    else response.get("decisions", [])
+                )
+                for d in decisions:
+                    d_type = d.type if hasattr(d, "type") else d.get("type")
+                    d_msg = (
+                        d.message if hasattr(d, "message") else d.get("message")
+                    ) or ""
+                    if d_type == "approve" and d_msg:
+                        hitl_answers[interrupt_id] = d_msg
+                    elif d_type == "reject" and not d_msg:
+                        hitl_answers[interrupt_id] = None
+            if hitl_answers:
+                query_metadata["hitl_answers"] = hitl_answers
+                has_answers = any(v is not None for v in hitl_answers.values())
+                feedback_action = (
+                    "QUESTION_ANSWERED" if has_answers else "QUESTION_SKIPPED"
+                )
+
         await persistence_service.persist_query_start(
             content=query_content,
             query_type=query_type,
