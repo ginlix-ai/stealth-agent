@@ -425,17 +425,17 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
    * @param {boolean} planMode - Plan mode flag
    * @param {Array} attachments - File attachments from ChatInput
    */
-  const handleSendMessage = async (message, planMode = false, attachments = []) => {
+  const handleSendMessage = async (message, planMode = false, attachments = [], slashCommands = []) => {
     if ((!message.trim() && (!attachments || attachments.length === 0)) || isSendingMessage || !workspaceId) {
       return;
     }
 
     setIsSendingMessage(true);
     try {
-      let additionalContext = null;
+      const contexts = [];
       let attachmentMeta = null;
       if (attachments && attachments.length > 0) {
-        additionalContext = attachmentsToImageContexts(attachments);
+        contexts.push(...attachmentsToImageContexts(attachments));
         attachmentMeta = attachments.map((a) => ({
           name: a.file.name,
           type: a.type,
@@ -444,6 +444,17 @@ function ThreadGallery({ workspaceId, onBack, onThreadSelect, cache }) {
           dataUrl: a.dataUrl,
         }));
       }
+
+      // Skill contexts from slash commands
+      for (const cmd of slashCommands) {
+        if (cmd.type === 'skill') {
+          contexts.push({ type: 'skills', name: cmd.skillName });
+        } else if (cmd.type === 'subagent') {
+          contexts.push({ type: 'directive', content: 'User wishes you to complete this task using subagents.' });
+        }
+      }
+
+      const additionalContext = contexts.length > 0 ? contexts : null;
 
       navigate(`/chat/${workspaceId}/__default__`, {
         state: {

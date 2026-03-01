@@ -558,15 +558,6 @@ async def astream_flash_workflow(
                     skill_contexts = detected
                     if cleaned_text != msg_text:
                         last_msg["content"] = cleaned_text
-                    logger.info(
-                        f"[FLASH_CHAT] Slash command detected from message text: "
-                        f"{[s.name for s in detected]}"
-                    )
-
-        logger.debug(
-            f"[FLASH_CHAT] additional_context={request.additional_context}, "
-            f"skill_contexts={[s.name for s in skill_contexts] if skill_contexts else []}"
-        )
 
         if skill_contexts:
             skill_dirs = [
@@ -579,9 +570,7 @@ async def astream_flash_workflow(
             if skill_result:
                 _append_to_last_user_message(messages, "\n\n" + skill_result.content)
                 loaded_skill_names = skill_result.loaded_skill_names
-                logger.info(
-                    f"[FLASH_CHAT] Skill context injected inline: {[s.name for s in skill_contexts]}"
-                )
+                logger.info(f"[FLASH_CHAT] Skills injected: {loaded_skill_names}")
 
         # Directive Context Injection (inline with user message)
         directives = parse_directive_contexts(request.additional_context)
@@ -1255,21 +1244,10 @@ async def astream_ptc_workflow(
                 cleaned_text, detected = detect_slash_commands(msg_text, mode="ptc")
                 if detected:
                     skill_contexts = detected
-                    # Update message text: strip the /command prefix
                     if cleaned_text != msg_text:
                         last_msg["content"] = cleaned_text
-                    logger.info(
-                        f"[PTC_CHAT] Slash command detected from message text: "
-                        f"{[s.name for s in detected]}"
-                    )
-
-        logger.info(
-            f"[PTC_CHAT] additional_context={request.additional_context}, "
-            f"skill_contexts={[s.name for s in skill_contexts] if skill_contexts else []}"
-        )
 
         if skill_contexts and not request.hitl_response:
-            # Get skill directories from config
             skill_dirs = [
                 local_dir
                 for local_dir, _ in config.skills.local_skill_dirs_with_sandbox()
@@ -1280,9 +1258,7 @@ async def astream_ptc_workflow(
             if skill_result:
                 _append_to_last_user_message(messages, "\n\n" + skill_result.content)
                 loaded_skill_names = skill_result.loaded_skill_names
-                logger.info(
-                    f"[PTC_CHAT] Skill context injected inline: {[s.name for s in skill_contexts]}"
-                )
+                logger.info(f"[PTC_CHAT] Skills injected: {loaded_skill_names}")
 
         # Multimodal Context Injection (images and PDFs)
         multimodal_contexts = parse_multimodal_contexts(request.additional_context)

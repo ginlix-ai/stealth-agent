@@ -94,7 +94,7 @@ def parse_skill_contexts(
             ))
 
     if skill_contexts:
-        logger.info(
+        logger.debug(
             f"Parsed {len(skill_contexts)} skill contexts: "
             f"{[s.name for s in skill_contexts]}"
         )
@@ -179,7 +179,7 @@ def build_skill_content(
 
     combined_content = "\n\n".join(parts)
 
-    logger.info(
+    logger.debug(
         f"Built skill content with {len(loaded_skills)} skills: "
         f"{loaded_skills}"
     )
@@ -238,7 +238,7 @@ def detect_slash_commands(
         cleaned = message_text
 
     detected = [SkillContext(type="skills", name=skill_name)]
-    logger.info(
+    logger.debug(
         f"Detected slash command '/{command_name}' -> skill '{skill_name}'"
     )
     return cleaned, detected
